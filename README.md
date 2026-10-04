@@ -1,6 +1,7 @@
 # 🛡️ AZQ BOT
 
 サーバー管理をまるごとお任せできる、高機能Discord Bot。`bot.py` 1ファイルで動きます(discord.py 2.x)。
+このソフトウェアはApache License 2.0で公開されています。
 
 **[サーバーに導入する](https://discord.com/oauth2/authorize?client_id=1556124525459013713&permissions=8&integration_type=0&scope=bot+applications.commands)**
 
