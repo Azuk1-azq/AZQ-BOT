@@ -4,6 +4,7 @@
 このソフトウェアはApache License 2.0で公開されています。
 
 **[サーバーに導入する](https://discord.com/oauth2/authorize?client_id=1556124525459013713&permissions=8&integration_type=0&scope=bot+applications.commands)**
+↑このリンク先のAZQ BOTは認証済みです
 
 ## 機能
 
