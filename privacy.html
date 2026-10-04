@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>プライバシーポリシー - AZQ BOT</title>
+<style>:root{--b:#5865F2;--bg:#111218;--t:#e8e9f0;--m:#9a9db0}*{box-sizing:border-box}body{margin:0;font:16px/1.8 system-ui,"Hiragino Sans","Yu Gothic",sans-serif;background:var(--bg);color:var(--t)}main{max-width:860px;margin:auto;padding:24px 20px 60px}a{color:#8ea1ff}h1{font-size:28px}h2{font-size:18px;margin-top:28px;border-left:4px solid var(--b);padding-left:10px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2c2f3d;text-align:left;vertical-align:top}footer{color:var(--m);font-size:13px;margin-top:40px}</style></head><body><main>
+<p><a href="index.html">← AZQ BOT トップ</a></p>
+<h1>プライバシーポリシー</h1>
+<p>制定日: 2026年10月4日</p>
+<p>運営者「AZQ」(以下「運営者」)は、Discord Bot「AZQ BOT」(以下「本Bot」)における情報の取扱いを、次のとおり定めます。</p>
+
+<h2>1. 取得・保存する情報</h2>
+<ul>
+<li><b>サーバー設定</b>: ログ・ウェルカム・過疎アラートのチャンネルID、自動ロールのID、ウェルカム文、AutoModの設定値、NGワード</li>
+<li><b>警告履歴</b>: <code>/warn</code> 実行時の、対象ユーザーID・理由・実行者ID・日時</li>
+</ul>
+<p>上記は本Botの動作環境内のファイルに保存します。</p>
+
+<h2>2. 保存せずに一時的に処理する情報</h2>
+<ul>
+<li><b>メッセージ本文</b>: 荒らし判定(NGワード・招待リンク・連投・同一投稿)のため、受信時にメモリ上で判定します。判定に必要な直近の少量の履歴を、数分以内メモリ上に保持しますが、ディスクには保存しません。</li>
+<li><b>過疎診断</b>: 指定期間のメッセージ数と発言者数を集計するだけで、本文や集計結果の個別内容は保存しません。</li>
+<li><b>名言画像</b>: 対象のアイコン画像・ユーザー名・メッセージ本文を、画像生成のために一時的に使用します。保存しません。</li>
+</ul>
+
+<h2>3. ログ機能について</h2>
+<p>サーバー管理者がログチャンネルを設定した場合、メッセージの編集・削除、メンバーの参加・退出、AutoModの処置、モデレーション操作の内容が、そのチャンネルに投稿されます。これらはDiscord上のデータであり、閲覧権限や保管はサーバーの管理者が管理します。</p>
+
+<h2>4. 外部への送信</h2>
+<table>
+<tr><th>機能</th><th>送信先と内容</th></tr>
+<tr><td>脳内メーカー</td><td>maker.usoko.net に、入力された名前(またはユーザーの表示名)を送信し、画像を取得します。</td></tr>
+<tr><td>ping(target指定)</td><td>指定されたWebサイトに接続し、応答時間を測定します。</td></tr>
+<tr><td>名言画像</td><td>初回に、フォント(Zen Maru Gothic)をGitHubからダウンロードします。ユーザー情報は送信しません。</td></tr>
+</table>
+<p>上記以外で、取得した情報を第三者に提供・販売・広告利用することはありません(法令に基づく場合を除く)。</p>
+
+<h2>5. 特権インテントを使う理由</h2>
+<p>本Botは、Discordの<a href="https://support-dev.discord.com/hc/en-us/articles/6207308062871">特権インテント</a>を次の目的に限って使用します。Presence Intent は使用しません。</p>
+<table>
+<tr><th>インテント</th><th>理由</th></tr>
+<tr><td>Server Members Intent</td><td>メンバーの参加・退出の検知(ウェルカム、自動ロール、レイド検知、参加ログ)と、過疎診断でのメンバー数の集計のため。</td></tr>
+<tr><td>Message Content Intent</td><td>荒らし対策のメッセージ本文の判定と、メッセージの編集・削除ログのため。</td></tr>
+</table>
+
+<h2>6. 保管期間と削除</h2>
+<p>サーバー設定と警告履歴は、削除されるまで保存されます。警告履歴は <code>/clearwarns</code> で、サーバー管理者が消去できます。設定や履歴の削除を希望する場合は、「9. お問い合わせ」の連絡先までご連絡ください。</p>
+
+<h2>7. 安全管理</h2>
+<p>保存した情報は、運営者のみがアクセスできる環境で管理し、不正アクセスや漏えいの防止に努めます。</p>
+
+<h2>8. 改定</h2>
+<p>本ポリシーは、必要に応じて改定することがあります。改定後は、このページに掲載します。</p>
+
+<h2>9. お問い合わせ</h2>
+<p>Discord ID: <b>azuk1_dev</b>(DiscordのDMでご連絡ください)</p>
+
+<footer><a href="index.html">トップ</a> ・ <a href="terms.html">利用規約</a></footer>
+</main></body></html>
