@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AZQ BOT - サーバー管理Discord Bot</title>
+<meta name="description" content="荒らし検知・過疎診断・脳内メーカー・名言画像・モデレーションが使える高機能Discord Bot">
+<style>:root{--b:#5865F2;--bg:#111218;--c:#1b1d27;--t:#e8e9f0;--m:#9a9db0}*{box-sizing:border-box}body{margin:0;font:16px/1.8 system-ui,"Hiragino Sans","Yu Gothic",sans-serif;background:var(--bg);color:var(--t)}main{max-width:860px;margin:auto;padding:24px 20px 60px}a{color:#8ea1ff}h1{font-size:34px;margin:30px 0 4px}h2{font-size:19px;margin-top:34px;border-left:4px solid var(--b);padding-left:10px}.card{background:var(--c);border-radius:12px;padding:14px 18px;margin:10px 0}.btn{display:inline-block;background:var(--b);color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:700}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2c2f3d;text-align:left;vertical-align:top}footer{color:var(--m);font-size:13px;margin-top:40px}code{background:#262938;padding:1px 6px;border-radius:5px}</style></head><body><main>
+<h1>🛡️ AZQ BOT</h1>
+<p>サーバー管理をまるごとお任せできる、高機能Discord Bot。</p>
+<p><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&permissions=8&integration_type=0&scope=bot+applications.commands">サーバーに導入する</a></p>
+
+<h2>機能</h2>
+<div class="card"><b>🛡️ 荒らし対策</b><br>連投・同一メッセージ・メンション爆撃・招待リンク・NGワード・レイド(大量参加)を自動検知し、削除やタイムアウトを行います。</div>
+<div class="card"><b>📊 過疎検出</b><br><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</div>
+<div class="card"><b>🧠 脳内メーカー</b><br><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</div>
+<div class="card"><b>🖼️ 名言画像</b><br><code>/meigen</code> やメッセージの右クリックで、アイコンと@IDつきの名言画像を作成します。</div>
+<div class="card"><b>🏓 ping</b><br><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</div>
+<div class="card"><b>🔨 モデレーション(管理者のみ)</b><br>kick / ban / timeout / warn / purge / lock / slowmode / ロール操作、ログ・ウェルカム・自動ロール。</div>
+
+<h2>必要な特権インテントと理由</h2>
+<p>Discord Developer Portal で有効化が必要な<a href="https://support-dev.discord.com/hc/en-us/articles/6207308062871">特権インテント</a>は次の2つです(Presence Intent は使いません)。</p>
+<table>
+<tr><th>インテント</th><th>利用目的</th></tr>
+<tr><td>Server Members Intent</td><td>メンバーの参加・退出の検知(ウェルカム、自動ロール、レイド検知、参加ログ)と、過疎診断でのメンバー数の集計のため。</td></tr>
+<tr><td>Message Content Intent</td><td>荒らし対策のためのメッセージ本文の判定(NGワード・招待リンク・連投・同一投稿)と、メッセージの編集・削除ログのため。</td></tr>
+</table>
+
+<h2>導入時の注意</h2>
+<p>上の導入URLは管理者権限を要求します。必要な権限だけに絞って導入することもできます。BOTのロールは、管理対象のロールより上に配置してください。コマンドの一覧は <code>/help</code> で確認できます。</p>
+
+<footer><a href="terms.html">利用規約</a> ・ <a href="privacy.html">プライバシーポリシー</a><br>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</footer>
+</main></body></html>
