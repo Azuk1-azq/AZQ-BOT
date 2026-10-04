@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AZQ BOT - サーバー管理Discord Bot</title>
-<meta name="description" content="荒らし検知・過疎診断・脳内メーカー・名言画像・モデレーションが使える高機能Discord Bot">
+<meta name="description" content="荒らし検知・メンバー認証・チケット・過疎診断・脳内メーカー・名言画像・モデレーションが使える高機能Discord Bot">
 <meta name="theme-color" content="#0d0e14">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -75,6 +75,7 @@ h2{font-size:28px;line-height:1.4;margin:0 0 8px;font-weight:900}
 .t-a{grid-column:span 4;background:linear-gradient(135deg,#1c2040,var(--panel))}
 .t-b{grid-column:span 2}
 .t-c,.t-d,.t-e{grid-column:span 2}
+.t-g{grid-column:span 3}
 .t-f{grid-column:span 6;display:flex;flex-wrap:wrap;gap:8px 28px;align-items:center;justify-content:space-between}
 .t-f div{max-width:34em}
 code{background:#262a3d;color:var(--text);padding:2px 8px;border-radius:6px;font-size:.9em}
@@ -90,7 +91,7 @@ footer{color:var(--mute);font-size:13px;padding:32px 0 56px;border-top:1px solid
 footer a{color:var(--mute)}
 @media(max-width:820px){
 .hero{grid-template-columns:1fr;gap:36px;padding-top:24px}
-.t-a,.t-b,.t-c,.t-d,.t-e,.t-f{grid-column:span 6}
+.t-a,.t-b,.t-c,.t-d,.t-e,.t-f,.t-g{grid-column:span 6}
 .two,.ok,.steps{grid-template-columns:1fr}
 nav a{margin-left:14px}
 }
@@ -102,7 +103,7 @@ nav a{margin-left:14px}
 <header class="hero">
 <div>
 <h1>荒らしも過疎も、<br>BOTにお任せ。</h1>
-<p class="lead">連投・招待リンク・レイドを自動で検知して対処。サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
+<p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
 <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a>
 <span class="sub"><a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>に同意のうえ導入してください</span>
 <div class="badges"><span>✓ Discord認証済みBot</span><span>✓ オープンソース</span><span>✓ 必要な権限だけ要求</span><span>✓ 管理者だけが設定を変更</span></div>
@@ -125,7 +126,11 @@ nav a{margin-left:14px}
 <div class="tile t-c"><h3>🧠 脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
 <div class="tile t-d"><h3>🖼️ 名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。</p></div>
 <div class="tile t-e"><h3>🏓 ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
-<div class="tile t-f"><div><h3>🔨 モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。コマンド一覧は <code>/help</code> で確認できます。</p></div>
+<div class="tile t-g"><h3>🔐 メンバー認証</h3><p>参加したメンバーに認証を行わせ、通過した人だけにロールを付与します。<code>/verify setup</code> で設置でき、荒らし・BOT対策に使えます。</p>
+<div class="chips sm"><span>ボタン認証</span><span>計算認証</span><span>画像CAPTCHA</span><span>未認証ロール</span><span>アカウント年齢制限</span><span>未認証キック</span><span>レイド時に自動強化</span></div></div>
+<div class="tile t-g"><h3>🎫 サポートチケット</h3><p>パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成。クローズは作成者・スタッフ・管理者が行え、<b>削除できるのは管理者のみ</b>です。</p>
+<div class="chips sm"><span>非公開chの自動作成</span><span>担当者の設定</span><span>記録(.txt)の保存・DM</span><span>無操作で自動クローズ</span><span>認証との連携</span></div></div>
+<div class="tile t-f"><div><h3>🔨 モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p></div>
 <div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
 </div>
 </section>
@@ -134,10 +139,10 @@ nav a{margin-left:14px}
 <h2>安心して使うための情報</h2>
 <p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
 <div class="ok">
-<div class="tile"><h3 class="g">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li></ul></div>
+<div class="tile"><h3 class="g">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
 <div class="tile"><h3 class="g n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li></ul></div>
 </div>
-<div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p></div>
+<div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p style="margin-top:10px">チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
 
 <h3 style="margin:36px 0 12px;font-size:20px">必要な特権インテント</h3>
 <div class="two">
@@ -148,13 +153,13 @@ nav a{margin-left:14px}
 <h3 style="margin:36px 0 12px;font-size:20px">要求する権限とその理由</h3>
 <div class="scroll"><table class="perm">
 <tr><th>権限</th><th>使う機能</th></tr>
-<tr><td>チャンネルを見る / メッセージ履歴を読む</td><td>荒らし判定、過疎診断の集計</td></tr>
-<tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像の送信</td></tr>
+<tr><td>チャンネルを見る / メッセージ履歴を読む</td><td>荒らし判定、過疎診断の集計、チケット記録の作成</td></tr>
+<tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像、認証・チケットのパネル、チケット記録(.txt)の送信</td></tr>
 <tr><td>メッセージの管理</td><td>荒らしメッセージの自動削除、/purge</td></tr>
-<tr><td>メンバーをキック / BAN</td><td>/kick /ban /unban(管理者のみ実行可能)</td></tr>
+<tr><td>メンバーをキック / BAN</td><td>/kick /ban /unban(管理者のみ実行可能)、時間内に認証しなかった人のキック(設定した場合のみ)</td></tr>
 <tr><td>メンバーをタイムアウト</td><td>/timeout、警告上限・荒らし検知時の自動タイムアウト</td></tr>
-<tr><td>ロールの管理</td><td>自動ロール、/role_add /role_remove、/lock /unlock</td></tr>
-<tr><td>チャンネルの管理</td><td>/slowmode /lock /unlock</td></tr>
+<tr><td>ロールの管理</td><td>自動ロール、/role_add /role_remove、/lock /unlock、認証ロール・未認証ロールの付与と剥奪</td></tr>
+<tr><td>チャンネルの管理</td><td>/slowmode /lock /unlock、チケットチャンネルの作成・ロック・削除</td></tr>
 </table></div>
 </section>
 
@@ -164,7 +169,7 @@ nav a{margin-left:14px}
 <div class="steps">
 <div class="tile"><h3>BOTを追加</h3><p>下のボタンから導入先のサーバーを選び、権限を確認して承認します。</p></div>
 <div class="tile"><h3>ロールを上に移動</h3><p>サーバー設定でBOTのロールを、管理対象のメンバー・ロールより上に配置します。</p></div>
-<div class="tile"><h3>設定する</h3><p><code>/config log_channel</code> などで設定し、<code>/help</code> でコマンドを確認します。</p></div>
+<div class="tile"><h3>設定する</h3><p><code>/config log_channel</code> などで設定します。認証は <code>/verify setup</code>、チケットは <code>/ticketconfig setup</code> で設置でき、<code>/help</code> でコマンドを確認できます。</p></div>
 </div>
 <div class="cta">
 <h2>サーバーを守る準備はできましたか?</h2>
@@ -177,7 +182,9 @@ nav a{margin-left:14px}
 <h2>よくある質問</h2>
 <details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
 <details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
-<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と設定は管理者のみです。/kaso /nounai /meigen /ping /userinfo などは誰でも使えます。</p></details>
+<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
+<details><summary>チケットは誰が閉じて、誰が削除できますか?</summary><p>クローズは、チケットを作った本人・スタッフロールのメンバー・管理者ができます。クローズすると記録が保存され、チャンネルは閲覧のみになります。チャンネルの削除は管理者だけが行えます(クローズ済みのチケットに付く「削除」ボタン、または /ticket delete)。</p></details>
+<details><summary>メンバー認証とは何ですか?</summary><p>参加したメンバーがボタン・計算・画像CAPTCHAのいずれかを通過すると、認証ロールが付与される機能です。アカウント作成からの日数制限や、時間内に認証しない人のキック、レイド検知時の自動強化も設定できます。認証が必要なチャンネルの権限設定は、設置時のメッセージの案内に沿って行ってください。</p></details>
 <details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
 </section>
 
