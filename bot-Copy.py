@@ -13,40 +13,35 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote, urlparse
-
 import subprocess
 import sys
-
 for _mod, _pkg in (("discord", "discord.py>=2.4,<3"), ("PIL", "pillow")):
     try:
         __import__(_mod)
     except ImportError:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", _pkg])
-
 import discord
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
-
 import aiohttp
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands, tasks
-
-
-TOKEN = "YOUR-TOKEN"   # ← ここにBOTトークンを直接貼り付けてください
-TOKEN = os.getenv("DISCORD_TOKEN") or TOKEN   # (任意)環境変数 DISCORD_TOKEN があればそちらを優先
-DEV_GUILD_ID = ""      # 開発用: 数字のサーバーIDを入れるとそのサーバーだけに即時反映。公開時は空のまま(グローバル同期)
+TOKEN = "**"
+TOKEN = os.getenv("DISCORD_TOKEN") or TOKEN
+DEV_GUILD_ID = ""
 DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", DEV_GUILD_ID).strip()
-DATA_DIR = "data"
-PORT = int(os.getenv("PORT", "8080"))
-
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.getenv("DATA_DIR") or os.path.join(BASE_DIR, "data")
+try:
+    PORT = int(os.getenv("PORT", "0") or 0)
+except ValueError:
+    PORT = 0
 BLUE, RED, GREEN, YELLOW, GRAY = 0x5865F2, 0xED4245, 0x57F287, 0xFEE75C, 0x99AAB5
-SUPPORT_URL = "https://discord.gg/tAKTK9MYdc"   # サポートサーバー(メンテナンス等のお知らせ)
+SUPPORT_URL = "https://discord.gg/tAKTK9MYdc"
 INVITE_RE = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.I)
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("azqbot")
-
 DEFAULTS = {
     "log_channel": None,
     "welcome": {"channel": None, "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)"},
@@ -72,42 +67,44 @@ DEFAULTS = {
     "kaso": {"enabled": False, "channel": None, "threshold": 20, "last_alert": 0},
     "verify": {
         "enabled": False,
-        "mode": "button",            # button / math / image
-        "role": None,                # 認証後に付与するロール
-        "unverified_role": None,     # 参加時に付与し、認証後に外すロール(任意)
+        "mode": "button",
+        "role": None,
+        "unverified_role": None,
         "panel_channel": None,
         "panel_message": None,
         "panel_title": "✅ メンバー認証",
         "panel_text": "下のボタンを押して認証を完了すると、サーバーのチャンネルが利用できるようになります。\n荒らし・BOT対策へのご協力をお願いします。",
         "min_account_days": 0,
-        "kick_minutes": 0,           # 0=未認証でもキックしない
+        "kick_minutes": 0,
         "max_attempts": 3,
         "lockout_minutes": 10,
-        "violation": "deny",         # deny / kick
-        "pending": {},               # user_id -> 参加時刻
+        "violation": "deny",
+        "pending": {},
         "stats": {"verified": 0, "failed": 0, "denied": 0, "kicked": 0},
     },
     "ticket": {
         "enabled": False,
-        "category": None,            # チケットchを作るカテゴリ
+        "category": None,
         "staff_roles": [],
-        "transcript_channel": None,  # 未設定ならログチャンネル
+        "transcript_channel": None,
         "panel_channel": None,
         "panel_message": None,
         "panel_title": "🎫 サポートチケット",
         "panel_text": "ご質問・ご相談・報告は、下のボタンからチケットを作成してください。\n専用の非公開チャンネルが作成され、スタッフが対応します。",
         "max_open": 1,
-        "auto_close_hours": 0,       # 0=自動クローズしない
+        "auto_close_hours": 0,
         "ping_staff": True,
         "dm_transcript": True,
         "counter": 0,
-        "open": {},                  # channel_id -> {owner, number, created, claimed_by, subject, closed, closed_by, closed_at}  (closed=クローズ済み・削除待ち)
+        "open": {},
         "blocked": [],
         "stats": {"created": 0, "closed": 0},
     },
+    "rolepanel": {
+        "panels": {},
+    },
+    "meigen": {"enabled": True},
 }
-
-
 def deep_merge(base: dict, over: dict) -> dict:
     for k, v in over.items():
         if isinstance(v, dict) and isinstance(base.get(k), dict):
@@ -115,13 +112,12 @@ def deep_merge(base: dict, over: dict) -> dict:
         else:
             base[k] = v
     return base
-
-
 class Store:
     def __init__(self, directory: str):
         os.makedirs(directory, exist_ok=True)
         self.path = os.path.join(directory, "guilds.json")
         self.data: dict = {}
+        self.existed = os.path.exists(self.path)
         if os.path.exists(self.path):
             try:
                 with open(self.path, encoding="utf-8") as f:
@@ -130,27 +126,38 @@ class Store:
                     self.data[gid] = deep_merge(copy.deepcopy(DEFAULTS), cfg)
             except Exception:
                 log.exception("設定ファイルの読み込みに失敗しました。空の設定で起動します。")
-
     def get(self, guild_id: int) -> dict:
         key = str(guild_id)
         if key not in self.data:
             self.data[key] = copy.deepcopy(DEFAULTS)
         return self.data[key]
-
     def save(self) -> None:
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, self.path)
-
-
 store = Store(DATA_DIR)
-
+class UserPrefs:
+    def __init__(self, directory: str):
+        self.path = os.path.join(directory, "user_prefs.json")
+        self.data: dict = {}
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, encoding="utf-8") as f:
+                    self.data = json.load(f)
+            except Exception:
+                log.exception("ユーザー設定の読み込みに失敗しました。空の設定で起動します。")
+    def rec(self, user_id: int) -> dict:
+        return self.data.setdefault(str(user_id), {})
+    def save(self) -> None:
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, self.path)
+user_prefs = UserPrefs(DATA_DIR)
 intents = discord.Intents.default()
-intents.message_content = True  # 要: Developer Portal で Message Content Intent を ON
-intents.members = True          # 要: Developer Portal で Server Members Intent を ON
-
-
+intents.message_content = True
+intents.members = True
 class AzqBot(commands.Bot):
     def __init__(self):
         super().__init__(
@@ -162,17 +169,21 @@ class AzqBot(commands.Bot):
         self.started_at = time.time()
         self.session: Optional[aiohttp.ClientSession] = None
         self.web_runner: Optional[web.AppRunner] = None
-
     async def setup_hook(self):
         self.session = aiohttp.ClientSession(headers={"User-Agent": BROWSER_UA})
         self.tree.add_command(config_group)
         self.tree.add_command(verify_group)
-        self.add_view(VerifyPanelView())  # 再起動後も認証ボタンを有効にする
+        self.add_view(VerifyPanelView())
         self.tree.add_command(ticket_group)
         self.tree.add_command(ticketconfig_group)
-        self.add_view(TicketPanelView())  # 再起動後もチケットのボタンを有効にする
+        self.add_view(TicketPanelView())
         self.add_view(TicketControlView())
         self.add_view(TicketClosedView())
+        self.add_view(MeigenConsentView())
+        self.tree.add_command(rolepanel_group)
+        for _cfg in store.data.values():
+            for _mid, _p in _cfg.get("rolepanel", {}).get("panels", {}).items():
+                self.add_view(RolePanelView(_p["roles"]), message_id=int(_mid))
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
             self.tree.copy_global_to(guild=guild)
@@ -186,21 +197,14 @@ class AzqBot(commands.Bot):
         cleanup_trackers.start()
         verify_watch.start()
         ticket_watch.start()
-
     async def close(self):
         if self.session:
             await self.session.close()
         if self.web_runner:
             await self.web_runner.cleanup()
         await super().close()
-
-
 bot = AzqBot()
-
-
 async def start_web():
-    """SnapDeploy等のコンテナ環境向けヘルスチェック用の簡易HTTPサーバー"""
-
     async def health(_request):
         lat = bot.latency
         return web.json_response({
@@ -208,21 +212,25 @@ async def start_web():
             "guilds": len(bot.guilds),
             "latency_ms": None if lat != lat else round(lat * 1000),
         })
-
+    if not PORT:
+        log.info("ヘルスチェックサーバーは無効です(環境変数 PORT を設定すると有効になります)")
+        return
     app = web.Application()
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, "0.0.0.0", PORT).start()
+    try:
+        await web.TCPSite(runner, "0.0.0.0", PORT).start()
+    except OSError as e:
+        log.warning("ヘルスチェックサーバーを起動できませんでした(ポート %s: %s)。BOTは続行します。"
+                    "すでに別のBOTプロセスが動いていないか確認してください。", PORT, e)
+        await runner.cleanup()
+        return
     bot.web_runner = runner
     log.info("ヘルスチェックサーバー起動: 0.0.0.0:%s", PORT)
-
-
 def make_embed(title: str, desc: Optional[str] = None, color: int = BLUE) -> discord.Embed:
     return discord.Embed(title=title, description=desc, color=color, timestamp=discord.utils.utcnow())
-
-
 async def send_log(guild: discord.Guild, embed: discord.Embed) -> None:
     channel_id = store.get(guild.id)["log_channel"]
     channel = guild.get_channel(channel_id) if channel_id else None
@@ -231,8 +239,6 @@ async def send_log(guild: discord.Guild, embed: discord.Embed) -> None:
             await channel.send(embed=embed)
         except discord.HTTPException:
             pass
-
-
 def hierarchy_error(interaction: discord.Interaction, target: discord.Member) -> Optional[str]:
     guild = interaction.guild
     if target.id == interaction.user.id:
@@ -246,14 +252,11 @@ def hierarchy_error(interaction: discord.Interaction, target: discord.Member) ->
     if target.top_role >= guild.me.top_role:
         return "BOTのロールより上位(または同位)のメンバーです。サーバー設定でBOTのロールを上に移動してください。"
     return None
-
-
 async def try_dm(user: discord.abc.User, text: str) -> None:
     try:
         await user.send(text)
     except discord.HTTPException:
         pass
-
 @bot.tree.error
 async def on_app_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
@@ -275,18 +278,14 @@ async def on_app_error(interaction: discord.Interaction, error: app_commands.App
         await interaction.followup.send(msg, ephemeral=True)
     else:
         await interaction.response.send_message(msg, ephemeral=True)
-
-recent_msgs = defaultdict(lambda: deque(maxlen=30))  # (guild,user) -> (time, message)
-recent_dups = defaultdict(lambda: deque(maxlen=10))  # (guild,user) -> (time, content)
-strikes = defaultdict(deque)                          # (guild,user) -> times
-join_times = defaultdict(deque)                       # guild -> times
+recent_msgs = defaultdict(lambda: deque(maxlen=30))
+recent_dups = defaultdict(lambda: deque(maxlen=10))
+strikes = defaultdict(deque)
+join_times = defaultdict(deque)
 last_raid_alert = {}
-
-
 async def punish(message: discord.Message, reason: str, heavy: bool = False, extra: Optional[list] = None):
     guild, member = message.guild, message.author
     am = store.get(guild.id)["automod"]
-
     targets = [m for m in (extra or []) if m.channel.id == message.channel.id] or [message]
     try:
         if len(targets) > 1:
@@ -295,14 +294,12 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
             await message.delete()
     except discord.HTTPException:
         pass
-
     now = time.time()
     key = (guild.id, member.id)
     dq = strikes[key]
     dq.append(now)
     while dq and now - dq[0] > 300:
         dq.popleft()
-
     timed_out = False
     if heavy or len(dq) >= am["strikes_to_timeout"]:
         try:
@@ -311,7 +308,6 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
             dq.clear()
         except discord.HTTPException:
             pass
-
     note = f"{member.mention} ⚠️ **{reason}** を検知したためメッセージを削除しました。"
     if timed_out:
         note += f"\n🔇 {am['punish_minutes']}分間タイムアウトしました。"
@@ -319,7 +315,6 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
         await message.channel.send(note, delete_after=8)
     except discord.HTTPException:
         pass
-
     e = make_embed("🛡️ AutoMod 発動", color=RED)
     e.add_field(name="ユーザー", value=f"{member} (`{member.id}`)")
     e.add_field(name="チャンネル", value=message.channel.mention)
@@ -328,8 +323,6 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
     if message.content:
         e.add_field(name="内容", value=message.content[:500], inline=False)
     await send_log(guild, e)
-
-
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild or not isinstance(message.author, discord.Member):
@@ -343,12 +336,10 @@ async def on_message(message: discord.Message):
         return
     if message.channel.id in am["ignore_channels"] or any(r.id in am["ignore_roles"] for r in member.roles):
         return
-
     content = message.content
     lowered = content.lower()
     key = (message.guild.id, member.id)
     now = time.time()
-
     for word in am["ng_words"]:
         if word and word.lower() in lowered:
             return await punish(message, "NGワード")
@@ -356,7 +347,6 @@ async def on_message(message: discord.Message):
         return await punish(message, "招待リンクの投稿")
     if len(message.mentions) + len(message.role_mentions) >= am["mention_limit"]:
         return await punish(message, "メンション過多", heavy=True)
-
     dq = recent_msgs[key]
     dq.append((now, message))
     while dq and now - dq[0][0] > am["spam_seconds"]:
@@ -365,15 +355,12 @@ async def on_message(message: discord.Message):
         msgs = [m for _, m in dq]
         dq.clear()
         return await punish(message, "連投(スパム)", heavy=True, extra=msgs)
-
     if content:
         dd = recent_dups[key]
         dd.append((now, content))
         if sum(1 for t, c in dd if c == content and now - t <= 30) >= am["dup_count"]:
             dd.clear()
             return await punish(message, "同一メッセージの連続投稿")
-
-
 async def apply_autorole(member: discord.Member) -> None:
     cfg = store.get(member.guild.id)
     role = member.guild.get_role(cfg["autorole"]) if cfg["autorole"] else None
@@ -382,8 +369,6 @@ async def apply_autorole(member: discord.Member) -> None:
             await member.add_roles(role, reason="AZQ BOT 自動ロール")
         except discord.HTTPException:
             pass
-
-
 async def send_welcome(member: discord.Member) -> None:
     guild = member.guild
     wc = store.get(guild.id)["welcome"]
@@ -392,18 +377,14 @@ async def send_welcome(member: discord.Member) -> None:
         return
     text = (wc["message"].replace("{user}", member.mention)
             .replace("{server}", guild.name).replace("{count}", str(guild.member_count)))
-    try:  # 設定文に @everyone 等が含まれていても本人以外には通知しない
+    try:
         await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[member]))
     except discord.HTTPException:
         pass
-
-
 @bot.event
 async def on_member_join(member: discord.Member):
     guild = member.guild
     cfg = store.get(guild.id)
-
-    # 認証が有効なら、認証完了までウェルカム/自動ロールを保留して未認証ロールを付与する
     gated = verify_active(cfg) and not member.bot
     if gated:
         v = cfg["verify"]
@@ -417,8 +398,7 @@ async def on_member_join(member: discord.Member):
         store.save()
     else:
         await apply_autorole(member)
-        await send_welcome(member)
-
+    await send_welcome(member)
     age_days = (discord.utils.utcnow() - member.created_at).days
     e = make_embed("📥 メンバー参加", f"{member.mention} (`{member.id}`)", GREEN)
     e.add_field(name="アカウント作成", value=discord.utils.format_dt(member.created_at, "R"))
@@ -428,8 +408,6 @@ async def on_member_join(member: discord.Member):
         e.add_field(name="⚠️ 新規アカウント", value=f"作成から{age_days}日", inline=False)
         e.color = YELLOW
     await send_log(guild, e)
-
-    # レイド検知(認証が有効なら自動で認証を強化)
     am = cfg["automod"]
     now = time.time()
     dq = join_times[guild.id]
@@ -448,14 +426,12 @@ async def on_member_join(member: discord.Member):
                 text += (f"\n🔐 認証を **{RAID_VERIFY_SECONDS // 60}分間** 自動で強化しました"
                          f"(画像認証 + アカウント作成{RAID_MIN_ACCOUNT_DAYS}日以上)。解除: `/verify raid enabled:False`")
             await send_log(guild, make_embed("🚨 レイドの疑い", text, RED))
-
-
 @bot.event
 async def on_member_remove(member: discord.Member):
     v = store.get(member.guild.id)["verify"]
     if v["pending"].pop(str(member.id), None) is not None:
         store.save()
-    for cid, info in list(store.get(member.guild.id)["ticket"]["open"].items()):  # チケット作成者の退出を通知
+    for cid, info in list(store.get(member.guild.id)["ticket"]["open"].items()):
         if info["owner"] == member.id and not info.get("closed"):
             tch = member.guild.get_channel(int(cid))
             if tch:
@@ -465,8 +441,6 @@ async def on_member_remove(member: discord.Member):
                     pass
     e = make_embed("📤 メンバー退出", f"{member} (`{member.id}`)", GRAY)
     await send_log(member.guild, e)
-
-
 @bot.event
 async def on_message_delete(message: discord.Message):
     if message.author.bot or not message.guild or not message.content:
@@ -476,8 +450,6 @@ async def on_message_delete(message: discord.Message):
     e.add_field(name="チャンネル", value=message.channel.mention)
     e.add_field(name="内容", value=message.content[:1000], inline=False)
     await send_log(message.guild, e)
-
-
 @bot.event
 async def on_message_edit(before: discord.Message, after: discord.Message):
     if before.author.bot or not before.guild or before.content == after.content:
@@ -489,13 +461,76 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     e.add_field(name="編集後", value=(after.content or "(なし)")[:500], inline=False)
     e.add_field(name="リンク", value=f"[ジャンプ]({after.jump_url})", inline=False)
     await send_log(before.guild, e)
-
-
 @bot.event
 async def on_ready():
     log.info("ログイン: %s (サーバー数: %d)", bot.user, len(bot.guilds))
-
-
+    if getattr(bot, "_restored", False):
+        return
+    bot._restored = True
+    if not store.existed and bot.guilds:
+        log.warning("設定ファイル %s がありません。初回起動か、再起動でデータが初期化された可能性があります。"
+                    "DATA_DIR に永続ボリュームを指定してください。", store.path)
+    try:
+        await restore_panels()
+    except Exception:
+        log.exception("パネルの復元チェックでエラー")
+async def _panel_gone(guild: discord.Guild, channel_id, message_id) -> Optional[discord.TextChannel]:
+    ch = guild.get_channel(channel_id) if channel_id else None
+    if not isinstance(ch, discord.TextChannel) or not message_id:
+        return None
+    try:
+        await ch.fetch_message(int(message_id))
+    except discord.NotFound:
+        return ch
+    except discord.HTTPException:
+        pass
+    return None
+async def restore_panels() -> None:
+    for guild in list(bot.guilds):
+        cfg = store.data.get(str(guild.id))
+        if not cfg or guild.unavailable:
+            continue
+        v, tc = cfg["verify"], cfg["ticket"]
+        jobs = []
+        if verify_active(cfg):
+            jobs.append(("認証", v, post_panel))
+        if tc["enabled"]:
+            jobs.append(("チケット", tc, post_ticket_panel))
+        for name, c, poster in jobs:
+            ch = await _panel_gone(guild, c["panel_channel"], c["panel_message"])
+            if ch and _can_post(ch, guild.me):
+                try:
+                    await poster(guild, ch)
+                    log.info("%sパネルを自動復元しました guild=%s", name, guild.id)
+                except discord.HTTPException:
+                    log.warning("%sパネルの復元に失敗 guild=%s", name, guild.id)
+        panels = cfg["rolepanel"]["panels"]
+        for mid, p in list(panels.items()):
+            ch = await _panel_gone(guild, p["channel"], mid)
+            if ch and _can_post(ch, guild.me):
+                try:
+                    msg = await ch.send(embed=rp_embed(p), view=RolePanelView(p["roles"]))
+                except discord.HTTPException:
+                    log.warning("ロールパネルの復元に失敗 guild=%s", guild.id)
+                    continue
+                panels[str(msg.id)] = panels.pop(mid)
+                store.save()
+                bot.add_view(RolePanelView(p["roles"]), message_id=msg.id)
+                log.info("ロールパネルを自動復元しました guild=%s", guild.id)
+@bot.event
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+    cfg = store.data.get(str(payload.guild_id)) if payload.guild_id else None
+    if not cfg:
+        return
+    changed = False
+    if cfg["rolepanel"]["panels"].pop(str(payload.message_id), None) is not None:
+        changed = True
+    for c in (cfg["verify"], cfg["ticket"]):
+        if c["panel_message"] == payload.message_id:
+            c["panel_message"] = None
+            changed = True
+    if changed:
+        store.save()
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     log.info("サーバーに参加: %s (%s) メンバー数=%s", guild.name, guild.id, guild.member_count)
@@ -518,7 +553,6 @@ async def on_guild_join(guild: discord.Guild):
     )
     view = discord.ui.View()
     view.add_item(discord.ui.Button(label="サポートサーバーに参加", emoji="📢", style=discord.ButtonStyle.link, url=SUPPORT_URL))
-    # 送信先: システムチャンネル → 送信できる最初のテキストチャンネル → サーバー所有者へDM
     me = guild.me
     targets = []
     if guild.system_channel:
@@ -537,13 +571,9 @@ async def on_guild_join(guild: discord.Guild):
         await owner.send(content=f"**{guild.name}** にAZQ BOTが参加しました。", embed=e, view=view)
     except discord.HTTPException:
         log.info("参加メッセージを送信できませんでした guild=%s", guild.id)
-
-
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
     log.info("サーバーから退出: %s (%s)", guild.name, guild.id)
-
-
 @tasks.loop(minutes=10)
 async def cleanup_trackers():
     now = time.time()
@@ -564,8 +594,6 @@ async def cleanup_trackers():
         raid_until.pop(k, None)
     for k in [k for k, t in ticket_last.items() if now - t > TICKET_COOLDOWN]:
         ticket_last.pop(k, None)
-
-
 async def measure_activity(guild: discord.Guild, hours: int = 24, per_channel: int = 500, max_channels: int = 50):
     since = discord.utils.utcnow() - timedelta(hours=hours)
     total, authors, per = 0, set(), {}
@@ -588,8 +616,6 @@ async def measure_activity(guild: discord.Guild, hours: int = 24, per_channel: i
             total += n
     humans = sum(1 for m in guild.members if not m.bot)
     return total, len(authors), humans, per
-
-
 def kaso_level(total: int, hours: int, ratio: float):
     per_day = total * 24 / hours
     if per_day >= 200 or ratio >= 0.25:
@@ -601,8 +627,6 @@ def kaso_level(total: int, hours: int, ratio: float):
     if per_day >= 5:
         return "😴 やや過疎", YELLOW, "イベントや雑談チャンネルでテコ入れしましょう。"
     return "💀 過疎", RED, "ほぼ動いていません。企画・告知・ロール通知などで人を呼び戻しましょう。"
-
-
 @bot.tree.command(name="kaso", description="サーバーの過疎度を診断します")
 @app_commands.describe(hours="集計する時間(1〜168、既定24)")
 @app_commands.guild_only()
@@ -621,8 +645,6 @@ async def kaso(interaction: discord.Interaction, hours: app_commands.Range[int, 
         e.add_field(name="盛り上がっているチャンネル", value="\n".join(f"{c.mention}: {n:,}" for c, n in top), inline=False)
     e.set_footer(text="※ BOTが閲覧可能なチャンネルのみ・1chあたり最大500件まで集計 / BOT発言は除外")
     await interaction.followup.send(embed=e)
-
-
 @tasks.loop(hours=6)
 async def kaso_watch():
     for guild in bot.guilds:
@@ -642,13 +664,9 @@ async def kaso_watch():
                 await ch.send(embed=e)
             except discord.HTTPException:
                 pass
-
-
 @kaso_watch.before_loop
 async def _before_kaso_watch():
     await bot.wait_until_ready()
-
-
 async def build_nounai(name: str):
     name = name.strip()[:30]
     url = f"https://maker.usoko.net/nounai/img/{quote(name, safe='')}.gif"
@@ -664,8 +682,6 @@ async def build_nounai(name: str):
         log.warning("脳内メーカー画像の取得に失敗。URL埋め込みにフォールバックします", exc_info=True)
     e.set_image(url=url)
     return e, None
-
-
 @bot.tree.command(name="nounai", description="脳内メーカーで脳内を覗きます")
 @app_commands.describe(name="診断する名前(省略すると自分)", user="ユーザーを指定する場合")
 async def nounai(interaction: discord.Interaction, name: Optional[str] = None, user: Optional[discord.User] = None):
@@ -676,8 +692,6 @@ async def nounai(interaction: discord.Interaction, name: Optional[str] = None, u
         await interaction.followup.send(embed=embed, file=file)
     else:
         await interaction.followup.send(embed=embed)
-
-
 @bot.tree.context_menu(name="脳内メーカー")
 async def nounai_ctx(interaction: discord.Interaction, member: discord.Member):
     await interaction.response.defer()
@@ -686,41 +700,35 @@ async def nounai_ctx(interaction: discord.Interaction, member: discord.Member):
         await interaction.followup.send(embed=embed, file=file)
     else:
         await interaction.followup.send(embed=embed)
-
-
-# 名言画像のデザインは参考画像(1200x630)をピクセル単位で実測して再現しています。
-# フォントは参考画像と同じ M PLUS 1p Regular(初回のみ自動ダウンロードして data/ に保存)。
 FONT_SOURCES = [
     ("MPLUS1p-Regular.ttf", "https://raw.githubusercontent.com/google/fonts/main/ofl/mplus1p/MPLUS1p-Regular.ttf"),
     ("NotoSansJP-Regular.otf", "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf"),
 ]
-FONT_CANDIDATES = [  # 上のダウンロードが全部失敗したときの予備
+FONT_CANDIDATES = [
     r"C:\Windows\Fonts\YuGothR.ttc", r"C:\Windows\Fonts\meiryo.ttc", r"C:\Windows\Fonts\msgothic.ttc",
     "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
 ]
-KINSOKU = set("、。，．・」』）】〉》〕｝！？!?,.)]}:;…ー々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")  # 行頭禁則(ぶら下げ)
-OPENERS = set("「『（【〈《〔｛([{")                                                         # 行末禁則(次の行へ送る)
-
+KINSOKU = set("、。，．・」』）】〉》〕｝！？!?,.)]}:;…ー々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")
+OPENERS = set("「『（【〈《〔｛([{")
 MG_W, MG_H = 1200, 630
-MG_CX = 855                  # テキスト領域の中心x
-MG_AREA_W = 590              # 自動改行する幅
-MG_TITLE_MAX, MG_TITLE_MIN = 60, 20   # 名言の文字サイズ(長文は自動で小さくなる)
+MG_CX = 855
+MG_AREA_W = 590
+MG_TITLE_MAX, MG_TITLE_MIN = 60, 20
 MG_AUTHOR_SIZE, MG_HANDLE_SIZE = 35, 20
-MG_SHEAR = 0.17              # 作者行の斜体(擬似オブリーク)
+MG_SHEAR = 0.17
 MG_AUTHOR_DX = 1.5
-MG_TITLE_BASE = 306.0        # 1行のときの名言の基準線y
-MG_GAP_AUTHOR = 66.0         # 名言の最終行 → 作者行 の基準線間隔
-MG_GAP_HANDLE = 30.0         # 作者行 → @ユーザー名 の基準線間隔
-MG_TOP_RATIO = 49 / 60       # 基準線からインク上端まで(名言サイズ比)
+MG_TITLE_BASE = 306.0
+MG_GAP_AUTHOR = 66.0
+MG_GAP_HANDLE = 30.0
+MG_TOP_RATIO = 49 / 60
 MG_BOTTOM_OFF = 2
-MG_LINE_RATIO = 1.35         # 複数行のときの行間
-MG_FADE = (220, 570)         # アバターが黒へ溶けていく範囲(x)
-MG_BLOCK_MAX = 520           # テキストブロックの最大高さ
+MG_LINE_RATIO = 1.35
+MG_FADE = (220, 570)
+MG_BLOCK_MAX = 520
 _font_path: Optional[str] = None
-
-
 def _font_ok(path: str) -> bool:
     if not os.path.exists(path):
         return False
@@ -729,10 +737,7 @@ def _font_ok(path: str) -> bool:
         return True
     except OSError:
         return False
-
-
 async def ensure_font() -> str:
-    """名言画像用フォントを用意する。無ければ自動ダウンロード、全部失敗ならOS標準の日本語フォントを使う"""
     global _font_path
     if _font_path:
         return _font_path
@@ -760,10 +765,7 @@ async def ensure_font() -> str:
             _font_path = path
             return path
     raise RuntimeError("日本語フォントが見つかりません")
-
-
 def _wrap(text: str, font, max_w: int) -> list:
-    """幅に合わせて自動改行。句読点の行頭/開き括弧の行末を避け、英単語は途中で切らない"""
     lines = []
     for para in text.split("\n"):
         cur = ""
@@ -781,7 +783,7 @@ def _wrap(text: str, font, max_w: int) -> list:
             cur = tail
             if tok.isspace():
                 continue
-            if font.getlength(cur + tok) > max_w:  # 1語が長すぎる場合は文字単位で分割
+            if font.getlength(cur + tok) > max_w:
                 for ch in tok:
                     if cur and font.getlength(cur + ch) > max_w and ch not in KINSOKU:
                         lines.append(cur)
@@ -792,18 +794,13 @@ def _wrap(text: str, font, max_w: int) -> list:
                 cur += tok
         lines.append(cur)
     return lines
-
-
 def _ellipsize(text: str, font, max_w: int) -> str:
     if font.getlength(text) <= max_w:
         return text
     while text and font.getlength(text + "…") > max_w:
         text = text[:-1]
     return text + "…"
-
-
 def _draw_oblique(img, text: str, font, cx: float, baseline: float, fill, shear: float) -> None:
-    """日本語フォントには斜体が無いので、基準線を軸に傾けて擬似斜体にする"""
     pad = int(font.size * 0.6) + 4
     w, h = int(font.getlength(text)) + pad * 2, font.size * 2
     base = int(font.size * 1.3)
@@ -813,11 +810,9 @@ def _draw_oblique(img, text: str, font, cx: float, baseline: float, fill, shear:
                             Image.Resampling.BICUBIC)
     x = round(cx - font.getlength(text) / 2) - pad
     img.paste(Image.new("RGB", (w, h), fill), (x, round(baseline) - base), layer)
-
-
 def draw_quote_text(img, text: str, author: str, handle: str, fg, sub, font_path: str) -> None:
     draw = ImageDraw.Draw(img)
-    for size in range(MG_TITLE_MAX, MG_TITLE_MIN - 1, -2):  # 収まる最大サイズを探す
+    for size in range(MG_TITLE_MAX, MG_TITLE_MIN - 1, -2):
         font = ImageFont.truetype(font_path, size)
         lines = _wrap(text, font, MG_AREA_W)
         lh = round(size * MG_LINE_RATIO)
@@ -832,7 +827,6 @@ def draw_quote_text(img, text: str, author: str, handle: str, fg, sub, font_path
     n = len(lines)
     top_off = MG_TOP_RATIO * size
     block_h = top_off + (n - 1) * lh + MG_GAP_AUTHOR + MG_GAP_HANDLE + MG_BOTTOM_OFF
-    # 1行のとき名言の基準線が MG_TITLE_BASE になるよう、同じ中心から上下に広げる
     center = (MG_TITLE_BASE - MG_TOP_RATIO * MG_TITLE_MAX
               + MG_TITLE_BASE + MG_GAP_AUTHOR + MG_GAP_HANDLE + MG_BOTTOM_OFF) / 2
     base = center - block_h / 2 + top_off
@@ -845,14 +839,11 @@ def draw_quote_text(img, text: str, author: str, handle: str, fg, sub, font_path
     _draw_oblique(img, _ellipsize("- " + author, af, MG_AREA_W), af, MG_CX + MG_AUTHOR_DX, a_base, fg, MG_SHEAR)
     handle = _ellipsize(handle, hf, MG_AREA_W)
     draw.text((MG_CX - hf.getlength(handle) / 2, h_base), handle, font=hf, fill=sub, anchor="ls")
-
-
 def render_meigen(avatar_bytes: bytes, text: str, author: str, handle: str, style: str, color: bool, font_path: str) -> io.BytesIO:
     dark = style == "black"
     bg = (0, 0, 0) if dark else (245, 245, 245)
     fg = (250, 250, 250) if dark else (10, 10, 10)
     sub = (70, 70, 70) if dark else (185, 185, 185)
-
     img = Image.new("RGB", (MG_W, MG_H), bg)
     av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     flat = Image.new("RGBA", av.size, bg + (255,))
@@ -860,33 +851,94 @@ def render_meigen(avatar_bytes: bytes, text: str, author: str, handle: str, styl
     av = ImageOps.fit(flat.convert("RGB"), (MG_H, MG_H), Image.Resampling.LANCZOS)
     if not color:
         av = ImageOps.grayscale(av).convert("RGB")
-    f0, f1 = MG_FADE  # 左→右へ滑らか(smoothstep)に背景色へ溶かす
+    f0, f1 = MG_FADE
     mask = Image.new("L", (MG_H, MG_H), 0)
     md = ImageDraw.Draw(mask)
     for x in range(MG_H):
         t = min(1.0, max(0.0, (x - f0) / (f1 - f0)))
         md.line([(x, 0), (x, MG_H)], fill=round(255 * (1 - t * t * (3 - 2 * t))))
     img.paste(av, (0, 0), mask)
-
     draw_quote_text(img, text, author, handle, fg, sub, font_path)
-
     buf = io.BytesIO()
     img.save(buf, "PNG")
     buf.seek(0)
     return buf
-
-
 async def make_meigen_file(user: discord.abc.User, text: str, author: Optional[str], style: str, color: bool) -> discord.File:
     font_path = await ensure_font()
     avatar = await user.display_avatar.replace(size=1024, format="png").read()
     buf = await asyncio.to_thread(render_meigen, avatar, text, author or user.display_name,
                                   f"@{user.name}", style, color, font_path)
     return discord.File(buf, filename="meigen.png")
-
-
+MEIGEN_ASK_COOLDOWN = 24 * 3600
+def meigen_pref_embed(state: Optional[str]) -> discord.Embed:
+    label = {"allow": "✅ 許可している", "deny": "🚫 許可しない"}.get(state, "❓ 未設定(使われそうになったときにDMで確認します)")
+    e = make_embed("🖼️ 名言画像への使用設定", color=BLUE)
+    e.description = ("他の人が `/meigen` や「名言画像にする」で、**あなたのアイコン・名前**を使った名言画像を作ってよいかを選べます。\n"
+                     "自分自身の名言画像を作ることは、この設定に関係なくできます。")
+    e.add_field(name="現在の設定", value=label, inline=False)
+    e.set_footer(text="このメッセージのボタンから、いつでも変更できます。(/meigenprivacy でも変更できます)")
+    return e
+class MeigenConsentView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    async def _set(self, interaction: discord.Interaction, value: Optional[str]):
+        rec = user_prefs.rec(interaction.user.id)
+        if value:
+            rec["meigen"] = value
+        else:
+            rec.pop("meigen", None)
+        user_prefs.save()
+        await interaction.response.edit_message(embed=meigen_pref_embed(value), view=MeigenConsentView())
+    @discord.ui.button(label="許可する", emoji="✅", style=discord.ButtonStyle.success, custom_id="azq:mg:allow")
+    async def allow(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._set(interaction, "allow")
+    @discord.ui.button(label="許可しない", emoji="🚫", style=discord.ButtonStyle.danger, custom_id="azq:mg:deny")
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._set(interaction, "deny")
+    @discord.ui.button(label="未設定に戻す", style=discord.ButtonStyle.secondary, custom_id="azq:mg:reset")
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._set(interaction, None)
+async def meigen_gate(interaction: discord.Interaction, target: discord.abc.User) -> bool:
+    if interaction.guild and not store.get(interaction.guild.id)["meigen"]["enabled"]:
+        await interaction.response.send_message("🚫 このサーバーでは、管理者により名言画像が無効になっています。", ephemeral=True)
+        return False
+    if target.id == interaction.user.id or target.bot:
+        return True
+    rec = user_prefs.rec(target.id)
+    pref = rec.get("meigen")
+    if pref == "allow":
+        return True
+    if pref == "deny":
+        await interaction.response.send_message("🚫 このユーザーは、自分のアイコン・名前を名言画像に使うことを許可していません。", ephemeral=True)
+        return False
+    if time.time() - rec.get("asked", 0) < MEIGEN_ASK_COOLDOWN:
+        await interaction.response.send_message("⏳ このユーザーにはすでにDMで確認しています。返答があるまでお待ちください。", ephemeral=True)
+        return False
+    rec["asked"] = time.time()
+    user_prefs.save()
+    await interaction.response.send_message("📨 このユーザーにDMで確認しています...", ephemeral=True)
+    e = make_embed("🖼️ 名言画像への使用の確認", color=BLUE)
+    where = f"サーバー「{interaction.guild.name}」で" if interaction.guild else ""
+    e.description = (f"**{interaction.user}** さんが{where}、あなたのアイコン・名前を使った名言画像を作ろうとしました。\n\n"
+                     "今後、他の人があなたのアイコン・名前を使って名言画像を作ることを許可しますか?\n"
+                     "下のボタンで選んでください。選ぶまでは作成されません。")
+    e.set_footer(text="あとから /meigenprivacy でも変更できます。心当たりがなければ「許可しない」を選んでください。")
+    try:
+        await target.send(embed=e, view=MeigenConsentView())
+        await interaction.edit_original_response(content="📨 このユーザーにDMで確認しました。許可されたら、もう一度実行してください。")
+    except discord.HTTPException:
+        rec["asked"] = 0
+        user_prefs.save()
+        await interaction.edit_original_response(
+            content="⚠️ DMを送れなかったため、本人の許可を確認できません。本人に `/meigenprivacy` で許可してもらってください。")
+    return False
+@bot.tree.command(name="meigenprivacy", description="他の人があなたのアイコン・名前で名言画像を作ってよいかを設定します")
+async def meigen_privacy(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=meigen_pref_embed(user_prefs.rec(interaction.user.id).get("meigen")),
+                                            view=MeigenConsentView(), ephemeral=True)
 @bot.tree.command(name="meigen", description="名言画像を作ります")
 @app_commands.describe(
-    text="名言の内容(改行は \\n と入力)", user="発言者のアイコンを使うユーザー(省略すると自分)",
+    text="名言の内容(改行は \\n と入力)", user="発言者のアイコンを使うユーザー(省略すると自分。他の人は本人の許可が必要)",
     author="表示する名前(省略するとユーザー名)", style="背景の色", color="アイコンをカラーにする(OFFでモノクロ)",
 )
 @app_commands.choices(style=[
@@ -897,21 +949,24 @@ async def make_meigen_file(user: discord.abc.User, text: str, author: Optional[s
 async def meigen(interaction: discord.Interaction, text: app_commands.Range[str, 1, 200],
                  user: Optional[discord.User] = None, author: Optional[app_commands.Range[str, 1, 30]] = None,
                  style: Optional[app_commands.Choice[str]] = None, color: bool = True):
+    target = user or interaction.user
+    if not await meigen_gate(interaction, target):
+        return
     await interaction.response.defer()
     try:
-        file = await make_meigen_file(user or interaction.user, text.replace("\\n", "\n"), author,
+        file = await make_meigen_file(target, text.replace("\\n", "\n"), author,
                                       style.value if style else "black", color)
     except Exception:
         log.exception("名言画像の生成に失敗")
         return await interaction.followup.send("⚠️ 画像の生成に失敗しました。日本語フォントを取得できなかった可能性があります。")
     await interaction.followup.send(file=file)
-
-
 @bot.tree.context_menu(name="名言画像にする")
 async def meigen_ctx(interaction: discord.Interaction, message: discord.Message):
     text = message.clean_content.strip()
     if not text:
         return await interaction.response.send_message("❌ テキストのあるメッセージで使ってください。", ephemeral=True)
+    if not await meigen_gate(interaction, message.author):
+        return
     await interaction.response.defer()
     try:
         file = await make_meigen_file(message.author, text[:200], None, "black", True)
@@ -919,8 +974,6 @@ async def meigen_ctx(interaction: discord.Interaction, message: discord.Message)
         log.exception("名言画像の生成に失敗")
         return await interaction.followup.send("⚠️ 画像の生成に失敗しました。日本語フォントを取得できなかった可能性があります。")
     await interaction.followup.send(file=file)
-
-
 async def is_public_host(host: str) -> bool:
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, None)
@@ -931,8 +984,6 @@ async def is_public_host(host: str) -> bool:
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
             return False
     return True
-
-
 @bot.tree.command(name="ping", description="BOTの応答速度、またはWebサイトのpingを測定します")
 @app_commands.describe(target="Webサイトのドメイン/URL(省略するとBOTの速度)")
 async def ping(interaction: discord.Interaction, target: Optional[str] = None):
@@ -952,7 +1003,6 @@ async def ping(interaction: discord.Interaction, target: Optional[str] = None):
         e.add_field(name="サーバー数", value=str(len(bot.guilds)))
         await interaction.edit_original_response(content=None, embed=e)
         return
-
     await interaction.response.defer()
     url = target if re.match(r"^https?://", target, re.I) else f"https://{target}"
     parsed = urlparse(url)
@@ -972,8 +1022,6 @@ async def ping(interaction: discord.Interaction, target: Optional[str] = None):
     except aiohttp.ClientError as err:
         e = make_embed(f"🌐 ping: {parsed.hostname}", f"❌ 接続エラー: {type(err).__name__}", RED)
     await interaction.followup.send(embed=e)
-
-
 @bot.tree.command(name="kick", description="メンバーをキックします")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -986,8 +1034,6 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await member.kick(reason=f"{interaction.user}: {reason}")
     await interaction.response.send_message(f"👢 {member} をキックしました。")
     await send_log(interaction.guild, make_embed("👢 Kick", f"{member} (`{member.id}`)\n実行者: {interaction.user}\n理由: {reason or 'なし'}", YELLOW))
-
-
 @bot.tree.command(name="ban", description="メンバーをBANします")
 @app_commands.describe(delete_days="過去何日分のメッセージを削除するか(0〜7)")
 @app_commands.default_permissions(administrator=True)
@@ -1002,8 +1048,6 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
     await member.ban(reason=f"{interaction.user}: {reason}", delete_message_seconds=delete_days * 86400)
     await interaction.response.send_message(f"🔨 {member} をBANしました。")
     await send_log(interaction.guild, make_embed("🔨 Ban", f"{member} (`{member.id}`)\n実行者: {interaction.user}\n理由: {reason or 'なし'}", RED))
-
-
 @bot.tree.command(name="unban", description="ユーザーIDでBANを解除します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1017,8 +1061,6 @@ async def unban(interaction: discord.Interaction, user_id: str):
         return await interaction.response.send_message("❌ そのユーザーはBANされていません(IDを確認してください)。", ephemeral=True)
     await interaction.response.send_message(f"✅ {user} のBANを解除しました。")
     await send_log(interaction.guild, make_embed("✅ Unban", f"{user} (`{user.id}`)\n実行者: {interaction.user}", GREEN))
-
-
 @bot.tree.command(name="timeout", description="メンバーをタイムアウト(発言禁止)します")
 @app_commands.describe(minutes="分(1〜40320 = 28日)")
 @app_commands.default_permissions(administrator=True)
@@ -1032,8 +1074,6 @@ async def timeout_cmd(interaction: discord.Interaction, member: discord.Member,
     await member.timeout(timedelta(minutes=minutes), reason=f"{interaction.user}: {reason}")
     await interaction.response.send_message(f"🔇 {member.mention} を {minutes}分 タイムアウトしました。")
     await send_log(interaction.guild, make_embed("🔇 Timeout", f"{member} (`{member.id}`) {minutes}分\n実行者: {interaction.user}\n理由: {reason or 'なし'}", YELLOW))
-
-
 @bot.tree.command(name="untimeout", description="タイムアウトを解除します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1042,8 +1082,6 @@ async def timeout_cmd(interaction: discord.Interaction, member: discord.Member,
 async def untimeout(interaction: discord.Interaction, member: discord.Member):
     await member.timeout(None, reason=f"{interaction.user}")
     await interaction.response.send_message(f"🔊 {member.mention} のタイムアウトを解除しました。")
-
-
 @bot.tree.command(name="warn", description="メンバーに警告を与えます(規定回数で自動タイムアウト)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1065,8 +1103,6 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
     await try_dm(member, f"**{interaction.guild.name}** で警告を受けました。\n理由: {reason}")
     await interaction.response.send_message(msg)
     await send_log(interaction.guild, make_embed("⚠️ Warn", f"{member} (`{member.id}`)\n実行者: {interaction.user}\n理由: {reason}", YELLOW))
-
-
 @bot.tree.command(name="warnings", description="メンバーの警告履歴を表示します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1075,11 +1111,9 @@ async def warnings(interaction: discord.Interaction, member: discord.Member):
     lst = store.get(interaction.guild.id)["warns"].get(str(member.id), [])
     if not lst:
         return await interaction.response.send_message(f"{member} に警告はありません。", ephemeral=True)
-    start = max(0, len(lst) - 15)  # 番号は /unwarn で使う実際の通し番号
+    start = max(0, len(lst) - 15)
     lines = [f"`{i}.` <t:{w['time']}:d> {w['reason']} (by <@{w['mod']}>)" for i, w in enumerate(lst[start:], start + 1)]
     await interaction.response.send_message(embed=make_embed(f"⚠️ {member} の警告 ({len(lst)}件)", "\n".join(lines), YELLOW), ephemeral=True)
-
-
 @bot.tree.command(name="clearwarns", description="メンバーの警告をすべて消去します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1088,8 +1122,6 @@ async def clearwarns(interaction: discord.Interaction, member: discord.Member):
     store.get(interaction.guild.id)["warns"].pop(str(member.id), None)
     store.save()
     await interaction.response.send_message(f"🧹 {member} の警告を消去しました。")
-
-
 @bot.tree.command(name="unwarn", description="警告を1件取り消します(番号は /warnings で確認)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1102,11 +1134,9 @@ async def unwarn(interaction: discord.Interaction, member: discord.Member, numbe
     if not lst:
         store.get(interaction.guild.id)["warns"].pop(str(member.id), None)
     store.save()
-    await interaction.response.send_message(f"✅ {member.mention} の警告 #{number} を取り消しました。(残り {len(lst)}件)",
+    await interaction.response.send_message(f"✅ {member.mention} の警告
                                             allowed_mentions=discord.AllowedMentions.none())
     await send_log(interaction.guild, make_embed("↩️ Unwarn", f"{member} (`{member.id}`)\n実行者: {interaction.user}\n取消した警告: {removed['reason']}", GREEN))
-
-
 @bot.tree.command(name="purge", description="メッセージを一括削除します")
 @app_commands.describe(amount="削除件数(1〜100)", member="このメンバーのメッセージのみ削除")
 @app_commands.default_permissions(administrator=True)
@@ -1119,8 +1149,6 @@ async def purge(interaction: discord.Interaction, amount: app_commands.Range[int
     deleted = await interaction.channel.purge(limit=amount, check=check)
     await interaction.followup.send(f"🧹 {len(deleted)}件削除しました。", ephemeral=True)
     await send_log(interaction.guild, make_embed("🧹 Purge", f"{interaction.channel.mention} で {len(deleted)}件削除\n実行者: {interaction.user}", GRAY))
-
-
 @bot.tree.command(name="slowmode", description="チャンネルの低速モードを設定します(0で解除)")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1129,8 +1157,6 @@ async def purge(interaction: discord.Interaction, amount: app_commands.Range[int
 async def slowmode(interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600]):
     await interaction.channel.edit(slowmode_delay=seconds)
     await interaction.response.send_message("🐢 低速モードを解除しました。" if seconds == 0 else f"🐢 低速モードを {seconds}秒 に設定しました。")
-
-
 @bot.tree.command(name="lock", description="このチャンネルを@everyoneの発言禁止にします")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1142,8 +1168,6 @@ async def lock(interaction: discord.Interaction):
     ow.send_messages = False
     await ch.set_permissions(role, overwrite=ow, reason=f"lock by {interaction.user}")
     await interaction.response.send_message("🔒 チャンネルをロックしました。")
-
-
 @bot.tree.command(name="unlock", description="チャンネルのロックを解除します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1155,8 +1179,6 @@ async def unlock(interaction: discord.Interaction):
     ow.send_messages = None
     await ch.set_permissions(role, overwrite=ow, reason=f"unlock by {interaction.user}")
     await interaction.response.send_message("🔓 ロックを解除しました。")
-
-
 async def _role_change(interaction: discord.Interaction, member: discord.Member, role: discord.Role, add: bool):
     g = interaction.guild
     if role >= g.me.top_role or role.managed or role.is_default():
@@ -1169,8 +1191,6 @@ async def _role_change(interaction: discord.Interaction, member: discord.Member,
         await member.remove_roles(role, reason=f"{interaction.user}")
     await interaction.response.send_message(f"{'➕' if add else '➖'} {member.mention} に {role.mention} を{'付与' if add else '剥奪'}しました。",
                                             allowed_mentions=discord.AllowedMentions.none())
-
-
 @bot.tree.command(name="role_add", description="メンバーにロールを付与します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1178,8 +1198,6 @@ async def _role_change(interaction: discord.Interaction, member: discord.Member,
 @app_commands.guild_only()
 async def role_add(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     await _role_change(interaction, member, role, True)
-
-
 @bot.tree.command(name="role_remove", description="メンバーからロールを剥奪します")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
@@ -1187,8 +1205,6 @@ async def role_add(interaction: discord.Interaction, member: discord.Member, rol
 @app_commands.guild_only()
 async def role_remove(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     await _role_change(interaction, member, role, False)
-
-
 @bot.tree.command(name="userinfo", description="ユーザー情報を表示します")
 @app_commands.guild_only()
 async def userinfo(interaction: discord.Interaction, member: Optional[discord.Member] = None):
@@ -1202,8 +1218,6 @@ async def userinfo(interaction: discord.Interaction, member: Optional[discord.Me
     e.add_field(name=f"ロール ({len(roles)})", value=" ".join(roles[:15]) or "なし", inline=False)
     e.add_field(name="警告回数", value=str(len(store.get(interaction.guild.id)["warns"].get(str(m.id), []))))
     await interaction.response.send_message(embed=e)
-
-
 @bot.tree.command(name="serverinfo", description="サーバー情報を表示します")
 @app_commands.guild_only()
 async def serverinfo(interaction: discord.Interaction):
@@ -1219,29 +1233,18 @@ async def serverinfo(interaction: discord.Interaction):
     e.add_field(name="ロール数", value=str(len(g.roles)))
     e.add_field(name="ブースト", value=f"Lv{g.premium_tier} ({g.premium_subscription_count}件)")
     await interaction.response.send_message(embed=e)
-
-
 @bot.tree.command(name="avatar", description="アイコン画像を表示します")
 async def avatar(interaction: discord.Interaction, user: Optional[discord.User] = None):
     u = user or interaction.user
     e = make_embed(f"🖼️ {u} のアイコン")
     e.set_image(url=u.display_avatar.replace(size=1024).url)
     await interaction.response.send_message(embed=e)
-
-
-# =====================================================================
-# 認証(Verify)機能
-#   - 方式: ボタン / 計算 / 画像CAPTCHA
-#   - 未認証ロール(任意)・アカウント年齢制限・試行回数制限とロックアウト
-#   - 時間内に認証しなかった人の自動キック・レイド検知時の自動強化
-# =====================================================================
 VERIFY_MODES = {"button": "ボタン認証", "math": "計算認証", "image": "画像認証(CAPTCHA)"}
 VIOLATION_MODES = {"deny": "拒否のみ(一時ロック)", "kick": "キック"}
-CAPTCHA_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # 0/O, 1/I/L などの紛らわしい文字を除外
-CHALLENGE_TTL = 180            # 問題の有効秒数
-RAID_VERIFY_SECONDS = 600      # レイド検知時に認証を強化する秒数
-RAID_MIN_ACCOUNT_DAYS = 7      # レイド警戒中の最低アカウント年齢(日)
-# 認証ロールに付けてはいけない権限(設定ミスによる権限昇格の防止)
+CAPTCHA_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+CHALLENGE_TTL = 180
+RAID_VERIFY_SECONDS = 600
+RAID_MIN_ACCOUNT_DAYS = 7
 DANGEROUS_PERMS = (
     "administrator", "manage_guild", "manage_roles", "manage_channels", "manage_messages",
     "manage_webhooks", "kick_members", "ban_members", "moderate_members", "mention_everyone",
@@ -1249,33 +1252,24 @@ DANGEROUS_PERMS = (
 )
 MODE_CHOICES = [app_commands.Choice(name=n, value=k) for k, n in VERIFY_MODES.items()]
 VIOLATION_CHOICES = [app_commands.Choice(name=n, value=k) for k, n in VIOLATION_MODES.items()]
-
-verify_challenges: dict = {}   # (guild,user) -> (正解, 期限)
-verify_fails: dict = {}        # (guild,user) -> [失敗回数, 最初の失敗時刻]
-verify_lock: dict = {}         # (guild,user) -> ロック解除時刻
-verify_last: dict = {}         # (guild,user) -> 最後にボタンを押した時刻
-raid_until: dict = {}          # guild -> レイド警戒の終了時刻
-
+verify_challenges: dict = {}
+verify_fails: dict = {}
+verify_lock: dict = {}
+verify_last: dict = {}
+raid_until: dict = {}
 verify_group = app_commands.Group(
     name="verify", description="メンバー認証の設定・管理",
     default_permissions=discord.Permissions(administrator=True), guild_only=True,
 )
-
-
 def verify_active(cfg: dict) -> bool:
     v = cfg["verify"]
     return bool(v["enabled"] and v["role"])
-
-
 def verify_effective(guild_id: int):
-    # 現在有効な (方式, 最低アカウント年齢日数, レイド警戒中か) を返す
     v = store.get(guild_id)["verify"]
     raid = raid_until.get(guild_id, 0) > time.time()
     if raid:
         return "image", max(v["min_account_days"], RAID_MIN_ACCOUNT_DAYS), True
     return v["mode"], v["min_account_days"], False
-
-
 def role_problem(interaction: discord.Interaction, role: discord.Role, check_dangerous: bool = False) -> Optional[str]:
     g = interaction.guild
     if role.is_default():
@@ -1291,15 +1285,11 @@ def role_problem(interaction: discord.Interaction, role: discord.Role, check_dan
         if bad:
             return "認証ロールに危険な権限が含まれています(誰でも認証すれば取得できるため): " + ", ".join(bad)
     return None
-
-
 async def _eph(interaction: discord.Interaction, text: str) -> None:
     if interaction.response.is_done():
         await interaction.followup.send(text, ephemeral=True)
     else:
         await interaction.response.send_message(text, ephemeral=True)
-
-
 def gen_math():
     op = secrets.choice(("+", "-", "×"))
     if op == "×":
@@ -1309,8 +1299,6 @@ def gen_math():
     if op == "-":
         return f"{a} - {b} = ?", str(a - b)
     return f"{a} + {b} = ?", str(a + b)
-
-
 def render_captcha(code: str, font_path: Optional[str]) -> io.BytesIO:
     rnd = random.SystemRandom()
     W, H = 340, 120
@@ -1319,22 +1307,20 @@ def render_captcha(code: str, font_path: Optional[str]) -> io.BytesIO:
         font = ImageFont.truetype(font_path, 64) if font_path else ImageFont.load_default(size=64)
     except Exception:
         font = ImageFont.load_default()
-
     def noise_lines(n: int):
         d = ImageDraw.Draw(img)
         for _ in range(n):
             d.line([(rnd.randint(0, W), rnd.randint(0, H)), (rnd.randint(0, W), rnd.randint(0, H))],
                    fill=(rnd.randint(60, 190), rnd.randint(60, 190), rnd.randint(60, 190)), width=rnd.randint(1, 3))
-
     noise_lines(5)
     step = (W - 40) / len(code)
-    for i, ch in enumerate(code):  # 1文字ずつ回転・ずらして貼る
+    for i, ch in enumerate(code):
         layer = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
         d = ImageDraw.Draw(layer)
         color = (rnd.randint(0, 110), rnd.randint(0, 110), rnd.randint(0, 110), 255)
         try:
             d.text((48, 48), ch, font=font, fill=color, anchor="mm")
-        except ValueError:  # ビットマップフォント(anchor非対応)
+        except ValueError:
             d.text((24, 24), ch, font=font, fill=color)
         layer = layer.rotate(rnd.uniform(-30, 30), resample=Image.Resampling.BICUBIC)
         x = int(20 + step * i + step / 2 - 48 + rnd.randint(-4, 4))
@@ -1349,8 +1335,6 @@ def render_captcha(code: str, font_path: Optional[str]) -> io.BytesIO:
     img.save(buf, "PNG")
     buf.seek(0)
     return buf
-
-
 def register_fail(key) -> int:
     now = time.time()
     rec = verify_fails.get(key)
@@ -1359,8 +1343,6 @@ def register_fail(key) -> int:
     rec[0] += 1
     verify_fails[key] = rec
     return rec[0]
-
-
 async def kick_for_verify(member: discord.Member, reason: str) -> bool:
     if member.guild_permissions.administrator:
         return False
@@ -1373,10 +1355,7 @@ async def kick_for_verify(member: discord.Member, reason: str) -> bool:
     store.get(member.guild.id)["verify"]["pending"].pop(str(member.id), None)
     store.save()
     return True
-
-
 async def grant_verification(guild: discord.Guild, member: discord.Member, method: str) -> Optional[str]:
-    # 認証ロールを付与する。失敗時はユーザー向けのエラー文を返す
     v = store.get(guild.id)["verify"]
     role = guild.get_role(v["role"]) if v["role"] else None
     if not role:
@@ -1397,11 +1376,8 @@ async def grant_verification(guild: discord.Guild, member: discord.Member, metho
     v["stats"]["verified"] += 1
     store.save()
     await apply_autorole(member)
-    await send_welcome(member)
     await send_log(guild, make_embed("✅ 認証完了", f"{member.mention} (`{member.id}`)\n方式: {method}", GREEN))
     return None
-
-
 async def check_answer(interaction: discord.Interaction, given: str) -> None:
     await interaction.response.defer(ephemeral=True)
     guild, member = interaction.guild, interaction.user
@@ -1416,14 +1392,13 @@ async def check_answer(interaction: discord.Interaction, given: str) -> None:
     key, now = (guild.id, member.id), time.time()
     if verify_lock.get(key, 0) > now:
         return await interaction.followup.send(f"🚫 制限中です。<t:{int(verify_lock[key])}:R> に再試行できます。", ephemeral=True)
-    chall = verify_challenges.pop(key, None)  # 1回限り(使い回し・総当たり対策)
+    chall = verify_challenges.pop(key, None)
     if not chall or chall[1] < now:
         return await interaction.followup.send("⌛ 問題の有効期限が切れました。パネルのボタンをもう一度押してください。", ephemeral=True)
     answer = re.sub(r"\s+", "", given).upper()
     if secrets.compare_digest(answer.encode(), chall[0].encode()):
         err = await grant_verification(guild, member, "計算" if chall[0].isdigit() else "CAPTCHA")
         return await interaction.followup.send(err or "✅ 認証が完了しました!ようこそ!", ephemeral=True)
-
     count = register_fail(key)
     left = v["max_attempts"] - count
     v["stats"]["failed"] += 1
@@ -1441,31 +1416,22 @@ async def check_answer(interaction: discord.Interaction, given: str) -> None:
         await kick_for_verify(member, f"認証に{v['max_attempts']}回失敗")
     else:
         await interaction.followup.send(f"🚫 失敗が上限に達しました。{v['lockout_minutes']}分後に再試行できます。", ephemeral=True)
-
-
 class AnswerModal(discord.ui.Modal):
     def __init__(self, label: str):
         super().__init__(title="メンバー認証", timeout=CHALLENGE_TTL)
         self.answer = discord.ui.TextInput(label=label[:45], placeholder="答えを入力", min_length=1, max_length=12)
         self.add_item(self.answer)
-
     async def on_submit(self, interaction: discord.Interaction):
         await check_answer(interaction, self.answer.value)
-
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         log.exception("認証モーダルでエラー", exc_info=error)
         await _eph(interaction, "⚠️ エラーが発生しました。もう一度お試しください。")
-
-
 class CaptchaEntryView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=CHALLENGE_TTL)
-
     @discord.ui.button(label="コードを入力", emoji="⌨️", style=discord.ButtonStyle.primary)
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AnswerModal("画像の文字を入力"))
-
-
 async def verify_click(interaction: discord.Interaction) -> None:
     guild, member = interaction.guild, interaction.user
     if guild is None or not isinstance(member, discord.Member):
@@ -1482,7 +1448,6 @@ async def verify_click(interaction: discord.Interaction) -> None:
     if now - verify_last.get(key, 0) < 3:
         return await _eph(interaction, "⏳ 少し待ってからもう一度押してください。")
     verify_last[key] = now
-
     mode, min_days, raid = verify_effective(guild.id)
     age_days = (discord.utils.utcnow() - member.created_at).total_seconds() / 86400
     if age_days < min_days:
@@ -1495,7 +1460,6 @@ async def verify_click(interaction: discord.Interaction) -> None:
         if v["violation"] == "kick":
             await kick_for_verify(member, f"アカウント作成から{min_days}日未満")
         return
-
     if mode == "button":
         await interaction.response.defer(ephemeral=True)
         err = await grant_verification(guild, member, "ボタン")
@@ -1504,8 +1468,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
         question, answer = gen_math()
         verify_challenges[key] = (answer, now + CHALLENGE_TTL)
         return await interaction.response.send_modal(AnswerModal(question))
-
-    await interaction.response.defer(ephemeral=True)  # 画像CAPTCHA
+    await interaction.response.defer(ephemeral=True)
     code = "".join(secrets.choice(CAPTCHA_CHARS) for _ in range(5))
     try:
         font_path = await ensure_font()
@@ -1516,24 +1479,16 @@ async def verify_click(interaction: discord.Interaction) -> None:
     await interaction.followup.send(
         "🔐 画像の文字を入力してください。(大文字小文字は区別しません / 3分以内)" + ("\n⚠️ レイド警戒中のため画像認証です。" if raid else ""),
         file=discord.File(buf, filename="captcha.png"), view=CaptchaEntryView(), ephemeral=True)
-
-
 class VerifyPanelView(discord.ui.View):
-    # 再起動後も動く永続ビュー(custom_id固定)
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="認証する", emoji="✅", style=discord.ButtonStyle.success, custom_id="azq:verify:start")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         await verify_click(interaction)
-
-
 def panel_embed(v: dict) -> discord.Embed:
     e = make_embed(v["panel_title"], v["panel_text"], GREEN)
     e.set_footer(text=f"認証方式: {VERIFY_MODES.get(v['mode'], v['mode'])}")
     return e
-
-
 async def delete_panel(guild: discord.Guild) -> None:
     v = store.get(guild.id)["verify"]
     ch = guild.get_channel(v["panel_channel"]) if v["panel_channel"] else None
@@ -1543,8 +1498,6 @@ async def delete_panel(guild: discord.Guild) -> None:
         except discord.HTTPException:
             pass
     v["panel_channel"] = v["panel_message"] = None
-
-
 async def post_panel(guild: discord.Guild, channel: discord.TextChannel) -> discord.Message:
     await delete_panel(guild)
     v = store.get(guild.id)["verify"]
@@ -1552,8 +1505,6 @@ async def post_panel(guild: discord.Guild, channel: discord.TextChannel) -> disc
     v["panel_channel"], v["panel_message"] = channel.id, msg.id
     store.save()
     return msg
-
-
 async def refresh_panel(guild: discord.Guild) -> None:
     v = store.get(guild.id)["verify"]
     ch = guild.get_channel(v["panel_channel"]) if v["panel_channel"] else None
@@ -1562,11 +1513,8 @@ async def refresh_panel(guild: discord.Guild) -> None:
             await (await ch.fetch_message(v["panel_message"])).edit(embed=panel_embed(v))
         except discord.HTTPException:
             pass
-
-
 @tasks.loop(minutes=1)
 async def verify_watch():
-    # 時間内に認証しなかったメンバーのキック / 不要になった待機リストの掃除
     now = time.time()
     for guild in list(bot.guilds):
         if guild.unavailable:
@@ -1596,13 +1544,9 @@ async def verify_watch():
                     log.warning("未認証キックに失敗 guild=%s member=%s", guild.id, uid)
         if changed:
             store.save()
-
-
 @verify_watch.before_loop
 async def _before_verify_watch():
     await bot.wait_until_ready()
-
-
 @verify_group.command(name="setup", description="認証パネルを設置して認証機能を有効化します")
 @app_commands.describe(
     channel="認証パネルを置くチャンネル", role="認証後に付与するロール",
@@ -1654,8 +1598,6 @@ async def verify_setup(interaction: discord.Interaction, channel: discord.TextCh
         "3. 既存メンバーを認証済みにするには `/verify bulk_approve` を使います\n"
         + ("\n".join(notes)),
         ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @verify_group.command(name="set", description="認証の詳細設定を変更します(指定した項目のみ変更)")
 @app_commands.describe(
     mode="認証方式", min_account_days="アカウント作成からの最低日数(0=制限なし)",
@@ -1685,8 +1627,6 @@ async def verify_set(interaction: discord.Interaction, mode: Optional[app_comman
     await interaction.response.send_message("✅ 更新しました:\n" + "\n".join(changed), ephemeral=True)
     if mode:
         await refresh_panel(interaction.guild)
-
-
 @verify_group.command(name="panel", description="認証パネルを再設置/文面を変更します")
 @app_commands.describe(channel="省略すると現在のパネルのチャンネル", title="パネルのタイトル", text="パネルの説明文(改行は \\n)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -1709,8 +1649,6 @@ async def verify_panel(interaction: discord.Interaction, channel: Optional[disco
     except discord.HTTPException:
         return await interaction.followup.send("❌ パネルを送信できませんでした。", ephemeral=True)
     await interaction.followup.send(f"✅ {target.mention} にパネルを設置しました。", ephemeral=True)
-
-
 @verify_group.command(name="status", description="認証機能の状態を表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_status(interaction: discord.Interaction):
@@ -1733,8 +1671,6 @@ async def verify_status(interaction: discord.Interaction):
         lines = [f"<@{uid}> ({int((now - ts) // 60)}分前)" for uid, ts in sorted(v["pending"].items(), key=lambda kv: kv[1])[:15]]
         e.add_field(name=f"認証待ち ({len(v['pending'])}人)", value="\n".join(lines), inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @verify_group.command(name="approve", description="メンバーを手動で認証済みにします")
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_approve(interaction: discord.Interaction, member: discord.Member):
@@ -1745,8 +1681,6 @@ async def verify_approve(interaction: discord.Interaction, member: discord.Membe
     err = await grant_verification(interaction.guild, member, f"手動承認 by {interaction.user}")
     await interaction.followup.send(err or f"✅ {member.mention} を認証済みにしました。", ephemeral=True,
                                     allowed_mentions=discord.AllowedMentions.none())
-
-
 @verify_group.command(name="revoke", description="メンバーの認証を取り消して未認証に戻します")
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_revoke(interaction: discord.Interaction, member: discord.Member):
@@ -1772,8 +1706,6 @@ async def verify_revoke(interaction: discord.Interaction, member: discord.Member
     store.save()
     await send_log(g, make_embed("↩️ 認証取り消し", f"{member} (`{member.id}`)\n実行者: {interaction.user}", YELLOW))
     await interaction.followup.send(f"↩️ {member.mention} の認証を取り消しました。", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @verify_group.command(name="bulk_approve", description="既存メンバー全員(認証待ちの人を除く)を認証済みにします")
 @app_commands.describe(confirm="実行する場合は True")
 @app_commands.checks.has_permissions(administrator=True)
@@ -1800,8 +1732,6 @@ async def verify_bulk(interaction: discord.Interaction, confirm: bool):
     await interaction.followup.send(f"✅ {done}人に {role.mention} を付与しました(失敗 {failed}人)。"
                                     + (f"\n対象が多いため先頭{cap}人までです。もう一度実行してください。" if len(targets) > cap else ""),
                                     ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @verify_group.command(name="raid", description="レイド警戒モード(画像認証+アカウント年齢制限)を手動で切り替えます")
 @app_commands.describe(enabled="ON/OFF", minutes="ONの場合の持続時間(分)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -1814,8 +1744,6 @@ async def verify_raid(interaction: discord.Interaction, enabled: bool, minutes: 
         msg = "✅ レイド警戒モードを OFF にしました。"
     await interaction.response.send_message(msg, ephemeral=True)
     await send_log(interaction.guild, make_embed("🚨 レイド警戒モード", f"{'ON' if enabled else 'OFF'} / 実行者: {interaction.user}", YELLOW if enabled else GREEN))
-
-
 @verify_group.command(name="disable", description="認証機能を無効化し、パネルを削除します")
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_disable(interaction: discord.Interaction):
@@ -1827,20 +1755,9 @@ async def verify_disable(interaction: discord.Interaction):
     await delete_panel(g)
     store.save()
     await interaction.followup.send("✅ 認証を無効化しました。\n※未認証ロールを使っていた場合、付与済みの人のロールは手動で外してください。", ephemeral=True)
-
-
-# =====================================================================
-# チケット機能
-#   - パネルのボタン → 件名/内容を入力 → 専用の非公開チャンネルを自動作成
-#   - スタッフロール / 担当者(claim) / 作成数の上限 / ブロックリスト
-#   - クローズ(作成者/スタッフ/管理者): 記録(.txt)を保存・DM送信し、チャンネルを閲覧のみにロック
-#   - 削除(管理者のみ): クローズ済みチケットのチャンネルを削除
-#   - 無操作での自動クローズ、認証機能との連携(未認証者は作成不可)
-# =====================================================================
 JST = timezone(timedelta(hours=9))
-TICKET_COOLDOWN = 30   # 同一ユーザーの連続作成を防ぐ秒数
-ticket_last: dict = {}  # (guild,user) -> 最後に作成した時刻
-
+TICKET_COOLDOWN = 30
+ticket_last: dict = {}
 ticket_group = app_commands.Group(
     name="ticket", description="チケットの操作(チケットチャンネル内で使います)", guild_only=True,
 )
@@ -1848,33 +1765,25 @@ ticketconfig_group = app_commands.Group(
     name="ticketconfig", description="チケット機能の設定",
     default_permissions=discord.Permissions(administrator=True), guild_only=True,
 )
-
 TICKET_MEMBER_PERMS = dict(view_channel=True, send_messages=True, read_message_history=True,
                            attach_files=True, embed_links=True)
-
-
 def ticket_is_staff(member: discord.Member, tc: dict) -> bool:
     return member.guild_permissions.administrator or any(r.id in tc["staff_roles"] for r in member.roles)
-
-
 def ticket_open_of(guild: discord.Guild, tc: dict, uid: int) -> list:
-    # そのユーザーが開いているチケットch。手動で消されたチャンネルは台帳から掃除する
     res = []
     for cid, info in list(tc["open"].items()):
         ch = guild.get_channel(int(cid))
         if ch is None:
             tc["open"].pop(cid, None)
-        elif info["owner"] == uid and not info.get("closed"):  # クローズ済みは上限に数えない
+        elif info["owner"] == uid and not info.get("closed"):
             res.append(ch)
     return res
-
-
 async def build_transcript(channel: discord.TextChannel, info: dict) -> bytes:
     lines = [
-        f"# チケット #{info['number']:04d} / {channel.guild.name}",
-        f"# 件名: {info.get('subject', '')}",
-        f"# 作成者ID: {info['owner']}",
-        f"# 作成: {datetime.fromtimestamp(info['created'], JST):%Y-%m-%d %H:%M:%S} JST",
+        f"
+        f"
+        f"
+        f"
         "",
     ]
     async for m in channel.history(limit=2000, oldest_first=True):
@@ -1887,10 +1796,7 @@ async def build_transcript(channel: discord.TextChannel, info: dict) -> bytes:
             if t:
                 lines.append(f"    [埋め込み] {t[:300]}")
     return "\n".join(lines).encode("utf-8")[:7_000_000]
-
-
 async def lock_ticket_channel(channel: discord.TextChannel) -> None:
-    # 作成者・スタッフなど個別に許可していた対象を「閲覧のみ」にする(管理者とBOTは影響を受けない)
     guild = channel.guild
     for target, ow in list(channel.overwrites.items()):
         if target.id in (guild.id, guild.me.id):
@@ -1901,15 +1807,12 @@ async def lock_ticket_channel(channel: discord.TextChannel) -> None:
             await channel.set_permissions(target, overwrite=ow, reason="チケットクローズ")
         except discord.HTTPException:
             log.warning("チケットのロックに失敗 guild=%s channel=%s", guild.id, channel.id)
-
-
 async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Member], reason: Optional[str]) -> bool:
-    # クローズ: 記録を保存してチャンネルをロックする。削除はしない(削除は管理者のみ → delete_ticket)
     guild = channel.guild
     cfg = store.get(guild.id)
     tc = cfg["ticket"]
     info = tc["open"].get(str(channel.id))
-    if not info or info.get("closed"):  # 先にフラグを立てて二重クローズを防ぐ
+    if not info or info.get("closed"):
         return False
     info["closed"] = True
     info["closed_by"] = closer.id if closer else None
@@ -1924,7 +1827,7 @@ async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Me
         log.warning("トランスクリプト作成に失敗 guild=%s channel=%s", guild.id, channel.id)
     name = f"ticket-{info['number']:04d}"
     owner = guild.get_member(info["owner"])
-    e = make_embed(f"🔒 チケット #{info['number']:04d} クローズ", color=GRAY)
+    e = make_embed(f"🔒 チケット
     e.add_field(name="作成者", value=f"<@{info['owner']}>")
     e.add_field(name="件名", value=info.get("subject") or "なし")
     e.add_field(name="担当", value=f"<@{info['claimed_by']}>" if info["claimed_by"] else "なし")
@@ -1942,11 +1845,11 @@ async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Me
             log.warning("トランスクリプトの送信に失敗 guild=%s", guild.id)
     if data and tc["dm_transcript"] and owner:
         try:
-            await owner.send(f"**{guild.name}** のチケット #{info['number']:04d} の記録です。",
+            await owner.send(f"**{guild.name}** のチケット
                              file=discord.File(io.BytesIO(data), filename=f"{name}.txt"))
         except discord.HTTPException:
             pass
-    ce = make_embed(f"🔒 チケット #{info['number']:04d} はクローズされました", color=GRAY)
+    ce = make_embed(f"🔒 チケット
     ce.description = (f"{closer.mention if closer else '自動処理'} がチケットを閉じました。\n理由: {reason or 'なし'}\n\n"
                       "このチャンネルは閲覧のみになりました。**削除できるのは管理者のみ**です。")
     try:
@@ -1954,10 +1857,7 @@ async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Me
     except discord.HTTPException:
         pass
     return True
-
-
 async def delete_ticket(channel: discord.TextChannel, deleter: discord.Member) -> bool:
-    # 削除: 管理者のみ・クローズ済みのチケットのみ(呼び出し側で権限を確認済みであること)
     guild = channel.guild
     tc = store.get(guild.id)["ticket"]
     info = tc["open"].pop(str(channel.id), None)
@@ -1965,17 +1865,15 @@ async def delete_ticket(channel: discord.TextChannel, deleter: discord.Member) -
         return False
     store.save()
     await send_log(guild, make_embed("🗑️ チケット削除",
-                                    f"#{info['number']:04d} / 作成者 <@{info['owner']}> / 削除 {deleter} (`{deleter.id}`)", RED))
+                                    f"
     try:
         await channel.delete(reason=f"チケット削除: {deleter}")
     except discord.HTTPException:
         log.warning("チケットチャンネルの削除に失敗 guild=%s channel=%s", guild.id, channel.id)
-        tc["open"][str(channel.id)] = info  # 失敗したので台帳に戻す
+        tc["open"][str(channel.id)] = info
         store.save()
         return False
     return True
-
-
 async def create_ticket(interaction: discord.Interaction, subject: str, detail: str) -> None:
     await interaction.response.defer(ephemeral=True)
     guild, member = interaction.guild, interaction.user
@@ -1989,7 +1887,6 @@ async def create_ticket(interaction: discord.Interaction, subject: str, detail: 
     mine = ticket_open_of(guild, tc, member.id)
     if len(mine) >= tc["max_open"]:
         return await interaction.followup.send("❌ すでに開いているチケットがあります: " + " ".join(c.mention for c in mine), ephemeral=True)
-
     staff_roles = [r for r in (guild.get_role(i) for i in tc["staff_roles"]) if r]
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -2008,14 +1905,12 @@ async def create_ticket(interaction: discord.Interaction, subject: str, detail: 
         log.warning("チケットチャンネル作成に失敗 guild=%s", guild.id, exc_info=True)
         store.save()
         return await interaction.followup.send("❌ チャンネルを作成できませんでした。(カテゴリの上限50個、またはBOTの権限不足の可能性があります)", ephemeral=True)
-
     tc["open"][str(ch.id)] = {"owner": member.id, "number": n, "created": int(time.time()),
                               "claimed_by": None, "subject": subject[:80]}
     tc["stats"]["created"] += 1
     ticket_last[(guild.id, member.id)] = time.time()
     store.save()
-
-    e = make_embed(f"🎫 チケット #{n:04d}", color=BLUE)
+    e = make_embed(f"🎫 チケット
     e.add_field(name="作成者", value=member.mention)
     e.add_field(name="件名", value=subject[:200])
     e.add_field(name="内容", value=detail[:1000] or "(未入力)", inline=False)
@@ -2026,8 +1921,6 @@ async def create_ticket(interaction: discord.Interaction, subject: str, detail: 
                   allowed_mentions=discord.AllowedMentions(users=[member], roles=ping_roles))
     await send_log(guild, make_embed("🎫 チケット作成", f"{ch.mention} / {member} (`{member.id}`)\n件名: {subject[:100]}", GREEN))
     await interaction.followup.send(f"✅ チケットを作成しました: {ch.mention}", ephemeral=True)
-
-
 class TicketModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="チケットを作成", timeout=600)
@@ -2036,15 +1929,11 @@ class TicketModal(discord.ui.Modal):
                                            min_length=1, max_length=1000)
         self.add_item(self.subject)
         self.add_item(self.detail)
-
     async def on_submit(self, interaction: discord.Interaction):
         await create_ticket(interaction, self.subject.value.strip(), self.detail.value.strip())
-
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         log.exception("チケットモーダルでエラー", exc_info=error)
         await _eph(interaction, "⚠️ エラーが発生しました。もう一度お試しください。")
-
-
 async def ticket_click(interaction: discord.Interaction) -> None:
     guild, member = interaction.guild, interaction.user
     if guild is None or not isinstance(member, discord.Member):
@@ -2055,7 +1944,7 @@ async def ticket_click(interaction: discord.Interaction) -> None:
         return await _eph(interaction, "⚠️ チケットは現在利用できません。管理者に連絡してください。")
     if member.id in tc["blocked"]:
         return await _eph(interaction, "🚫 あなたはチケットを作成できません。")
-    if verify_active(cfg):  # 認証機能との連携: 未認証者は作成不可
+    if verify_active(cfg):
         vrole = guild.get_role(cfg["verify"]["role"])
         if vrole and vrole not in member.roles:
             return await _eph(interaction, "🔐 先にメンバー認証を完了してください。")
@@ -2066,38 +1955,28 @@ async def ticket_click(interaction: discord.Interaction) -> None:
     if len(mine) >= tc["max_open"]:
         return await _eph(interaction, "❌ すでに開いているチケットがあります: " + " ".join(c.mention for c in mine))
     await interaction.response.send_modal(TicketModal())
-
-
 class TicketPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="チケットを作成", emoji="🎫", style=discord.ButtonStyle.primary, custom_id="azq:ticket:create")
     async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
         await ticket_click(interaction)
-
-
 class ConfirmCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=30)
-
     @discord.ui.button(label="閉じる", emoji="🔒", style=discord.ButtonStyle.danger)
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.stop()
         await interaction.response.edit_message(content="🔒 チケットを閉じています...", view=None)
         if not await close_ticket(interaction.channel, interaction.user, None):
             await interaction.edit_original_response(content="⚠️ すでにクローズされています。")
-
     @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.stop()
         await interaction.response.edit_message(content="キャンセルしました。", view=None)
-
-
 class ConfirmDeleteView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=30)
-
     @discord.ui.button(label="削除する", emoji="🗑️", style=discord.ButtonStyle.danger)
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.stop()
@@ -2105,18 +1984,13 @@ class ConfirmDeleteView(discord.ui.View):
             return await interaction.response.edit_message(content="❌ チケットを削除できるのは管理者のみです。", view=None)
         await interaction.response.edit_message(content="🗑️ チケットを削除しています...", view=None)
         await delete_ticket(interaction.channel, interaction.user)
-
     @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
     async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.stop()
         await interaction.response.edit_message(content="キャンセルしました。", view=None)
-
-
 class TicketClosedView(discord.ui.View):
-    # クローズ済みチケットに付く「削除」ボタン。押せるのは管理者のみ
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="チケットを削除(管理者のみ)", emoji="🗑️", style=discord.ButtonStyle.danger, custom_id="azq:ticket:delete")
     async def delete_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         tc = store.get(interaction.guild.id)["ticket"]
@@ -2129,14 +2003,11 @@ class TicketClosedView(discord.ui.View):
             return await _eph(interaction, "⚠️ 先にチケットをクローズしてください。")
         await interaction.response.send_message("このチケットのチャンネルを削除しますか?(元に戻せません)",
                                                 view=ConfirmDeleteView(), ephemeral=True)
-
-
 class TicketControlView(discord.ui.View):
     def __init__(self, claimed: bool = False):
         super().__init__(timeout=None)
         if claimed:
             self.claim.disabled = True
-
     @discord.ui.button(label="クローズ", emoji="🔒", style=discord.ButtonStyle.danger, custom_id="azq:ticket:close")
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         tc = store.get(interaction.guild.id)["ticket"]
@@ -2149,7 +2020,6 @@ class TicketControlView(discord.ui.View):
             return await _eph(interaction, "❌ 作成者かスタッフのみ閉じられます。")
         await interaction.response.send_message("このチケットを閉じますか?(記録を保存してチャンネルを閲覧のみにします。削除は管理者のみ可能です)",
                                                 view=ConfirmCloseView(), ephemeral=True)
-
     @discord.ui.button(label="担当する", emoji="🙋", style=discord.ButtonStyle.success, custom_id="azq:ticket:claim")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         tc = store.get(interaction.guild.id)["ticket"]
@@ -2167,12 +2037,8 @@ class TicketControlView(discord.ui.View):
         await interaction.response.edit_message(view=TicketControlView(claimed=True))
         await interaction.channel.send(f"🙋 {interaction.user.mention} が担当します。",
                                        allowed_mentions=discord.AllowedMentions(users=True))
-
-
 def ticket_panel_embed(tc: dict) -> discord.Embed:
     return make_embed(tc["panel_title"], tc["panel_text"], BLUE)
-
-
 async def delete_ticket_panel(guild: discord.Guild) -> None:
     tc = store.get(guild.id)["ticket"]
     ch = guild.get_channel(tc["panel_channel"]) if tc["panel_channel"] else None
@@ -2182,8 +2048,6 @@ async def delete_ticket_panel(guild: discord.Guild) -> None:
         except discord.HTTPException:
             pass
     tc["panel_channel"] = tc["panel_message"] = None
-
-
 async def post_ticket_panel(guild: discord.Guild, channel: discord.TextChannel) -> discord.Message:
     await delete_ticket_panel(guild)
     tc = store.get(guild.id)["ticket"]
@@ -2191,11 +2055,8 @@ async def post_ticket_panel(guild: discord.Guild, channel: discord.TextChannel) 
     tc["panel_channel"], tc["panel_message"] = channel.id, msg.id
     store.save()
     return msg
-
-
 @tasks.loop(minutes=15)
 async def ticket_watch():
-    # 無操作チケットの自動クローズ(auto_close_hours > 0 のサーバーのみ)
     now = discord.utils.utcnow()
     for guild in list(bot.guilds):
         if guild.unavailable:
@@ -2209,32 +2070,23 @@ async def ticket_watch():
                 tc["open"].pop(cid, None)
                 store.save()
                 continue
-            if info.get("closed"):  # クローズ済みは削除待ち(自動削除はしない)
+            if info.get("closed"):
                 continue
             last = (discord.utils.snowflake_time(ch.last_message_id) if ch.last_message_id
                     else datetime.fromtimestamp(info["created"], timezone.utc))
             if (now - last).total_seconds() >= tc["auto_close_hours"] * 3600:
                 await close_ticket(ch, None, f"{tc['auto_close_hours']}時間操作がなかったため自動クローズ")
-
-
 @ticket_watch.before_loop
 async def _before_ticket_watch():
     await bot.wait_until_ready()
-
-
 @bot.event
 async def on_guild_channel_delete(channel):
     tc = store.get(channel.guild.id)["ticket"]
-    if tc["open"].pop(str(channel.id), None) is not None:  # 手動削除されたチケットを台帳から外す
+    if tc["open"].pop(str(channel.id), None) is not None:
         store.save()
-
-
-# ---- チケット内で使うコマンド ---------------------------------------------
 def _ticket_here(interaction: discord.Interaction):
     tc = store.get(interaction.guild.id)["ticket"]
     return tc, tc["open"].get(str(interaction.channel_id))
-
-
 @ticket_group.command(name="close", description="このチケットを閉じます")
 @app_commands.describe(reason="閉じる理由")
 async def ticket_close_cmd(interaction: discord.Interaction, reason: Optional[app_commands.Range[str, 1, 200]] = None):
@@ -2247,8 +2099,6 @@ async def ticket_close_cmd(interaction: discord.Interaction, reason: Optional[ap
         return await interaction.response.send_message("❌ 作成者かスタッフのみ実行できます。", ephemeral=True)
     await interaction.response.send_message("🔒 チケットを閉じます...", ephemeral=True)
     await close_ticket(interaction.channel, interaction.user, reason)
-
-
 @ticket_group.command(name="delete", description="クローズ済みのチケットを削除します(管理者のみ)")
 async def ticket_delete_cmd(interaction: discord.Interaction):
     tc, info = _ticket_here(interaction)
@@ -2260,8 +2110,6 @@ async def ticket_delete_cmd(interaction: discord.Interaction):
         return await interaction.response.send_message("⚠️ 先に `/ticket close` でクローズしてください。", ephemeral=True)
     await interaction.response.send_message("このチケットのチャンネルを削除しますか?(元に戻せません)",
                                             view=ConfirmDeleteView(), ephemeral=True)
-
-
 @ticket_group.command(name="add", description="メンバーをこのチケットに追加します(スタッフ用)")
 async def ticket_add(interaction: discord.Interaction, member: discord.Member):
     tc, info = _ticket_here(interaction)
@@ -2274,8 +2122,6 @@ async def ticket_add(interaction: discord.Interaction, member: discord.Member):
     await interaction.channel.set_permissions(member, overwrite=discord.PermissionOverwrite(**TICKET_MEMBER_PERMS),
                                               reason=f"ticket add by {interaction.user}")
     await interaction.response.send_message(f"➕ {member.mention} を追加しました。", allowed_mentions=discord.AllowedMentions(users=[member]))
-
-
 @ticket_group.command(name="remove", description="メンバーをこのチケットから外します(スタッフ用)")
 async def ticket_remove(interaction: discord.Interaction, member: discord.Member):
     tc, info = _ticket_here(interaction)
@@ -2287,8 +2133,6 @@ async def ticket_remove(interaction: discord.Interaction, member: discord.Member
         return await interaction.response.send_message("❌ 作成者とスタッフは外せません。", ephemeral=True)
     await interaction.channel.set_permissions(member, overwrite=None, reason=f"ticket remove by {interaction.user}")
     await interaction.response.send_message(f"➖ {member.mention} を外しました。", allowed_mentions=discord.AllowedMentions.none())
-
-
 @ticket_group.command(name="rename", description="チケットの名前を変更します(スタッフ用)")
 async def ticket_rename(interaction: discord.Interaction, name: app_commands.Range[str, 1, 80]):
     tc, info = _ticket_here(interaction)
@@ -2297,19 +2141,14 @@ async def ticket_rename(interaction: discord.Interaction, name: app_commands.Ran
     if not ticket_is_staff(interaction.user, tc):
         return await interaction.response.send_message("❌ スタッフのみ実行できます。", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
-    try:  # 名前変更は10分に2回までのレート制限があるため待たされすぎないようにする
+    try:
         await asyncio.wait_for(interaction.channel.edit(name=name, reason=f"ticket rename by {interaction.user}"), timeout=8)
     except asyncio.TimeoutError:
         return await interaction.followup.send("⏳ 名前変更の回数制限中です。しばらくしてからお試しください。", ephemeral=True)
     await interaction.followup.send("✅ 名前を変更しました。", ephemeral=True)
-
-
-# ---- 管理者用の設定コマンド -----------------------------------------------
 def _can_post(ch: discord.abc.GuildChannel, me: discord.Member, files: bool = False) -> bool:
     p = ch.permissions_for(me)
     return p.view_channel and p.send_messages and p.embed_links and (p.attach_files if files else True)
-
-
 @ticketconfig_group.command(name="setup", description="チケットパネルを設置して機能を有効化します")
 @app_commands.describe(
     panel_channel="チケット作成パネルを置くチャンネル", category="チケットチャンネルを作るカテゴリ",
@@ -2357,8 +2196,6 @@ async def tcfg_setup(interaction: discord.Interaction, panel_channel: discord.Te
         "スタッフの追加は `/ticketconfig staff`、自動クローズなどは `/ticketconfig set` で設定できます。\n"
         "※ カテゴリには1つあたり最大50チャンネルの上限があります。" + warn,
         ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @ticketconfig_group.command(name="set", description="チケットの詳細設定を変更します(指定した項目のみ変更)")
 @app_commands.describe(
     max_open="1人が同時に開けるチケット数", auto_close_hours="この時間操作がないと自動クローズ(0=しない)",
@@ -2391,8 +2228,6 @@ async def tcfg_set(interaction: discord.Interaction, max_open: Optional[app_comm
         return await interaction.response.send_message("変更する項目を指定してください。", ephemeral=True)
     store.save()
     await interaction.response.send_message("✅ 更新しました:\n" + "\n".join(changed), ephemeral=True)
-
-
 @ticketconfig_group.command(name="staff", description="スタッフロールの追加・削除・一覧")
 @app_commands.choices(action=[
     app_commands.Choice(name="add", value="add"),
@@ -2420,8 +2255,6 @@ async def tcfg_staff(interaction: discord.Interaction, action: app_commands.Choi
     store.save()
     await interaction.response.send_message(
         f"✅ {action.value}: {role.mention}\n※ すでに開いているチケットの閲覧権限には反映されません。", ephemeral=True, allowed_mentions=none)
-
-
 @ticketconfig_group.command(name="panel", description="チケットパネルの再設置/文面を変更します")
 @app_commands.describe(channel="省略すると現在のパネルのチャンネル", title="パネルのタイトル", text="パネルの説明文(改行は \\n)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -2445,8 +2278,6 @@ async def tcfg_panel(interaction: discord.Interaction, channel: Optional[discord
     except discord.HTTPException:
         return await interaction.followup.send("❌ パネルを送信できませんでした。", ephemeral=True)
     await interaction.followup.send(f"✅ {target.mention} にパネルを設置しました。", ephemeral=True)
-
-
 @ticketconfig_group.command(name="block", description="ユーザーのチケット作成を禁止します")
 @app_commands.checks.has_permissions(administrator=True)
 async def tcfg_block(interaction: discord.Interaction, user: discord.User):
@@ -2455,8 +2286,6 @@ async def tcfg_block(interaction: discord.Interaction, user: discord.User):
         tc["blocked"].append(user.id)
         store.save()
     await interaction.response.send_message(f"🚫 {user} のチケット作成を禁止しました。", ephemeral=True)
-
-
 @ticketconfig_group.command(name="unblock", description="チケット作成の禁止を解除します")
 @app_commands.checks.has_permissions(administrator=True)
 async def tcfg_unblock(interaction: discord.Interaction, user: discord.User):
@@ -2465,8 +2294,6 @@ async def tcfg_unblock(interaction: discord.Interaction, user: discord.User):
         tc["blocked"].remove(user.id)
         store.save()
     await interaction.response.send_message(f"✅ {user} の禁止を解除しました。", ephemeral=True)
-
-
 @ticketconfig_group.command(name="status", description="チケット機能の状態と開いているチケットを表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def tcfg_status(interaction: discord.Interaction):
@@ -2474,9 +2301,9 @@ async def tcfg_status(interaction: discord.Interaction):
     tc = store.get(g.id)["ticket"]
     e = make_embed("🎫 チケットの状態", color=GREEN if tc["enabled"] else GRAY)
     e.add_field(name="状態", value="ON" if tc["enabled"] else "OFF")
-    e.add_field(name="カテゴリ", value=f"<#{tc['category']}>" if tc["category"] else "未設定")
+    e.add_field(name="カテゴリ", value=f"<
     e.add_field(name="スタッフ", value=" ".join(f"<@&{i}>" for i in tc["staff_roles"]) or "なし")
-    e.add_field(name="記録の送信先", value=f"<#{tc['transcript_channel']}>" if tc["transcript_channel"] else "ログチャンネル")
+    e.add_field(name="記録の送信先", value=f"<
     e.add_field(name="同時作成数", value=f"{tc['max_open']}件/人")
     e.add_field(name="自動クローズ", value=f"{tc['auto_close_hours']}時間" if tc["auto_close_hours"] else "なし")
     e.add_field(name="スタッフ通知 / DM記録", value=f"{'ON' if tc['ping_staff'] else 'OFF'} / {'ON' if tc['dm_transcript'] else 'OFF'}")
@@ -2488,14 +2315,12 @@ async def tcfg_status(interaction: discord.Interaction):
         lines = []
         for cid, info in list(opened.items())[:15]:
             claim = f" 担当<@{info['claimed_by']}>" if info["claimed_by"] else ""
-            lines.append(f"<#{cid}> <@{info['owner']}>{claim}")
+            lines.append(f"<
         e.add_field(name=f"開いているチケット ({len(opened)})", value="\n".join(lines), inline=False)
     if closed:
         e.add_field(name=f"クローズ済み・削除待ち ({len(closed)})",
-                    value="\n".join(f"<#{cid}> <@{i['owner']}>" for cid, i in list(closed.items())[:15]), inline=False)
+                    value="\n".join(f"<
     await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
-
-
 @ticketconfig_group.command(name="disable", description="チケット機能を無効化し、パネルを削除します")
 @app_commands.checks.has_permissions(administrator=True)
 async def tcfg_disable(interaction: discord.Interaction):
@@ -2505,29 +2330,214 @@ async def tcfg_disable(interaction: discord.Interaction):
     await delete_ticket_panel(interaction.guild)
     store.save()
     await interaction.followup.send("✅ チケット機能を無効化しました。\n※ すでに開いているチケットは、クローズするまでそのまま残ります。", ephemeral=True)
-
-
+RP_MAX_ROLES = 25
+rolepanel_group = app_commands.Group(
+    name="rolepanel", description="ロールパネル(ボタンでロールを付与/解除)の管理",
+    default_permissions=discord.Permissions(administrator=True), guild_only=True,
+)
+def rp_dangerous(role: discord.Role) -> list:
+    return [n for n in DANGEROUS_PERMS if getattr(role.permissions, n)]
+def rp_role_problem(interaction: discord.Interaction, role: discord.Role) -> Optional[str]:
+    if p := role_problem(interaction, role):
+        return p
+    if bad := rp_dangerous(role):
+        return "危険な権限が含まれています(誰でも取得できてしまうため): " + ", ".join(bad)
+    return None
+def rp_embed(p: dict) -> discord.Embed:
+    e = make_embed(p["title"], p["text"], BLUE)
+    e.add_field(name="選べるロール" + (" (1つだけ選択)" if p["exclusive"] else ""),
+                value="\n".join(f"・<@&{r['id']}>" for r in p["roles"]) or "なし", inline=False)
+    e.set_footer(text="ボタンを押すとロールを付与、もう一度押すと解除します")
+    return e
+class RoleButton(discord.ui.Button):
+    def __init__(self, rid: int, label: str):
+        super().__init__(label=(label or "ロール")[:80], style=discord.ButtonStyle.primary, custom_id=f"azq:rp:{rid}")
+        self.rid = rid
+    async def callback(self, interaction: discord.Interaction):
+        await role_panel_click(interaction, self.rid)
+class RolePanelView(discord.ui.View):
+    def __init__(self, roles: list):
+        super().__init__(timeout=None)
+        for r in roles:
+            self.add_item(RoleButton(r["id"], r["label"]))
+async def role_panel_click(interaction: discord.Interaction, rid: int) -> None:
+    guild, member = interaction.guild, interaction.user
+    if guild is None or not isinstance(member, discord.Member):
+        return await _eph(interaction, "❌ サーバー内で使ってください。")
+    cfg = store.get(guild.id)
+    p = cfg["rolepanel"]["panels"].get(str(interaction.message.id))
+    if not p or not any(r["id"] == rid for r in p["roles"]):
+        return await _eph(interaction, "⚠️ このロールパネルは無効です。管理者に連絡してください。")
+    if verify_active(cfg) and str(member.id) in cfg["verify"]["pending"]:
+        return await _eph(interaction, "🔐 先にメンバー認証を完了してください。")
+    role = guild.get_role(rid)
+    me = guild.me
+    if role is None:
+        return await _eph(interaction, "⚠️ このロールは削除されています。管理者に連絡してください。")
+    if (not me.guild_permissions.manage_roles or role >= me.top_role or role.managed
+            or role.is_default() or rp_dangerous(role)):
+        return await _eph(interaction, "⚠️ このロールは付与できません。管理者にBOTの権限・ロール順位の確認を依頼してください。")
+    await interaction.response.defer(ephemeral=True)
+    try:
+        if role in member.roles:
+            await member.remove_roles(role, reason="AZQ BOT ロールパネル")
+            msg = f"➖ {role.mention} を外しました。"
+        else:
+            if p["exclusive"]:
+                others = [guild.get_role(r["id"]) for r in p["roles"] if r["id"] != rid]
+                others = [o for o in others if o and o in member.roles and o < me.top_role and not o.managed]
+                if others:
+                    await member.remove_roles(*others, reason="AZQ BOT ロールパネル(1つだけ選択)")
+            await member.add_roles(role, reason="AZQ BOT ロールパネル")
+            msg = f"➕ {role.mention} を付与しました。"
+    except discord.HTTPException:
+        log.warning("ロールパネルでの付与に失敗 guild=%s role=%s", guild.id, rid, exc_info=True)
+        msg = "⚠️ ロールの付与に失敗しました。BOTの権限・ロール順位の確認を管理者に依頼してください。"
+    await interaction.followup.send(msg, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+async def refresh_role_panel(guild: discord.Guild, mid: str) -> bool:
+    p = store.get(guild.id)["rolepanel"]["panels"].get(mid)
+    ch = guild.get_channel(p["channel"]) if p else None
+    if not ch:
+        return False
+    view = RolePanelView(p["roles"])
+    try:
+        msg = await ch.fetch_message(int(mid))
+        await msg.edit(embed=rp_embed(p), view=view)
+    except discord.HTTPException:
+        return False
+    bot.add_view(view, message_id=int(mid))
+    return True
+def _rp_find(interaction: discord.Interaction, message_id: str):
+    panels = store.get(interaction.guild.id)["rolepanel"]["panels"]
+    mid = message_id.strip()
+    return mid, panels.get(mid)
+@rolepanel_group.command(name="create", description="ロールパネルを作成します(ボタンでロールを付与/解除)")
+@app_commands.describe(
+    channel="パネルを置くチャンネル", role1="1つ目のロール", role2="2つ目以降は任意(最大10個。11個目以降は /rolepanel add)",
+    title="パネルのタイトル", text="パネルの説明文(改行は \\n)", exclusive="Trueにすると1つだけ選択(押すと他のロールが外れる)",
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_create(interaction: discord.Interaction, channel: discord.TextChannel, role1: discord.Role,
+                    role2: Optional[discord.Role] = None, role3: Optional[discord.Role] = None,
+                    role4: Optional[discord.Role] = None, role5: Optional[discord.Role] = None,
+                    role6: Optional[discord.Role] = None, role7: Optional[discord.Role] = None,
+                    role8: Optional[discord.Role] = None, role9: Optional[discord.Role] = None,
+                    role10: Optional[discord.Role] = None,
+                    title: Optional[app_commands.Range[str, 1, 100]] = None,
+                    text: Optional[app_commands.Range[str, 1, 1500]] = None, exclusive: bool = False):
+    roles = []
+    for r in (role1, role2, role3, role4, role5, role6, role7, role8, role9, role10):
+        if r and r not in roles:
+            roles.append(r)
+    for r in roles:
+        if p := rp_role_problem(interaction, r):
+            return await interaction.response.send_message(f"❌ {r.mention}: {p}", ephemeral=True,
+                                                           allowed_mentions=discord.AllowedMentions.none())
+    if not _can_post(channel, interaction.guild.me):
+        return await interaction.response.send_message(f"❌ BOTが {channel.mention} に送信できません。", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    p = {"channel": channel.id, "title": title or "🎭 ロールパネル",
+         "text": (text or "ボタンを押して、好きなロールを受け取りましょう。").replace("\\n", "\n"),
+         "exclusive": exclusive, "roles": [{"id": r.id, "label": r.name} for r in roles]}
+    try:
+        msg = await channel.send(embed=rp_embed(p), view=RolePanelView(p["roles"]))
+    except discord.HTTPException:
+        return await interaction.followup.send("❌ パネルを送信できませんでした。BOTの権限を確認してください。", ephemeral=True)
+    store.get(interaction.guild.id)["rolepanel"]["panels"][str(msg.id)] = p
+    store.save()
+    warn = "" if interaction.guild.me.guild_permissions.manage_roles else "\n⚠️ BOTに「ロールの管理」権限がありません。このままではロールを付与できません。"
+    await interaction.followup.send(
+        f"✅ {channel.mention} にロールパネルを設置しました。(メッセージID: `{msg.id}`)\n"
+        "ロールの追加・削除は `/rolepanel add` `/rolepanel remove` で行えます。\n"
+        "※ BOTのロールを、付与するロールより**上**に配置してください。" + warn, ephemeral=True)
+@rolepanel_group.command(name="add", description="既存のロールパネルにロールを追加します")
+@app_commands.describe(message_id="パネルのメッセージID(/rolepanel list で確認)", role="追加するロール")
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_add(interaction: discord.Interaction, message_id: str, role: discord.Role):
+    mid, p = _rp_find(interaction, message_id)
+    if not p:
+        return await interaction.response.send_message("❌ そのIDのロールパネルが見つかりません。`/rolepanel list` で確認してください。", ephemeral=True)
+    if any(r["id"] == role.id for r in p["roles"]):
+        return await interaction.response.send_message("❌ すでにこのパネルにあるロールです。", ephemeral=True)
+    if len(p["roles"]) >= RP_MAX_ROLES:
+        return await interaction.response.send_message(f"❌ 1つのパネルに置けるロールは{RP_MAX_ROLES}個までです。", ephemeral=True)
+    if prob := rp_role_problem(interaction, role):
+        return await interaction.response.send_message(f"❌ {prob}", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    p["roles"].append({"id": role.id, "label": role.name})
+    if not await refresh_role_panel(interaction.guild, mid):
+        p["roles"].pop()
+        return await interaction.followup.send("❌ パネルを更新できませんでした。(メッセージが削除されている可能性があります)", ephemeral=True)
+    store.save()
+    await interaction.followup.send(f"✅ {role.mention} を追加しました。", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+@rolepanel_group.command(name="remove", description="ロールパネルからロールを外します")
+@app_commands.describe(message_id="パネルのメッセージID(/rolepanel list で確認)", role="外すロール")
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_remove(interaction: discord.Interaction, message_id: str, role: discord.Role):
+    mid, p = _rp_find(interaction, message_id)
+    if not p:
+        return await interaction.response.send_message("❌ そのIDのロールパネルが見つかりません。`/rolepanel list` で確認してください。", ephemeral=True)
+    target = next((r for r in p["roles"] if r["id"] == role.id), None)
+    if not target:
+        return await interaction.response.send_message("❌ そのロールはこのパネルにありません。", ephemeral=True)
+    if len(p["roles"]) <= 1:
+        return await interaction.response.send_message("❌ 最後のロールは外せません。パネルごと消すには `/rolepanel delete` を使ってください。", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    p["roles"].remove(target)
+    if not await refresh_role_panel(interaction.guild, mid):
+        p["roles"].append(target)
+        return await interaction.followup.send("❌ パネルを更新できませんでした。(メッセージが削除されている可能性があります)", ephemeral=True)
+    store.save()
+    await interaction.followup.send(f"✅ {role.mention} を外しました。", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+@rolepanel_group.command(name="delete", description="ロールパネルを削除します")
+@app_commands.describe(message_id="パネルのメッセージID(/rolepanel list で確認)")
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_delete(interaction: discord.Interaction, message_id: str):
+    mid, p = _rp_find(interaction, message_id)
+    if not p:
+        return await interaction.response.send_message("❌ そのIDのロールパネルが見つかりません。", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    ch = interaction.guild.get_channel(p["channel"])
+    if ch:
+        try:
+            await (await ch.fetch_message(int(mid))).delete()
+        except discord.HTTPException:
+            pass
+    store.get(interaction.guild.id)["rolepanel"]["panels"].pop(mid, None)
+    store.save()
+    await interaction.followup.send("✅ ロールパネルを削除しました。(付与済みのロールはそのままです)", ephemeral=True)
+@rolepanel_group.command(name="list", description="設置中のロールパネルを一覧表示します")
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_list(interaction: discord.Interaction):
+    panels = store.get(interaction.guild.id)["rolepanel"]["panels"]
+    if not panels:
+        return await interaction.response.send_message("ロールパネルはありません。`/rolepanel create` で作成できます。", ephemeral=True)
+    e = make_embed("🎭 ロールパネル一覧", color=BLUE)
+    for mid, p in list(panels.items())[:20]:
+        link = f"https://discord.com/channels/{interaction.guild.id}/{p['channel']}/{mid}"
+        e.add_field(name=f"{p['title'][:60]}", value=f"[メッセージへ]({link}) / ID: `{mid}`\n"
+                    + " ".join(f"<@&{r['id']}>" for r in p["roles"])[:900]
+                    + ("\n(1つだけ選択)" if p["exclusive"] else ""), inline=False)
+    await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 @bot.tree.command(name="help", description="AZQ BOTのコマンド一覧")
 async def help_cmd(interaction: discord.Interaction):
     e = make_embed("🤖 AZQ BOT コマンド一覧")
     e.add_field(name="🛡️ 荒らし対策", value="自動で動作 (連投/同一投稿/メンション爆撃/招待リンク/NGワード/レイド検知)\n設定: `/config automod_set` `/config ngword` `/config show`", inline=False)
     e.add_field(name="📊 過疎検出", value="`/kaso` 診断 / `/config kaso` 自動アラート設定", inline=False)
     e.add_field(name="🧠 脳内メーカー", value="`/nounai [name]` / ユーザーを右クリック→アプリ→脳内メーカー", inline=False)
-    e.add_field(name="🖼️ 名言画像", value="`/meigen text:名言` / メッセージを右クリック→アプリ→名言画像にする", inline=False)
+    e.add_field(name="🖼️ 名言画像", value="`/meigen text:名言` / メッセージを右クリック→アプリ→名言画像にする\n他の人のアイコン・名前を使うには本人の許可が必要(未設定の人にはDMで確認)。`/meigenprivacy` で自分の許可設定を変更\n管理者は `/config meigen enabled:False` でサーバー内を無効化できます", inline=False)
     e.add_field(name="🏓 ping", value="`/ping` BOT速度 / `/ping target:example.com` Webサイト", inline=False)
     e.add_field(name="🔐 認証", value="`/verify setup` 設置 / `/verify set` 詳細設定 / `/verify status` 状態\n`/verify approve` `/verify revoke` `/verify bulk_approve` `/verify raid` `/verify panel` `/verify disable`\n方式: ボタン・計算・画像CAPTCHA、未認証ロール、アカウント年齢制限、未認証キック、レイド時の自動強化", inline=False)
     e.add_field(name="🎫 チケット", value="`/ticketconfig setup` 設置 / `/ticketconfig set` `staff` `panel` `block` `unblock` `status` `disable`\nチケット内: `/ticket close` `/ticket add` `/ticket remove` `/ticket rename` `/ticket delete`\nクローズは作成者・スタッフ・管理者、**削除は管理者のみ**(クローズ後は閲覧のみ)\n機能: 非公開chの自動作成、担当者、記録(.txt)の保存/DM、無操作の自動クローズ、認証連携", inline=False)
+    e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
     e.add_field(name="🔨 モデレーション", value="`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove`", inline=False)
     e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
-
-
 config_group = app_commands.Group(
     name="config", description="AZQ BOTの設定",
     default_permissions=discord.Permissions(administrator=True), guild_only=True,
 )
-
 AUTOMOD_KEYS = [
     app_commands.Choice(name="enabled (1=ON/0=OFF)", value="enabled"),
     app_commands.Choice(name="spam_count (連投とみなす件数)", value="spam_count"),
@@ -2540,16 +2550,19 @@ AUTOMOD_KEYS = [
     app_commands.Choice(name="raid_joins (レイド判定の参加人数)", value="raid_joins"),
     app_commands.Choice(name="raid_seconds (レイド判定の秒数)", value="raid_seconds"),
 ]
-
-
 @config_group.command(name="log_channel", description="ログの送信先チャンネルを設定(省略で解除)")
 @app_commands.checks.has_permissions(administrator=True)
 async def cfg_log(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
     store.get(interaction.guild.id)["log_channel"] = channel.id if channel else None
     store.save()
     await interaction.response.send_message(f"✅ ログチャンネル: {channel.mention if channel else '解除'}", ephemeral=True)
-
-
+@config_group.command(name="meigen", description="このサーバーで名言画像(/meigen・右クリック)を使えるか設定")
+@app_commands.describe(enabled="OFFにすると、このサーバーでは名言画像を作れなくなります")
+@app_commands.checks.has_permissions(administrator=True)
+async def cfg_meigen(interaction: discord.Interaction, enabled: bool):
+    store.get(interaction.guild.id)["meigen"]["enabled"] = enabled
+    store.save()
+    await interaction.response.send_message(f"✅ このサーバーの名言画像: {'有効' if enabled else '無効'}", ephemeral=True)
 @config_group.command(name="welcome", description="ウェルカムメッセージを設定(channel省略で無効化)")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(message="{user} {server} {count} が使えます")
@@ -2562,8 +2575,6 @@ async def cfg_welcome(interaction: discord.Interaction, channel: Optional[discor
     await interaction.response.send_message(
         f"✅ ウェルカム: {channel.mention if channel else '無効'}\n{wc['message']}", ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none())
-
-
 @config_group.command(name="autorole", description="参加時に自動付与するロールを設定(省略で解除)")
 @app_commands.checks.has_permissions(administrator=True)
 async def cfg_autorole(interaction: discord.Interaction, role: Optional[discord.Role] = None):
@@ -2573,8 +2584,6 @@ async def cfg_autorole(interaction: discord.Interaction, role: Optional[discord.
     store.save()
     await interaction.response.send_message(f"✅ 自動ロール: {role.mention if role else '解除'}", ephemeral=True,
                                             allowed_mentions=discord.AllowedMentions.none())
-
-
 @config_group.command(name="kaso", description="過疎アラートの設定(24時間のメッセージ数がしきい値未満で通知)")
 @app_commands.checks.has_permissions(administrator=True)
 async def cfg_kaso(interaction: discord.Interaction, enabled: bool, channel: Optional[discord.TextChannel] = None,
@@ -2589,10 +2598,8 @@ async def cfg_kaso(interaction: discord.Interaction, enabled: bool, channel: Opt
         k["threshold"] = threshold
     store.save()
     await interaction.response.send_message(
-        f"✅ 過疎アラート: {'ON' if enabled else 'OFF'} / しきい値 {k['threshold']}件 / 通知先 <#{k['channel']}>" if k["channel"]
+        f"✅ 過疎アラート: {'ON' if enabled else 'OFF'} / しきい値 {k['threshold']}件 / 通知先 <
         else "✅ 過疎アラート: OFF", ephemeral=True)
-
-
 @config_group.command(name="automod_set", description="荒らし対策の数値設定")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.choices(setting=AUTOMOD_KEYS)
@@ -2602,8 +2609,6 @@ async def cfg_automod(interaction: discord.Interaction, setting: app_commands.Ch
     am[key] = bool(value) if key in ("enabled", "block_invites") else max(1, value)
     store.save()
     await interaction.response.send_message(f"✅ `{key}` = `{am[key]}`", ephemeral=True)
-
-
 @config_group.command(name="ngword", description="NGワードの追加/削除/一覧")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.choices(action=[
@@ -2623,8 +2628,6 @@ async def cfg_ngword(interaction: discord.Interaction, action: app_commands.Choi
         words.remove(word)
     store.save()
     await interaction.response.send_message(f"✅ {action.value}: ||{word}||", ephemeral=True)
-
-
 @config_group.command(name="warn_limit", description="警告の上限回数と、到達時の自動タイムアウト時間を設定")
 @app_commands.checks.has_permissions(administrator=True)
 async def cfg_warn_limit(interaction: discord.Interaction, limit: app_commands.Range[int, 1, 20],
@@ -2635,8 +2638,6 @@ async def cfg_warn_limit(interaction: discord.Interaction, limit: app_commands.R
         cfg["warn_timeout_minutes"] = timeout_minutes
     store.save()
     await interaction.response.send_message(f"✅ 警告 {limit}回 → {cfg['warn_timeout_minutes']}分タイムアウト", ephemeral=True)
-
-
 @config_group.command(name="automod_ignore", description="荒らし対策の除外チャンネル/ロールを追加・削除・一覧")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.choices(action=[
@@ -2648,7 +2649,7 @@ async def cfg_automod_ignore(interaction: discord.Interaction, action: app_comma
                              channel: Optional[discord.TextChannel] = None, role: Optional[discord.Role] = None):
     am = store.get(interaction.guild.id)["automod"]
     if action.value == "list":
-        chs = " ".join(f"<#{i}>" for i in am["ignore_channels"]) or "なし"
+        chs = " ".join(f"<
         rls = " ".join(f"<@&{i}>" for i in am["ignore_roles"]) or "なし"
         return await interaction.response.send_message(f"除外チャンネル: {chs}\n除外ロール: {rls}", ephemeral=True,
                                                        allowed_mentions=discord.AllowedMentions.none())
@@ -2664,14 +2665,12 @@ async def cfg_automod_ignore(interaction: discord.Interaction, action: app_comma
     store.save()
     await interaction.response.send_message(f"✅ {action.value}: {(channel or role).mention}", ephemeral=True,
                                             allowed_mentions=discord.AllowedMentions.none())
-
-
 @config_group.command(name="show", description="現在の設定を表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def cfg_show(interaction: discord.Interaction):
     c = store.get(interaction.guild.id)
     am = c["automod"]
-    ch = lambda i: f"<#{i}>" if i else "未設定"
+    ch = lambda i: f"<
     e = make_embed("⚙️ AZQ BOT 設定")
     e.add_field(name="ログ", value=ch(c["log_channel"]))
     e.add_field(name="ウェルカム", value=ch(c["welcome"]["channel"]))
@@ -2689,8 +2688,20 @@ async def cfg_show(interaction: discord.Interaction):
         inline=False,
     )
     await interaction.response.send_message(embed=e, ephemeral=True)
-
+def _single_instance_lock():
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    fh = open(os.path.join(DATA_DIR, "bot.lock"), "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit("すでに別のプロセスでこのBOTが起動しています。二重起動を防ぐため終了します。\n"
+                         "(確認: ps aux | grep bot.py / systemctl status azq-bot)")
+    return fh
 if __name__ == "__main__":
     if not TOKEN or TOKEN == "YOUR-TOKEN":
-        raise SystemExit("bot.py 上部の TOKEN にBOTトークンを貼り付けてください。")
+        raise SystemExit("トークンが設定されていません。環境変数 DISCORD_TOKEN(または bot.py 上部の TOKEN)にBOTトークンを設定してください。")
+    _lock = _single_instance_lock()
     bot.run(TOKEN, log_handler=None)
