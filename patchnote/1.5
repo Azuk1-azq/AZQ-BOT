@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AZQ BOT パッチノート: Web認証アップデート</title>
+<style>
+:root{--bg:#f2f4f7;--card:#fff;--ink:#1b2230;--sub:#5b6577;--line:#dde2ea;--code:#eef1f6;
+--fix:#b4561a;--chg:#3a54c4;--new:#23764f}
+@media(prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>Web認証アップデート</h1>
+<p class="meta">AZQ BOT v1.5 パッチノート / 2026年10月8日</p>
+<p class="lead">Web認証が「ボタンを押しても無反応」「成功と出るのにロールが付かない」状態だった問題を直しました。あわせて、サブ垢対策の強化と、認証ページのHTTPS対応を追加しています。</p>
+
+<h2 class="fix">修正</h2>
+<article class="fix">
+<h3>認証ボタンを押しても応答しない問題</h3>
+<p>環境変数 <code>WEB_URL</code> に <code>http://</code> や <code>https://</code> が付いていないと、Discordがリンクボタンを拒否し、「アプリケーションが応答しませんでした」と表示されていました。</p>
+<p><b>今回:</b> スキームが無いときは自動で補います。それでもリンクを作れない場合は、ユーザーにエラーを表示し、原因をログに残します。</p>
+</article>
+<article class="fix">
+<h3>認証完了と表示されるのにロールが付かない問題</h3>
+<p>認証パネルを設置する前から参加していたメンバーなどが、Web認証で「すでに認証済みです」と表示され、ロールが付与されないことがありました。</p>
+<p><b>今回:</b> 認証待ちリストではなく、認証ロールを実際に持っているかで判定します。</p>
+</article>
+<article class="fix">
+<h3>拒否したアカウントが「認証済み」として数えられる問題</h3>
+<p>同じ回線の判定で拒否されたアカウントも、回線の記録に残っていました。<b>今回:</b> 認証できた人だけを記録します。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3>同じ回線から別アカウントが認証すると、承認待ちではなく認証拒否に</h3>
+<p>ブラウザとDiscordの両方に「認証を拒否しました」と表示し、ログチャンネルに記録します。拒否されたアカウントは疑いリストには入らないので、回線を変えてやり直せます。</p>
+<p>管理者は <code>/verify approve</code> で手動承認できます。<code>suspect_action</code> をキックにしているサーバーは、これまでどおりキックします。</p>
+</article>
+<article class="chg">
+<h3>同一回線の判定(<code>block_alt_ip</code>)が、新しいサーバーでは最初からON</h3>
+<p>すでに設定が保存されているサーバーは変わりません。ONにするには <code>/verify set block_alt_ip:True</code> を実行してください。この判定は、認証方式が <b>Web認証</b> のときに働きます。</p>
+</article>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>認証完了をDiscordにも表示</h3>
+<p>Web認証が終わると、認証ボタンで出た自分だけに見えるメッセージが「認証が完了しました」に変わります。メッセージが残っていない場合は、DMでお知らせします。</p>
+</article>
+<article class="new">
+<h3>認証ページのHTTPS対応</h3>
+<p>証明書と秘密鍵のパスを設定すると、BOT自身がHTTPSで配信します。プロキシを挟まないので、同一回線やVPNの判定に使う接続元IPもそのまま取得できます。</p>
+<p>証明書ファイルの更新は6時間ごとに確認して自動で読み込み直すため、Let's Encryptの更新後に再起動は要りません。CookieにはSecure属性が付きます。</p>
+</article>
+<article class="new">
+<h3>同一回線チェックの診断ログ</h3>
+<p>Web認証のたびに、同じ回線の別アカウント数をログに出します。判定が働いているか確認できます。</p>
+</article>
+
+<h2 class="chg">環境変数</h2>
+<div class="wrap">
+<table>
+<tr><th>名前</th><th>内容</th></tr>
+<tr><td><code>WEB_URL</code></td><td>認証ページの公開URL。例: <code>https://bot-auth.duckdns.org:8443</code>。スキームを省くと、TLS設定があれば <code>https://</code>、なければ <code>http://</code> を補います。</td></tr>
+<tr><td><code>PORT</code></td><td>待ち受けポート。<code>WEB_PORT</code> より優先されます。</td></tr>
+<tr><td><code>WEB_PORT</code></td><td><code>PORT</code> が未設定のときのポート(既定 8080)。</td></tr>
+<tr><td><code>TLS_CERT</code></td><td>証明書(<code>fullchain.pem</code>)のパス。</td></tr>
+<tr><td><code>TLS_KEY</code></td><td>秘密鍵(<code>privkey.pem</code>)のパス。両方を設定するとHTTPSになります。</td></tr>
+</table>
+</div>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>認証リンクはボタンを押した時点で作られます。</b>設定を変えて再起動したあとは、パネルの認証ボタンを押し直してください。古いメッセージのリンクは、以前のURLのままです。</li>
+<li><b>同じ家庭や学校の別人は、同一回線として拒否されます。</b>その場合は <code>/verify approve</code> で承認してください。</li>
+
+    <h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+  <li><b>systemd で動かしている場合、<code>.env</code> の値が <code>Environment=</code> より優先されます。</b>設定が反映されないときは、<code>.env</code> に古い <code>WEB_URL</code> や <code>PORT</code> が残っていないか確認してください。</li>
+<li><b>HTTPSには、ドメインと証明書が必要です。</b>証明書の更新には80番ポートを使うので、開けたままにしてください。</li>
+</ul>
+</main>
+</body>
+</html>
