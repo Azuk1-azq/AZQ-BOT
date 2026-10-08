@@ -11,13 +11,11 @@
 :root{color-scheme:dark;--bg:#0d0e14;--panel:#161823;--panel2:#1d2030;--line:#2a2e42;--text:#eceef7;--mute:#9499b3;--blue:#5865F2;--blue2:#7c88ff;--red:#ED4245;--green:#57F287;--yellow:#FEE75C;
 --font:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;font:400 16px/1.85 var(--font);background:var(--bg);color:var(--text);
-background-image:radial-gradient(60rem 30rem at 85% -10%,rgba(88,101,242,.22),transparent 60%)}
+body{margin:0;font:400 16px/1.85 var(--font);background:var(--bg);color:var(--text)}
 a{color:var(--blue2)}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:8px}
 .wrap{max-width:1040px;margin:auto;padding:0 24px}
-.top{position:sticky;top:0;z-index:10;background:rgba(13,14,20,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
 nav{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0}
 nav b{font-weight:900;font-size:18px;white-space:nowrap}
 nav div{display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap;justify-content:flex-end}
@@ -25,11 +23,16 @@ nav a{color:var(--mute);text-decoration:none;font-size:14px}
 nav a:hover{color:var(--text)}
 nav a.legal{color:var(--text);border:1px solid var(--line);border-radius:999px;padding:2px 12px;font-size:13px}
 nav a.legal:hover{border-color:var(--blue2)}
+nav a.pn{background:var(--blue);color:#fff;border-radius:999px;padding:2px 14px;font-size:13px;font-weight:700}
+nav a.pn:hover{background:#7c88ff;color:#fff}
 .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center;padding:56px 0 72px}
 h1{font-size:clamp(34px,5.6vw,58px);line-height:1.2;margin:0 0 20px;font-weight:900;letter-spacing:-.01em}
 .lead{color:var(--mute);font-size:17px;margin:0 0 32px;max-width:30em}
-.btn{display:inline-block;background:var(--blue);color:#fff;padding:14px 30px;border-radius:14px;text-decoration:none;font-weight:700;box-shadow:0 8px 28px rgba(88,101,242,.4);transition:transform .15s,background .15s}
-.btn:hover{background:#6b77ff;transform:translateY(-2px)}
+.btn{display:inline-block;background:var(--blue);color:#fff;padding:14px 30px;border-radius:14px;text-decoration:none;font-weight:700}
+.btn:hover{background:#7c88ff}
+.btn.alt{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:13px 26px;margin-left:10px}
+.btn.alt:hover{background:var(--line);border-color:var(--blue2)}
+.cta .btn.alt{margin-left:0;margin-top:10px}
 .sub{display:block;margin-top:14px;color:var(--mute);font-size:13px}
 .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
 .badges span{background:rgba(87,242,135,.1);color:var(--green);border:1px solid rgba(87,242,135,.25);border-radius:999px;padding:2px 12px;font-size:13px;font-weight:500}
@@ -49,11 +52,11 @@ h1{font-size:clamp(34px,5.6vw,58px);line-height:1.2;margin:0 0 20px;font-weight:
 .ok h3{display:flex;align-items:center;gap:10px;margin:0}.ok h3::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--green)}.ok h3.n::before{background:var(--yellow)}
 details{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:10px 0;padding:0 20px}
 summary{cursor:pointer;font-weight:700;padding:14px 0;list-style:none;display:flex;justify-content:space-between;gap:12px}
-summary::after{content:"+";color:var(--blue2);font-size:20px;line-height:1.5;transition:transform .2s}
-details[open] summary::after{transform:rotate(45deg)}
+summary::after{content:"+";color:var(--blue2);font-size:20px;line-height:1.5}
+details[open] summary::after{content:"−"}
 details p{margin:0 0 16px;color:var(--mute);font-size:15px}
 /* chat mock */
-.chat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;font-size:14px;line-height:1.6;box-shadow:0 30px 60px rgba(0,0,0,.4)}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;font-size:14px;line-height:1.6}
 .msg{display:flex;gap:12px;margin-bottom:16px}
 .av{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:15px;color:#fff}
 .who{font-weight:700}.who small{color:var(--mute);font-weight:400;margin-left:6px}
@@ -72,7 +75,7 @@ h2{font-size:28px;line-height:1.4;margin:0 0 8px;font-weight:900}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
 .tile h3{margin:0 0 6px;font-size:18px}
 .tile p{margin:0;color:var(--mute);font-size:15px}
-.t-a{grid-column:span 4;background:linear-gradient(135deg,#1c2040,var(--panel))}
+.t-a{grid-column:span 4;background:#1c2040}
 .t-b{grid-column:span 2}
 .t-c,.t-d,.t-e{grid-column:span 2}
 .t-g{grid-column:span 3}
@@ -85,7 +88,7 @@ code{background:#262a3d;color:var(--text);padding:2px 8px;border-radius:6px;font
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .two .tile h3{display:flex;align-items:center;gap:10px}
 .two .tile h3::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--green)}
-.cta{text-align:center;background:linear-gradient(135deg,#2a3170,#161823);border:1px solid var(--line);border-radius:24px;padding:48px 24px;margin:24px 0}
+.cta{text-align:center;background:#222859;border:1px solid var(--line);border-radius:24px;padding:48px 24px;margin:24px 0}
 .cta h2{margin-bottom:20px}
 footer{color:var(--mute);font-size:13px;padding:32px 0 56px;border-top:1px solid var(--line);margin-top:48px}
 footer a{color:var(--mute)}
@@ -95,16 +98,15 @@ footer a{color:var(--mute)}
 .two,.ok,.steps{grid-template-columns:1fr}
 nav a{margin-left:14px}
 }
-@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style></head>
-<body><div class="top"><div class="wrap"><nav><b>🛡️ AZQ BOT</b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
+<body><div class="top"><div class="wrap"><nav><b>🛡️ AZQ BOT</b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a class="pn" href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
 <div class="wrap">
 
 <header class="hero">
 <div>
-<h1>荒らしも過疎も、<br>BOTにお任せ。</h1>
+<h1>荒らし対策も過疎対策も、<br>BOTにお任せ。</h1>
 <p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
-<a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a>
+<a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a>
 <span class="sub"><a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>に同意のうえ導入してください</span>
 <div class="badges"><span>✓ Discord認証済みBot</span><span>✓ オープンソース</span><span>✓ 必要な権限だけ要求</span><span>✓ 管理者だけが設定を変更</span></div>
 </div>
@@ -177,6 +179,7 @@ nav a{margin-left:14px}
 <div class="cta">
 <h2>サーバーを守る準備はできましたか?</h2>
 <a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a>
+<a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a>
 <span class="sub">導入前に<a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>をご確認ください</span>
 </div>
 </section>
@@ -195,5 +198,5 @@ nav a{margin-left:14px}
 <details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
 </section>
 
-<footer><a href="terms.html">利用規約</a> ・ <a href="privacy.html">プライバシーポリシー</a><br>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</footer>
+<footer><a href="../patchnote/index.html">パッチノート</a> ・ <a href="terms.html">利用規約</a> ・ <a href="privacy.html">プライバシーポリシー</a><br>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</footer>
 </div></body></html>
