@@ -3,12 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12151c">
 <title>AZQ BOT パッチノート: Web認証アップデート</title>
 <style>
-:root{--bg:#f2f4f7;--card:#fff;--ink:#1b2230;--sub:#5b6577;--line:#dde2ea;--code:#eef1f6;
---fix:#b4561a;--chg:#3a54c4;--new:#23764f}
-@media(prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
---fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}}
+:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
 main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
@@ -99,6 +98,7 @@ td:first-child{white-space:nowrap}
 <ul class="todo">
 <li><b>認証リンクはボタンを押した時点で作られます。</b>設定を変えて再起動したあとは、パネルの認証ボタンを押し直してください。古いメッセージのリンクは、以前のURLのままです。</li>
 <li><b>同じ家庭や学校の別人は、同一回線として拒否されます。</b>その場合は <code>/verify approve</code> で承認してください。</li>
+</ul>
 
     <h2 class="fix">自分でbotをホスティングする人向け</h2>
 <ul class="todo">
