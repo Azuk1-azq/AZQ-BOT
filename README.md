@@ -1,7 +1,5 @@
 # 🛡️ AZQ BOT
 
-導入 : https://discord.com/oauth2/authorize?client_id=1556124525459013713&permissions=1099780189206&integration_type=0&scope=bot+applications.commands
-
 荒らし対策・メンバー認証・サポートチケット・ロールパネル・過疎診断・モデレーションなど、サーバー管理に必要な機能を1つにまとめた高機能 Discord Bot です。`discord.py` 製で、`bot.py` 1ファイルで動きます。
 
 - 📢 サポートサーバー: https://discord.gg/tAKTK9MYdc
@@ -54,9 +52,9 @@ BOT導入後は `/help` でも確認できます。★は管理者のみ実行�
 
 | グループ | コマンド |
 |---|---|
-| `/verify` | `setup` `set` `panel` `status` `approve` `revoke` `bulk_approve` `raid` `disable` |
+| `/verify` | `setup` `set` `text` `panel` `status` `approve` `revoke` `bulk_approve` `raid` `disable` |
 | `/ticketconfig` | `setup` `set` `staff` `panel` `block` `unblock` `status` `disable` |
-| `/rolepanel` | `create` `add` `remove` `delete` `list` |
+| `/rolepanel` | `create` `text` `add` `remove` `delete` `list` |
 | `/config` | `log_channel` `welcome` `autorole` `kaso` `automod_set` `ngword` `warn_limit` `automod_ignore` `meigen` `show` |
 | モデレーション | `/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove` |
 
@@ -106,6 +104,10 @@ python bot.py
 | `PORT` | ヘルスチェック用HTTPサーバーのポート。コンテナ環境向け | 未設定(起動しない) |
 
 ---
+
+## 常時起動(Oracle Cloud など Linux サーバー)
+
+`systemd` のサービスにすると、落ちても5秒後に自動で再起動し、サーバーを再起動しても自動で立ち上がります。ファイルの場所とユーザー名は、自分の環境に合わせてください。
 
 **1. トークンを `.env` に保存する**
 
@@ -161,6 +163,45 @@ journalctl -u azq-bot -f
 BOTは会話の内容を保存しません。保存する内容の詳細は `privacy.html` を参照してください。
 
 ---
+
+## Web認証(任意・外部サービス不要)
+
+BOT自身が、ブラウザ用の認証ページを配信します。Cloudflare・Caddy・ドメイン・トンネルは使いません。ユーザーが認証ボタンを押すと、**あなた専用・10分間・1回限り**のリンクが出て、ページで「認証する」を押すと完了します。
+
+**BOTは接続元のIPアドレスを直接見られる**ので、次の判定もBOTの中だけでできます。
+
+- `block_vpn`: VPN・プロキシ・データセンターの回線から認証させません。GitHub上の公開IPレンジのリストを1日1回取得し、BOTの中で照合します(IPは外部に送りません)。
+- `block_alt_ip`: 同じ回線から別のアカウントが認証済みなら、承認待ち(またはキック)にします。IPアドレスは元に戻せない値(ハッシュ)にして保存し、生のIPは保存しません。`/verify clearips` で全削除できます。
+- 判定は推測です。学校・会社・家族で同じ回線を使う場合などに、承認待ちになります。通したい人は `/verify approve` で承認できます。
+
+**注意**
+
+- 外部サービスを使わない代わりに、通信は **HTTP(暗号化なし)** です。ブラウザに「保護されていない通信」と表示されます。リンクは1回限り・10分間で、認証以外のことはできません。
+- Oracle Cloud の公開IPは、停止・起動で変わることがあります。「予約済みIP」にしておくと固定できます。
+- 接続元のIPを確認できない構成(リバースプロキシやトンネルの内側)では、判定を有効にしても動きません。BOTを直接公開してください。
+
+**設定手順**
+
+1. OracleコンソールのVCNのセキュリティリストで、TCP **8080** の受信ルールを追加します(ソース `0.0.0.0/0`)。
+2. サーバー側でも開けます。
+
+```bash
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload
+```
+
+3. `.env` に、このサーバーの公開URLを追加して、再起動します。
+
+```bash
+echo 'WEB_URL=http://サーバーの公開IP:8080' >> ~/myproject/.env
+sudo systemctl restart azq-bot
+```
+
+4. Discordで有効にします。
+
+```
+/verify set mode:Web認証 block_vpn:True block_alt_ip:True
+```
 
 ## トラブルシューティング
 
