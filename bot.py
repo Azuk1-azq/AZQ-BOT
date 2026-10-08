@@ -1,15 +1,27 @@
 import asyncio
+import atexit
+import base64
+import bisect
 import copy
+import hashlib
+import hmac
+import ipaddress
 import io
 import ipaddress
 import json
 import logging
 import os
+import platform
 import random
 import re
 import secrets
+import signal
+import threading
 import time
+import zlib
+from array import array
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote, urlparse
@@ -26,11 +38,23 @@ import aiohttp
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands, tasks
-TOKEN = "**"
+TOKEN = "YOUR-TOKEN"
 TOKEN = os.getenv("DISCORD_TOKEN") or TOKEN
 DEV_GUILD_ID = ""
 DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", DEV_GUILD_ID).strip()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "").rstrip("/")
+DASHBOARD_PAGE = (os.getenv("DASHBOARD_PAGE") or "").strip()
+PAGE_DEFAULT = "https://azuk1-azq.github.io/AZQ-BOT/dashboard.html"
+PAGE_URL = DASHBOARD_PAGE or DASHBOARD_URL or PAGE_DEFAULT
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or ""
+WEB_URL = (os.getenv("WEB_URL") or "").rstrip("/")
+WEB_READY = bool(WEB_URL)
+VPN_LIST_URLS = [u for u in (os.getenv("VPN_LIST_URLS") or
+                             "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt,"
+                             "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt").split(",") if u.strip()]
+VPN_LIST_AUTO = os.getenv("VPN_LIST_AUTO", "1") != "0"
+TUNNEL_MODE = (os.getenv("AUTO_TUNNEL", "0") == "1") and not (DASHBOARD_URL and CLIENT_SECRET) and sys.platform.startswith("linux")
 DATA_DIR = os.getenv("DATA_DIR") or os.path.join(BASE_DIR, "data")
 try:
     PORT = int(os.getenv("PORT", "0") or 0)
@@ -74,11 +98,22 @@ DEFAULTS = {
         "panel_message": None,
         "panel_title": "✅ メンバー認証",
         "panel_text": "下のボタンを押して認証を完了すると、サーバーのチャンネルが利用できるようになります。\n荒らし・BOT対策へのご協力をお願いします。",
+        "panel_button": "認証する",
         "min_account_days": 0,
         "kick_minutes": 0,
         "max_attempts": 3,
         "lockout_minutes": 10,
         "violation": "deny",
+        "bot_check": False,
+        "block_default_avatar": False,
+        "block_rejoin": False,
+        "block_cluster": False,
+        "block_vpn": False,
+        "block_alt_ip": False,
+        "ip_hashes": {},
+        "suspect_action": "hold",
+        "flagged": {},
+        "suspects": {},
         "pending": {},
         "stats": {"verified": 0, "failed": 0, "denied": 0, "kicked": 0},
     },
@@ -112,12 +147,16 @@ def deep_merge(base: dict, over: dict) -> dict:
         else:
             base[k] = v
     return base
+STORE_SAVE_DELAY = 1.5
 class Store:
     def __init__(self, directory: str):
         os.makedirs(directory, exist_ok=True)
         self.path = os.path.join(directory, "guilds.json")
         self.data: dict = {}
         self.existed = os.path.exists(self.path)
+        self._dirty = False
+        self._task: Optional[asyncio.Task] = None
+        self._write_lock = threading.Lock()
         if os.path.exists(self.path):
             try:
                 with open(self.path, encoding="utf-8") as f:
@@ -132,11 +171,46 @@ class Store:
             self.data[key] = copy.deepcopy(DEFAULTS)
         return self.data[key]
     def save(self) -> None:
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self.path)
+        self._dirty = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return self.flush()
+        if self._task is None or self._task.done():
+            self._task = loop.create_task(self._flush_later())
+    async def _flush_later(self) -> None:
+        while self._dirty:
+            await asyncio.sleep(STORE_SAVE_DELAY)
+            await self.flush_async()
+    def _dump(self) -> str:
+        return json.dumps(self.data, ensure_ascii=False, separators=(",", ":"))
+    def _write(self, payload: str) -> None:
+        with self._write_lock:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, self.path)
+    async def flush_async(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            payload = self._dump()
+            await asyncio.get_running_loop().run_in_executor(None, self._write, payload)
+        except Exception:
+            self._dirty = True
+            log.exception("設定の保存に失敗しました")
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            self._write(self._dump())
+        except Exception:
+            self._dirty = True
+            log.exception("設定の保存に失敗しました")
 store = Store(DATA_DIR)
+atexit.register(store.flush)
 class UserPrefs:
     def __init__(self, directory: str):
         self.path = os.path.join(directory, "user_prefs.json")
@@ -197,13 +271,29 @@ class AzqBot(commands.Bot):
         cleanup_trackers.start()
         verify_watch.start()
         ticket_watch.start()
+        self._lag_task = asyncio.create_task(loop_lag_monitor())
     async def close(self):
+        t = getattr(self, "_tunnel_task", None)
+        if t:
+            t.cancel()
+        if _tunnel_proc and _tunnel_proc.returncode is None:
+            _tunnel_proc.terminate()
+        await store.flush_async()
         if self.session:
             await self.session.close()
         if self.web_runner:
             await self.web_runner.cleanup()
         await super().close()
 bot = AzqBot()
+async def loop_lag_monitor():
+    await bot.wait_until_ready()
+    interval = 5
+    while not bot.is_closed():
+        t0 = time.monotonic()
+        await asyncio.sleep(interval)
+        lag = time.monotonic() - t0 - interval
+        if lag > 1.0:
+            log.warning("イベントループが約 %.1f 秒間、詰まりました。重い処理が応答を遅らせています。", lag)
 async def start_web():
     async def health(_request):
         lat = bot.latency
@@ -212,23 +302,36 @@ async def start_web():
             "guilds": len(bot.guilds),
             "latency_ms": None if lat != lat else round(lat * 1000),
         })
-    if not PORT:
-        log.info("ヘルスチェックサーバーは無効です(環境変数 PORT を設定すると有効になります)")
+    port = PORT or (int(os.getenv("WEB_PORT") or 8080) if (DASHBOARD_URL or TUNNEL_MODE or WEB_READY) else 0)
+    if not port:
+        log.info("Webサーバーは無効です(PORT または DASHBOARD_URL を設定すると有効になります)")
         return
-    app = web.Application()
-    app.router.add_get("/", health)
+    app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/health", health)
+    if DASHBOARD_URL and CLIENT_SECRET:
+        add_dashboard_routes(app)
+    elif TUNNEL_MODE:
+        add_dashboard_routes(app, oauth=False)
+    else:
+        app.router.add_get("/", health)
+    if WEB_READY:
+        app.router.add_get("/v", web_verify_get)
+        app.router.add_post("/v", web_verify_post)
     runner = web.AppRunner(app)
     await runner.setup()
     try:
-        await web.TCPSite(runner, "0.0.0.0", PORT).start()
+        await web.TCPSite(runner, "127.0.0.1" if TUNNEL_MODE else "0.0.0.0", port).start()
     except OSError as e:
-        log.warning("ヘルスチェックサーバーを起動できませんでした(ポート %s: %s)。BOTは続行します。"
-                    "すでに別のBOTプロセスが動いていないか確認してください。", PORT, e)
+        log.warning("Webサーバーを起動できませんでした(ポート %s: %s)。BOTは続行します。"
+                    "すでに別のBOTプロセスが動いていないか確認してください。", port, e)
         await runner.cleanup()
         return
     bot.web_runner = runner
-    log.info("ヘルスチェックサーバー起動: 0.0.0.0:%s", PORT)
+    if TUNNEL_MODE:
+        bot._tunnel_task = asyncio.create_task(tunnel_supervisor(port))
+    if WEB_READY:
+        bot._vpn_task = asyncio.create_task(vpn_list_loop())
+    log.info("Webサーバー起動: 0.0.0.0:%s (ダッシュボード: %s)", port, "有効" if DASHBOARD_URL and CLIENT_SECRET else "無効")
 def make_embed(title: str, desc: Optional[str] = None, color: int = BLUE) -> discord.Embed:
     return discord.Embed(title=title, description=desc, color=color, timestamp=discord.utils.utcnow())
 async def send_log(guild: discord.Guild, embed: discord.Embed) -> None:
@@ -395,7 +498,11 @@ async def on_member_join(member: discord.Member):
             except discord.HTTPException:
                 log.warning("未認証ロールの付与に失敗 guild=%s", guild.id)
         v["pending"][str(member.id)] = int(time.time())
+        reasons = detect_join_suspects(member, v)
         store.save()
+        if reasons:
+            await send_log(guild, make_embed("🛡️ 疑わしい参加(認証前)", f"{member.mention} (`{member.id}`)\n理由: " + " / ".join(reasons)
+                                           + "\n認証ボタンを押しても、設定に従って保留またはキックされます。", YELLOW))
     else:
         await apply_autorole(member)
     await send_welcome(member)
@@ -594,7 +701,14 @@ async def cleanup_trackers():
         raid_until.pop(k, None)
     for k in [k for k, t in ticket_last.items() if now - t > TICKET_COOLDOWN]:
         ticket_last.pop(k, None)
+_scan_sem: Optional[asyncio.Semaphore] = None
 async def measure_activity(guild: discord.Guild, hours: int = 24, per_channel: int = 500, max_channels: int = 50):
+    global _scan_sem
+    if _scan_sem is None:
+        _scan_sem = asyncio.Semaphore(1)
+    async with _scan_sem:
+        return await _measure_activity(guild, hours, per_channel, max_channels)
+async def _measure_activity(guild: discord.Guild, hours: int, per_channel: int, max_channels: int):
     since = discord.utils.utcnow() - timedelta(hours=hours)
     total, authors, per = 0, set(), {}
     channels = [
@@ -614,6 +728,7 @@ async def measure_activity(guild: discord.Guild, hours: int = 24, per_channel: i
         if n:
             per[c] = n
             total += n
+        await asyncio.sleep(0.3)
     humans = sum(1 for m in guild.members if not m.bot)
     return total, len(authors), humans, per
 def kaso_level(total: int, hours: int, ratio: float):
@@ -667,6 +782,7 @@ async def kaso_watch():
 @kaso_watch.before_loop
 async def _before_kaso_watch():
     await bot.wait_until_ready()
+    await asyncio.sleep(60)
 async def build_nounai(name: str):
     name = name.strip()[:30]
     url = f"https://maker.usoko.net/nounai/img/{quote(name, safe='')}.gif"
@@ -714,6 +830,16 @@ FONT_CANDIDATES = [
 KINSOKU = set("、。，．・」』）】〉》〕｝！？!?,.)]}:;…ー々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")
 OPENERS = set("「『（【〈《〔｛([{")
 MG_W, MG_H = 1200, 630
+try:
+    HEAVY_WORKERS = int(os.getenv("HEAVY_WORKERS") or 0)
+except ValueError:
+    HEAVY_WORKERS = 0
+if HEAVY_WORKERS < 1:
+    HEAVY_WORKERS = max(2, min(4, os.cpu_count() or 2))
+HEAVY_POOL = ThreadPoolExecutor(max_workers=HEAVY_WORKERS, thread_name_prefix="heavy")
+CAPTCHA_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="captcha")
+async def run_heavy(fn, *args, pool=None):
+    return await asyncio.get_running_loop().run_in_executor(pool or HEAVY_POOL, fn, *args)
 MG_CX = 855
 MG_AREA_W = 590
 MG_TITLE_MAX, MG_TITLE_MIN = 60, 20
@@ -866,8 +992,8 @@ def render_meigen(avatar_bytes: bytes, text: str, author: str, handle: str, styl
 async def make_meigen_file(user: discord.abc.User, text: str, author: Optional[str], style: str, color: bool) -> discord.File:
     font_path = await ensure_font()
     avatar = await user.display_avatar.replace(size=1024, format="png").read()
-    buf = await asyncio.to_thread(render_meigen, avatar, text, author or user.display_name,
-                                  f"@{user.name}", style, color, font_path)
+    buf = await run_heavy(render_meigen, avatar, text, author or user.display_name,
+                          f"@{user.name}", style, color, font_path)
     return discord.File(buf, filename="meigen.png")
 MEIGEN_ASK_COOLDOWN = 24 * 3600
 def meigen_pref_embed(state: Optional[str]) -> discord.Embed:
@@ -1239,7 +1365,7 @@ async def avatar(interaction: discord.Interaction, user: Optional[discord.User] 
     e = make_embed(f"🖼️ {u} のアイコン")
     e.set_image(url=u.display_avatar.replace(size=1024).url)
     await interaction.response.send_message(embed=e)
-VERIFY_MODES = {"button": "ボタン認証", "math": "計算認証", "image": "画像認証(CAPTCHA)"}
+VERIFY_MODES = {"button": "ボタン認証", "math": "計算認証", "image": "画像認証(CAPTCHA)", "web": "Web認証(ブラウザで確認)"}
 VIOLATION_MODES = {"deny": "拒否のみ(一時ロック)", "kick": "キック"}
 CAPTCHA_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 CHALLENGE_TTL = 180
@@ -1257,6 +1383,238 @@ verify_fails: dict = {}
 verify_lock: dict = {}
 verify_last: dict = {}
 raid_until: dict = {}
+verify_issued: dict = {}
+recent_joins: dict = defaultdict(lambda: deque(maxlen=50))
+suspect_notified: set = set()
+SOLVE_MIN_SECONDS = {"math": 2.0, "image": 3.0}
+SUSPECT_CHOICES = [app_commands.Choice(name="管理者の承認待ちにする(/verify approve で承認)", value="hold"),
+                   app_commands.Choice(name="キックする", value="kick")]
+class IPRanges:
+    def __init__(self):
+        self.starts, self.ends = array("L"), array("L")
+    def load(self, lines) -> int:
+        spans = []
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("
+                continue
+            try:
+                net = ipaddress.ip_network(line, strict=False)
+            except ValueError:
+                continue
+            if net.version == 4:
+                spans.append((int(net.network_address), int(net.broadcast_address)))
+        spans.sort()
+        merged = []
+        for a, b in spans:
+            if merged and a <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        self.starts, self.ends = array("L", (a for a, _ in merged)), array("L", (b for _, b in merged))
+        return len(merged)
+    def contains(self, ip: str) -> bool:
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        if addr.version != 4:
+            return False
+        n = int(addr)
+        i = bisect.bisect_right(self.starts, n) - 1
+        return i >= 0 and n <= self.ends[i]
+vpn_ranges = IPRanges()
+VPN_LIST_FILE = os.path.join(DATA_DIR, "vpn_ranges.txt")
+def _load_vpn_file() -> int:
+    if not os.path.exists(VPN_LIST_FILE):
+        return 0
+    with open(VPN_LIST_FILE, encoding="utf-8", errors="replace") as f:
+        return vpn_ranges.load(f)
+async def vpn_list_loop() -> None:
+    await bot.wait_until_ready()
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            old = os.path.exists(VPN_LIST_FILE) and (time.time() - os.path.getmtime(VPN_LIST_FILE)) < 86400
+            if VPN_LIST_AUTO and not old:
+                parts = []
+                for url in VPN_LIST_URLS:
+                    async with bot.session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as r:
+                        if r.status == 200:
+                            parts.append(await r.text())
+                        else:
+                            log.warning("VPNリストの取得に失敗 HTTP %s: %s", r.status, url)
+                text = "\n".join(parts)
+                if text.count("\n") > 1000:
+                    tmp = VPN_LIST_FILE + ".part"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        f.write(text)
+                    os.replace(tmp, VPN_LIST_FILE)
+            n = await loop.run_in_executor(None, _load_vpn_file)
+            log.info("VPN・データセンターのIPレンジ: %s件を読み込みました", n) if n else log.warning(
+                "VPNリストがありません。VPN判定(block_vpn)は動作しません。(%s)", VPN_LIST_FILE)
+        except Exception:
+            log.exception("VPNリストの更新に失敗しました")
+        await asyncio.sleep(6 * 3600)
+def _ip_salt() -> bytes:
+    path = os.path.join(DATA_DIR, "ip_salt.key")
+    if not os.path.exists(path):
+        with open(path, "wb") as f:
+            f.write(secrets.token_bytes(32))
+        os.chmod(path, 0o600)
+    with open(path, "rb") as f:
+        return f.read()
+def ip_hash(ip: str) -> str:
+    addr = ipaddress.ip_address(ip)
+    key = str(ipaddress.ip_network(f"{ip}/64", strict=False)) if addr.version == 6 else ip
+    return hmac.new(_ip_salt(), key.encode(), hashlib.sha256).hexdigest()[:20]
+WEB_TTL = 600
+web_nonces: dict = {}
+web_rate: dict = defaultdict(deque)
+def make_web_link(guild_id: int, user_id: int) -> str:
+    now = time.time()
+    for k in [k for k, r in web_nonces.items() if r["exp"] < now]:
+        web_nonces.pop(k, None)
+    n = secrets.token_urlsafe(18)
+    web_nonces[n] = {"g": guild_id, "u": user_id, "cookie": secrets.token_urlsafe(16), "exp": now + WEB_TTL}
+    return f"{WEB_URL}/v?t={n}"
+def client_ip(request) -> str:
+    return request.remote or ""
+def _rate_ok(ip: str) -> bool:
+    now, q = time.time(), web_rate[ip]
+    while q and now - q[0] > 60:
+        q.popleft()
+    if len(web_rate) > 5000:
+        for k in [k for k, d in web_rate.items() if not d]:
+            web_rate.pop(k, None)
+    q.append(now)
+    return len(q) <= 20
+def _esc(x) -> str:
+    return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&
+def web_page(body: str, status: int = 200) -> web.Response:
+    html = ("<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<meta name=\"robots\" content=\"noindex\"><title>認証</title><style>:root{--bg:
+            "@media(prefers-color-scheme:dark){:root{--bg:
+            "body{margin:0;font:15px/1.7 system-ui,'Hiragino Sans','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);display:grid;place-items:center;min-height:100vh;padding:16px;box-sizing:border-box}"
+            ".card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;max-width:480px;width:100%}h1{font-size:18px;margin:0 0 12px}.sub{color:var(--sub);font-size:13px}"
+            "button{background:var(--pri);color:
+            f"<body><div class=\"card\">{body}</div></body></html>")
+    return web.Response(text=html, status=status, content_type="text/html",
+                        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer"})
+def _web_expired() -> web.Response:
+    return web_page("<h1>リンクが無効です</h1><p>有効期限が切れたか、すでに使用されています。Discordの認証パネルから、もう一度ボタンを押してください。</p>", 400)
+def web_disclosure(v: dict) -> str:
+    items = []
+    if v["block_vpn"]:
+        items.append("VPN・プロキシ・データセンターの回線でないかの確認(公開されているIPの一覧と照合するだけで、IPは外部に送りません)")
+    if v["block_alt_ip"]:
+        items.append("同じ回線から別のアカウントが認証していないかの確認(IPアドレスはそのまま保存せず、元に戻せない値(ハッシュ)にして保存します)")
+    if not items:
+        return "<p class=\"sub\">・ロボットでないことの確認だけを行います。IPアドレスは保存しません。</p>"
+    return "<p class=\"sub\">このサーバーでは、次の確認のために接続元のIPアドレスを一時的に使います。<br>" + "<br>".join("・" + i for i in items) + "<br>・生のIPアドレスは保存しません。</p>"
+async def web_verify_get(request):
+    if not _rate_ok(client_ip(request)):
+        return web_page("<h1>アクセスが多すぎます</h1><p>しばらく待ってからやり直してください。</p>", 429)
+    t = request.query.get("t", "")
+    rec = web_nonces.get(t)
+    if not rec or rec["exp"] < time.time():
+        return _web_expired()
+    guild = bot.get_guild(rec["g"])
+    if not guild:
+        return _web_expired()
+    v = store.get(guild.id)["verify"]
+    resp = web_page(f"<h1>🔐 {_esc(guild.name)} の認証</h1><p>下のボタンを押すと、認証が完了します。</p>{web_disclosure(v)}"
+                    f"<form method=\"POST\" action=\"/v\"><input type=\"hidden\" name=\"t\" value=\"{_esc(t)}\"><button type=\"submit\">認証する</button></form>")
+    resp.set_cookie("azq_v", rec["cookie"], max_age=WEB_TTL, httponly=True, samesite="Lax")
+    return resp
+async def web_verify_post(request):
+    ip_s = client_ip(request)
+    if not _rate_ok(ip_s):
+        return web_page("<h1>アクセスが多すぎます</h1><p>しばらく待ってからやり直してください。</p>", 429)
+    form = await request.post()
+    rec = web_nonces.pop(str(form.get("t", "")), None)
+    if not rec or rec["exp"] < time.time() or request.cookies.get("azq_v") != rec["cookie"]:
+        return _web_expired()
+    guild = bot.get_guild(rec["g"])
+    member = guild.get_member(rec["u"]) if guild else None
+    if not guild or not member:
+        return web_page("<h1>確認できません</h1><p>サーバーに参加しているか確認してください。</p>", 400)
+    cfg = store.get(guild.id)
+    v = cfg["verify"]
+    if not verify_active(cfg):
+        return web_page("<h1>認証は現在利用できません</h1>", 400)
+    if str(member.id) not in v["pending"]:
+        return web_page("<h1>✅ すでに認証済みです</h1><p>Discordに戻ってください。</p>")
+    if v["block_vpn"] or v["block_alt_ip"]:
+        try:
+            ip = ipaddress.ip_address(ip_s)
+        except ValueError:
+            ip = None
+        if ip is None or ip.is_private or ip.is_loopback or ip.is_link_local:
+            log.warning("Web認証: 接続元IPを確認できません(%s)。リバースプロキシ等を挟んでいないか確認してください", ip_s)
+            return web_page("<h1>設定エラー</h1><p>接続元を確認できませんでした。管理者に連絡してください。</p>", 500)
+        if v["block_vpn"] and vpn_ranges.contains(ip_s):
+            v["stats"]["denied"] += 1
+            store.save()
+            await send_log(guild, make_embed("🛡️ VPN・プロキシの可能性(Web認証を拒否)", f"{member.mention} (`{member.id}`)\n問題なければ `/verify approve` で承認できます。", YELLOW))
+            return web_page("<h1>⚠️ 認証できませんでした</h1><p>VPN・プロキシ・データセンターの回線の可能性があります。<br>VPNなどを切ってから、Discordの認証ボタンでやり直してください。</p>", 403)
+        if v["block_alt_ip"]:
+            h, uid = ip_hash(ip_s), str(member.id)
+            users = v["ip_hashes"].setdefault(h, [])
+            others = [u for u in users if u != uid]
+            if uid not in users:
+                users.append(uid)
+            _cap(v["ip_hashes"], 5000)
+            if others:
+                reason = "同じ回線から別のアカウントが認証済み(サブ垢の疑い)"
+                v["suspects"][uid] = reason
+                v["stats"]["denied"] += 1
+                store.save()
+                kick = v["suspect_action"] == "kick"
+                await send_log(guild, make_embed("🛡️ " + ("サブ垢の疑いでキック" if kick else "サブ垢の疑い(認証を保留)"),
+                                                 f"{member.mention} (`{member.id}`)\n同じ回線で認証済み: " + " ".join(f"<@{u}>" for u in others[:5])
+                                                 + ("" if kick else "\n家族・学校など同じ回線の別人の場合は `/verify approve` で承認できます。"), YELLOW))
+                if kick:
+                    await kick_for_verify(member, reason)
+                    return web_page("<h1>認証できませんでした</h1>", 403)
+                return web_page("<h1>🛡️ 管理者の承認待ちです</h1><p>確認が必要なため、サーバー管理者の承認をお待ちください。</p>")
+            store.save()
+    err = await grant_verification(guild, member, "Web認証")
+    if err:
+        return web_page(f"<h1>認証できませんでした</h1><p>{_esc(err)}</p>", 500)
+    return web_page("<h1>✅ 認証が完了しました</h1><p>Discordに戻ってください。</p>")
+def is_default_avatar(member: discord.abc.User) -> bool:
+    return "/embed/avatars/" in member.display_avatar.url
+def _cap(d: dict, n: int) -> None:
+    while len(d) > n:
+        d.pop(next(iter(d)))
+def flag_member(v: dict, user_id: int) -> None:
+    v["flagged"][str(user_id)] = int(time.time())
+    _cap(v["flagged"], 1000)
+def suspect_reasons(member: discord.Member, v: dict) -> list:
+    reasons = []
+    if v["block_default_avatar"] and is_default_avatar(member):
+        reasons.append("デフォルトアイコンのまま")
+    if r := v["suspects"].get(str(member.id)):
+        reasons.append(r)
+    return reasons
+def detect_join_suspects(member: discord.Member, v: dict) -> list:
+    now, created, uid = time.time(), member.created_at.timestamp(), str(member.id)
+    reasons = []
+    if v["block_rejoin"] and uid in v["flagged"]:
+        reasons.append("認証失敗・未認証でキックされた後の再参加")
+    rj = recent_joins[member.guild.id]
+    if v["block_cluster"]:
+        near = [u for (u, c, j) in rj if now - j < 3600 and abs(c - created) < 600 and u != member.id]
+        if len(near) >= 2:
+            reasons.append(f"作成時刻が近いアカウントが1時間以内に{len(near) + 1}件参加(サブ垢の疑い)")
+            for u in near:
+                v["suspects"].setdefault(str(u), "作成時刻が近いアカウントの集団参加(サブ垢の疑い)")
+    rj.append((member.id, created, now))
+    if reasons:
+        v["suspects"][uid] = " / ".join(reasons)
+        _cap(v["suspects"], 500)
+    return reasons
 verify_group = app_commands.Group(
     name="verify", description="メンバー認証の設定・管理",
     default_permissions=discord.Permissions(administrator=True), guild_only=True,
@@ -1268,7 +1626,7 @@ def verify_effective(guild_id: int):
     v = store.get(guild_id)["verify"]
     raid = raid_until.get(guild_id, 0) > time.time()
     if raid:
-        return "image", max(v["min_account_days"], RAID_MIN_ACCOUNT_DAYS), True
+        return ("web" if v["mode"] == "web" else "image"), max(v["min_account_days"], RAID_MIN_ACCOUNT_DAYS), True
     return v["mode"], v["min_account_days"], False
 def role_problem(interaction: discord.Interaction, role: discord.Role, check_dangerous: bool = False) -> Optional[str]:
     g = interaction.guild
@@ -1353,6 +1711,7 @@ async def kick_for_verify(member: discord.Member, reason: str) -> bool:
         return False
     store.get(member.guild.id)["verify"]["stats"]["kicked"] += 1
     store.get(member.guild.id)["verify"]["pending"].pop(str(member.id), None)
+    flag_member(store.get(member.guild.id)["verify"], member.id)
     store.save()
     return True
 async def grant_verification(guild: discord.Guild, member: discord.Member, method: str) -> Optional[str]:
@@ -1372,6 +1731,9 @@ async def grant_verification(guild: discord.Guild, member: discord.Member, metho
     verify_fails.pop(key, None)
     verify_lock.pop(key, None)
     verify_challenges.pop(key, None)
+    verify_issued.pop(key, None)
+    suspect_notified.discard(key)
+    v["suspects"].pop(str(member.id), None)
     v["pending"].pop(str(member.id), None)
     v["stats"]["verified"] += 1
     store.save()
@@ -1396,7 +1758,12 @@ async def check_answer(interaction: discord.Interaction, given: str) -> None:
     if not chall or chall[1] < now:
         return await interaction.followup.send("⌛ 問題の有効期限が切れました。パネルのボタンをもう一度押してください。", ephemeral=True)
     answer = re.sub(r"\s+", "", given).upper()
-    if secrets.compare_digest(answer.encode(), chall[0].encode()):
+    issued = verify_issued.pop(key, None)
+    too_fast = bool(v["bot_check"] and issued is not None
+                    and now - issued < SOLVE_MIN_SECONDS["math" if chall[0].isdigit() else "image"])
+    if too_fast:
+        log.info("認証の回答が早すぎるため失敗扱い guild=%s member=%s (%.1f秒)", guild.id, member.id, now - issued)
+    if not too_fast and secrets.compare_digest(answer.encode(), chall[0].encode()):
         err = await grant_verification(guild, member, "計算" if chall[0].isdigit() else "CAPTCHA")
         return await interaction.followup.send(err or "✅ 認証が完了しました!ようこそ!", ephemeral=True)
     count = register_fail(key)
@@ -1460,6 +1827,35 @@ async def verify_click(interaction: discord.Interaction) -> None:
         if v["violation"] == "kick":
             await kick_for_verify(member, f"アカウント作成から{min_days}日未満")
         return
+    reasons = suspect_reasons(member, v)
+    if reasons:
+        v["stats"]["denied"] += 1
+        store.save()
+        txt, kick = " / ".join(reasons), v["suspect_action"] == "kick"
+        if key not in suspect_notified:
+            suspect_notified.add(key)
+            await send_log(guild, make_embed("🛡️ 疑わしいアカウントをキック" if kick else "🛡️ 疑わしいアカウントの認証を保留",
+                                             f"{member.mention} (`{member.id}`)\n理由: {txt}"
+                                             + ("" if kick else "\n問題なければ `/verify approve` で承認できます。"), YELLOW))
+        if kick:
+            await _eph(interaction, "🚫 このアカウントは疑わしいと判断されたため、認証できません。")
+            await kick_for_verify(member, f"疑わしいアカウント: {txt}")
+        else:
+            await _eph(interaction, "🛡️ アカウントの確認が必要なため、サーバー管理者の承認待ちです。しばらくお待ちください。")
+        return
+    if mode == "web":
+        if not WEB_READY:
+            return await _eph(interaction, "⚠️ Web認証の準備ができていません。管理者に連絡してください。")
+        view = discord.ui.View(timeout=WEB_TTL)
+        view.add_item(discord.ui.Button(label="Webで認証する", emoji="🌐", style=discord.ButtonStyle.link, url=make_web_link(guild.id, member.id)))
+        return await interaction.response.send_message("🌐 下のボタンを開いて、ページの指示に従ってください。\n(10分間有効・あなた専用のリンクです。他の人に共有しないでください)",
+                                                       view=view, ephemeral=True)
+    note = ""
+    if v["bot_check"] and mode != "image":
+        if age_days < 7 or is_default_avatar(member):
+            mode, note = "image", "\n🛡️ アカウントの確認のため、画像認証になりました。"
+        elif mode == "button":
+            mode = "math"
     if mode == "button":
         await interaction.response.defer(ephemeral=True)
         err = await grant_verification(guild, member, "ボタン")
@@ -1467,6 +1863,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
     if mode == "math":
         question, answer = gen_math()
         verify_challenges[key] = (answer, now + CHALLENGE_TTL)
+        verify_issued[key] = now
         return await interaction.response.send_modal(AnswerModal(question))
     await interaction.response.defer(ephemeral=True)
     code = "".join(secrets.choice(CAPTCHA_CHARS) for _ in range(5))
@@ -1474,10 +1871,11 @@ async def verify_click(interaction: discord.Interaction) -> None:
         font_path = await ensure_font()
     except Exception:
         font_path = None
-    buf = await asyncio.to_thread(render_captcha, code, font_path)
+    buf = await run_heavy(render_captcha, code, font_path, pool=CAPTCHA_POOL)
     verify_challenges[key] = (code, now + CHALLENGE_TTL)
+    verify_issued[key] = now
     await interaction.followup.send(
-        "🔐 画像の文字を入力してください。(大文字小文字は区別しません / 3分以内)" + ("\n⚠️ レイド警戒中のため画像認証です。" if raid else ""),
+        "🔐 画像の文字を入力してください。(大文字小文字は区別しません / 3分以内)" + ("\n⚠️ レイド警戒中のため画像認証です。" if raid else "") + note,
         file=discord.File(buf, filename="captcha.png"), view=CaptchaEntryView(), ephemeral=True)
 class VerifyPanelView(discord.ui.View):
     def __init__(self):
@@ -1498,24 +1896,51 @@ async def delete_panel(guild: discord.Guild) -> None:
         except discord.HTTPException:
             pass
     v["panel_channel"] = v["panel_message"] = None
+def verify_view(v: dict) -> "VerifyPanelView":
+    view = VerifyPanelView()
+    view.start.label = (v.get("panel_button") or "認証する")[:80]
+    return view
 async def post_panel(guild: discord.Guild, channel: discord.TextChannel) -> discord.Message:
     await delete_panel(guild)
     v = store.get(guild.id)["verify"]
-    msg = await channel.send(embed=panel_embed(v), view=VerifyPanelView())
+    msg = await channel.send(embed=panel_embed(v), view=verify_view(v))
     v["panel_channel"], v["panel_message"] = channel.id, msg.id
     store.save()
     return msg
-async def refresh_panel(guild: discord.Guild) -> None:
+async def refresh_panel(guild: discord.Guild) -> bool:
     v = store.get(guild.id)["verify"]
     ch = guild.get_channel(v["panel_channel"]) if v["panel_channel"] else None
     if ch and v["panel_message"]:
         try:
-            await (await ch.fetch_message(v["panel_message"])).edit(embed=panel_embed(v))
+            await (await ch.fetch_message(v["panel_message"])).edit(embed=panel_embed(v), view=verify_view(v))
+            return True
         except discord.HTTPException:
             pass
+    return False
+class VerifyTextModal(discord.ui.Modal, title="認証パネルの文面を編集"):
+    def __init__(self, v: dict):
+        super().__init__()
+        self.t = discord.ui.TextInput(label="タイトル", default=v["panel_title"][:100], max_length=100)
+        self.d = discord.ui.TextInput(label="説明文", style=discord.TextStyle.paragraph, default=v["panel_text"][:1500], max_length=1500)
+        self.b = discord.ui.TextInput(label="ボタンの名前", default=(v.get("panel_button") or "認証する")[:30], max_length=30)
+        for item in (self.t, self.d, self.b):
+            self.add_item(item)
+    async def on_submit(self, interaction: discord.Interaction):
+        v = store.get(interaction.guild.id)["verify"]
+        v["panel_title"], v["panel_text"], v["panel_button"] = self.t.value.strip(), self.d.value.strip(), self.b.value.strip()
+        store.save()
+        await interaction.response.defer(ephemeral=True)
+        ok = await refresh_panel(interaction.guild)
+        await interaction.followup.send("✅ 認証パネルの文面を更新しました。" if ok else
+                                        "✅ 保存しました。パネルを設置する(`/verify setup` / `/verify panel`)と反映されます。", ephemeral=True)
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("認証パネルの文面編集でエラー", exc_info=error)
+        await _eph(interaction, "⚠️ 更新に失敗しました。もう一度お試しください。")
 @tasks.loop(minutes=1)
 async def verify_watch():
     now = time.time()
+    for k in [k for k, t in verify_issued.items() if now - t > CHALLENGE_TTL * 2]:
+        verify_issued.pop(k, None)
     for guild in list(bot.guilds):
         if guild.unavailable:
             continue
@@ -1539,6 +1964,7 @@ async def verify_watch():
                 try:
                     await member.kick(reason=f"[AZQ BOT 認証] {v['kick_minutes']}分以内に未認証")
                     v["stats"]["kicked"] += 1
+                    flag_member(v, member.id)
                     await send_log(guild, make_embed("⏰ 未認証キック", f"{member} (`{member.id}`)\n{v['kick_minutes']}分以内に認証されませんでした。", YELLOW))
                 except discord.HTTPException:
                     log.warning("未認証キックに失敗 guild=%s member=%s", guild.id, uid)
@@ -1547,6 +1973,7 @@ async def verify_watch():
 @verify_watch.before_loop
 async def _before_verify_watch():
     await bot.wait_until_ready()
+    await asyncio.sleep(20)
 @verify_group.command(name="setup", description="認証パネルを設置して認証機能を有効化します")
 @app_commands.describe(
     channel="認証パネルを置くチャンネル", role="認証後に付与するロール",
@@ -1569,6 +1996,8 @@ async def verify_setup(interaction: discord.Interaction, channel: discord.TextCh
     perms = channel.permissions_for(interaction.guild.me)
     if not (perms.view_channel and perms.send_messages and perms.embed_links):
         return await interaction.response.send_message(f"❌ BOTが {channel.mention} で「チャンネルを見る・メッセージを送信・埋め込みリンク」を行えません。", ephemeral=True)
+    if mode and mode.value == "web" and not WEB_READY:
+        return await interaction.response.send_message("❌ Web認証は、まだ準備ができていません。BOTの環境変数 `WEB_URL` を設定してください。(手順は README を参照)", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
     v = store.get(interaction.guild.id)["verify"]
     v.update(enabled=True, role=role.id, unverified_role=unverified_role.id if unverified_role else None)
@@ -1604,29 +2033,53 @@ async def verify_setup(interaction: discord.Interaction, channel: discord.TextCh
     kick_minutes="この分数以内に認証しないとキック(0=キックしない)",
     max_attempts="連続で間違えてよい回数", lockout_minutes="上限到達後のロック時間(分)",
     violation="新規アカウント/失敗上限に達した人への処置",
+    bot_check="ロボット確認を強化(早すぎる回答は失敗/ボタン方式は計算に/疑わしい新規アカウントは画像認証に)",
+    block_default_avatar="デフォルトアイコンのままのアカウントを自動では通さない",
+    block_rejoin="認証失敗・未認証でキックされた人の再参加を自動では通さない",
+    block_cluster="作成時刻が近いアカウントが短時間に複数参加(サブ垢の疑い)したら自動では通さない",
+    suspect_action="疑わしいアカウントへの処置",
+    block_vpn="Web認証で、VPN・プロキシ・データセンターの回線から認証させない",
+    block_alt_ip="Web認証で、同じ回線から別アカウントが認証済みなら承認待ちにする(サブ垢対策)",
 )
-@app_commands.choices(mode=MODE_CHOICES, violation=VIOLATION_CHOICES)
+@app_commands.choices(mode=MODE_CHOICES, violation=VIOLATION_CHOICES, suspect_action=SUSPECT_CHOICES)
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_set(interaction: discord.Interaction, mode: Optional[app_commands.Choice[str]] = None,
                      min_account_days: Optional[app_commands.Range[int, 0, 365]] = None,
                      kick_minutes: Optional[app_commands.Range[int, 0, 1440]] = None,
                      max_attempts: Optional[app_commands.Range[int, 1, 10]] = None,
                      lockout_minutes: Optional[app_commands.Range[int, 1, 1440]] = None,
-                     violation: Optional[app_commands.Choice[str]] = None):
+                     violation: Optional[app_commands.Choice[str]] = None, bot_check: Optional[bool] = None,
+                     block_default_avatar: Optional[bool] = None, block_rejoin: Optional[bool] = None,
+                     block_cluster: Optional[bool] = None, suspect_action: Optional[app_commands.Choice[str]] = None,
+                     block_vpn: Optional[bool] = None, block_alt_ip: Optional[bool] = None):
     v = store.get(interaction.guild.id)["verify"]
     changed = []
+    if not WEB_READY and ((mode and mode.value == "web") or block_vpn or block_alt_ip):
+        return await interaction.response.send_message("❌ Web認証は、まだ準備ができていません。BOTの環境変数 `WEB_URL` を設定してください。(手順は README を参照)", ephemeral=True)
     for key, val in (("mode", mode.value if mode else None), ("min_account_days", min_account_days),
                      ("kick_minutes", kick_minutes), ("max_attempts", max_attempts),
-                     ("lockout_minutes", lockout_minutes), ("violation", violation.value if violation else None)):
+                     ("lockout_minutes", lockout_minutes), ("violation", violation.value if violation else None),
+                     ("bot_check", bot_check), ("block_default_avatar", block_default_avatar), ("block_rejoin", block_rejoin),
+                     ("block_cluster", block_cluster), ("suspect_action", suspect_action.value if suspect_action else None),
+                     ("block_vpn", block_vpn), ("block_alt_ip", block_alt_ip)):
         if val is not None:
             v[key] = val
             changed.append(f"`{key}` = `{val}`")
     if not changed:
         return await interaction.response.send_message("変更する項目を指定してください。", ephemeral=True)
     store.save()
-    await interaction.response.send_message("✅ 更新しました:\n" + "\n".join(changed), ephemeral=True)
+    note = "\n⚠️ VPN・同一回線の判定は、認証方式が「Web認証」のときに働きます。(`mode:Web認証`)" if (block_vpn or block_alt_ip) and v["mode"] != "web" else ""
+    await interaction.response.send_message("✅ 更新しました:\n" + "\n".join(changed) + note, ephemeral=True)
     if mode:
         await refresh_panel(interaction.guild)
+@verify_group.command(name="clearips", description="サブ垢検出のために保存している、IPのハッシュをすべて削除します")
+@app_commands.checks.has_permissions(administrator=True)
+async def verify_clearips(interaction: discord.Interaction):
+    v = store.get(interaction.guild.id)["verify"]
+    n = len(v["ip_hashes"])
+    v["ip_hashes"] = {}
+    store.save()
+    await interaction.response.send_message(f"✅ 保存していたIPのハッシュ({n}件)を削除しました。", ephemeral=True)
 @verify_group.command(name="panel", description="認証パネルを再設置/文面を変更します")
 @app_commands.describe(channel="省略すると現在のパネルのチャンネル", title="パネルのタイトル", text="パネルの説明文(改行は \\n)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -1649,6 +2102,10 @@ async def verify_panel(interaction: discord.Interaction, channel: Optional[disco
     except discord.HTTPException:
         return await interaction.followup.send("❌ パネルを送信できませんでした。", ephemeral=True)
     await interaction.followup.send(f"✅ {target.mention} にパネルを設置しました。", ephemeral=True)
+@verify_group.command(name="text", description="認証パネルの文面(タイトル・説明・ボタン名)を入力フォームで編集します")
+@app_commands.checks.has_permissions(administrator=True)
+async def verify_text(interaction: discord.Interaction):
+    await interaction.response.send_modal(VerifyTextModal(store.get(interaction.guild.id)["verify"]))
 @verify_group.command(name="status", description="認証機能の状態を表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def verify_status(interaction: discord.Interaction):
@@ -1663,6 +2120,11 @@ async def verify_status(interaction: discord.Interaction):
     e.add_field(name="最低アカウント年齢", value=f"{v['min_account_days']}日")
     e.add_field(name="未認証キック", value=f"{v['kick_minutes']}分" if v["kick_minutes"] else "なし")
     e.add_field(name="失敗上限", value=f"{v['max_attempts']}回 → {v['lockout_minutes']}分ロック / {VIOLATION_MODES[v['violation']]}")
+    onoff = lambda b: "ON" if b else "OFF"
+    e.add_field(name="Web認証", value=("準備OK" if WEB_READY else "未設定(WEB_URL)") + f" / VPN判定 {onoff(v['block_vpn'])}(リスト{len(vpn_ranges.starts)}件) / 同一回線の判定 {onoff(v['block_alt_ip'])}", inline=False)
+    e.add_field(name="ロボット確認の強化", value=onoff(v["bot_check"]))
+    e.add_field(name="疑わしいアカウント対策", value=(f"デフォルトアイコン {onoff(v['block_default_avatar'])} / 再参加 {onoff(v['block_rejoin'])} / 集団参加 {onoff(v['block_cluster'])}\n"
+                                                      f"処置: {'キック' if v['suspect_action'] == 'kick' else '管理者の承認待ち'}"), inline=False)
     e.add_field(name="レイド警戒", value=f"🚨 発動中 (<t:{int(raid_until[g.id])}:R> まで: {VERIFY_MODES[mode]}/{days}日以上)" if raid else "なし")
     s = v["stats"]
     e.add_field(name="累計", value=f"認証 {s['verified']} / 失敗 {s['failed']} / 拒否 {s['denied']} / キック {s['kicked']}", inline=False)
@@ -2079,6 +2541,7 @@ async def ticket_watch():
 @ticket_watch.before_loop
 async def _before_ticket_watch():
     await bot.wait_until_ready()
+    await asyncio.sleep(40)
 @bot.event
 async def on_guild_channel_delete(channel):
     tc = store.get(channel.guild.id)["ticket"]
@@ -2506,6 +2969,53 @@ async def rp_delete(interaction: discord.Interaction, message_id: str):
     store.get(interaction.guild.id)["rolepanel"]["panels"].pop(mid, None)
     store.save()
     await interaction.followup.send("✅ ロールパネルを削除しました。(付与済みのロールはそのままです)", ephemeral=True)
+class RolePanelTextModal(discord.ui.Modal, title="ロールパネルの文面を編集"):
+    def __init__(self, mid: str, p: dict):
+        super().__init__()
+        self.mid = mid
+        self.t = discord.ui.TextInput(label="タイトル", default=p["title"][:100], max_length=100)
+        self.d = discord.ui.TextInput(label="説明文", style=discord.TextStyle.paragraph, default=p["text"][:1500], max_length=1500)
+        self.b = discord.ui.TextInput(label="ボタンの名前(1行に1つ・上のロールから順)", style=discord.TextStyle.paragraph,
+                                      default="\n".join(r["label"] for r in p["roles"])[:2500], max_length=2500)
+        for item in (self.t, self.d, self.b):
+            self.add_item(item)
+    async def on_submit(self, interaction: discord.Interaction):
+        p = store.get(interaction.guild.id)["rolepanel"]["panels"].get(self.mid)
+        if not p:
+            return await interaction.response.send_message("❌ このロールパネルは見つかりません。", ephemeral=True)
+        labels = [l.strip()[:80] for l in self.b.value.splitlines() if l.strip()]
+        if len(labels) != len(p["roles"]):
+            return await interaction.response.send_message(
+                f"❌ ボタンの名前の行数({len(labels)})が、ボタンの数({len(p['roles'])})と合いません。1行に1つずつ入力してください。", ephemeral=True)
+        p["title"], p["text"] = self.t.value.strip(), self.d.value.strip()
+        for r, label in zip(p["roles"], labels):
+            r["label"] = label
+        await interaction.response.defer(ephemeral=True)
+        if not await refresh_role_panel(interaction.guild, self.mid):
+            return await interaction.followup.send("❌ パネルを更新できませんでした。(メッセージが削除されている可能性があります)", ephemeral=True)
+        store.save()
+        await interaction.followup.send("✅ ロールパネルの文面を更新しました。", ephemeral=True)
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("ロールパネルの文面編集でエラー", exc_info=error)
+        await _eph(interaction, "⚠️ 更新に失敗しました。もう一度お試しください。")
+@rolepanel_group.command(name="text", description="ロールパネルの文面(タイトル・説明・ボタン名)を入力フォームで編集します")
+@app_commands.describe(message_id="編集するパネル(候補から選べます)")
+@app_commands.checks.has_permissions(administrator=True)
+async def rp_text(interaction: discord.Interaction, message_id: str):
+    mid, p = _rp_find(interaction, message_id)
+    if not p:
+        return await interaction.response.send_message("❌ そのIDのロールパネルが見つかりません。候補から選んでください。", ephemeral=True)
+    await interaction.response.send_modal(RolePanelTextModal(mid, p))
+async def rp_panel_choices(interaction: discord.Interaction, current: str):
+    out = []
+    for mid, p in store.get(interaction.guild.id)["rolepanel"]["panels"].items():
+        ch = interaction.guild.get_channel(p["channel"])
+        name = f"{p['title'][:55]} (
+        if not current or current.lower() in name.lower() or current in mid:
+            out.append(app_commands.Choice(name=name[:100], value=mid))
+    return out[:25]
+for _cmd in (rp_add, rp_remove, rp_delete, rp_text):
+    _cmd.autocomplete("message_id")(rp_panel_choices)
 @rolepanel_group.command(name="list", description="設置中のロールパネルを一覧表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def rp_list(interaction: discord.Interaction):
@@ -2519,6 +3029,314 @@ async def rp_list(interaction: discord.Interaction):
                     + " ".join(f"<@&{r['id']}>" for r in p["roles"])[:900]
                     + ("\n(1つだけ選択)" if p["exclusive"] else ""), inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+@web.middleware
+async def cors_middleware(request, handler):
+    src = DASHBOARD_PAGE or (PAGE_URL if TUNNEL_MODE else "")
+    p = urlparse(src) if src else None
+    origin = f"{p.scheme}://{p.netloc}" if p else ""
+    hdr = {}
+    if origin and request.headers.get("Origin") == origin:
+        hdr = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Requested-With",
+               "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Max-Age": "600", "Vary": "Origin"}
+    if request.method == "OPTIONS":
+        return web.Response(status=204, headers=hdr)
+    try:
+        resp = await handler(request)
+    except web.HTTPException as e:
+        e.headers.update(hdr)
+        raise
+    resp.headers.update(hdr)
+    return resp
+dash_sessions: dict = {}
+dash_states: dict = {}
+DASH_TTL = 12 * 3600
+WEB_HINT_ROOTS = {"config", "verify", "ticketconfig", "rolepanel"}
+def _dash_sid(request) -> str:
+    auth = request.headers.get("Authorization", "")
+    return auth[7:] if auth.startswith("Bearer ") else request.cookies.get("azq_sid", "")
+def _dash_session(request):
+    sess = dash_sessions.get(_dash_sid(request))
+    if sess and sess["exp"] > time.time():
+        return sess
+    return None
+async def _dash_guild(request):
+    sess = _dash_session(request)
+    if not sess:
+        raise web.HTTPUnauthorized()
+    try:
+        gid = int(request.match_info["gid"])
+    except ValueError:
+        raise web.HTTPNotFound()
+    guild = bot.get_guild(gid)
+    perms = sess["guilds"].get(gid)
+    if not guild or perms is None or not (perms & 0x8 or perms & 0x20):
+        raise web.HTTPForbidden()
+    return guild
+async def dash_index(request):
+    try:
+        with open(os.path.join(BASE_DIR, "dashboard.html"), encoding="utf-8") as f:
+            return web.Response(text=f.read(), content_type="text/html")
+    except OSError:
+        return web.Response(text="dashboard.html が bot.py と同じフォルダにありません。", status=404)
+async def dash_login(request):
+    state = secrets.token_urlsafe(24)
+    dash_states[state] = time.time() + 600
+    q = (f"client_id={bot.application_id}&response_type=code&scope=identify%20guilds&state={state}"
+         f"&redirect_uri={quote(DASHBOARD_URL + '/callback', safe='')}")
+    raise web.HTTPFound("https://discord.com/oauth2/authorize?" + q)
+async def dash_callback(request):
+    state, code = request.query.get("state", ""), request.query.get("code", "")
+    if dash_states.pop(state, 0) < time.time() or not code:
+        return web.Response(text="ログインの有効期限が切れました。もう一度お試しください。", status=400)
+    try:
+        async with bot.session.post("https://discord.com/api/oauth2/token", data={
+                "client_id": str(bot.application_id), "client_secret": CLIENT_SECRET, "grant_type": "authorization_code",
+                "code": code, "redirect_uri": DASHBOARD_URL + "/callback"}) as r:
+            tok = (await r.json())["access_token"]
+        hd = {"Authorization": f"Bearer {tok}"}
+        async with bot.session.get("https://discord.com/api/users/@me", headers=hd) as r:
+            user = await r.json()
+        async with bot.session.get("https://discord.com/api/users/@me/guilds", headers=hd) as r:
+            guilds = await r.json()
+    except Exception:
+        log.exception("ダッシュボードのログインに失敗")
+        return web.Response(text="ログインに失敗しました。", status=502)
+    sid = secrets.token_urlsafe(32)
+    dash_sessions[sid] = {"exp": time.time() + DASH_TTL, "user": {"id": user["id"], "name": user.get("global_name") or user["username"]},
+                          "guilds": {int(g["id"]): int(g["permissions"]) for g in guilds}}
+    if DASHBOARD_PAGE:
+        raise web.HTTPFound(DASHBOARD_PAGE + "
+    resp = web.HTTPFound("/")
+    resp.set_cookie("azq_sid", sid, max_age=DASH_TTL, httponly=True, samesite="Lax", secure=DASHBOARD_URL.startswith("https"))
+    raise resp
+async def dash_logout(request):
+    dash_sessions.pop(_dash_sid(request), None)
+    if request.method == "POST":
+        return web.json_response({"ok": True})
+    raise web.HTTPFound(PAGE_URL or "/")
+async def dash_me(request):
+    sess = _dash_session(request)
+    if not sess:
+        return web.json_response({"user": None})
+    gs = [{"id": str(g.id), "name": g.name} for g in bot.guilds
+          if (p := sess["guilds"].get(g.id)) is not None and (p & 0x8 or p & 0x20)]
+    return web.json_response({"user": sess["user"], "guilds": gs})
+TUNNEL_URL = ""
+TUNNEL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+MAGIC_TTL = 3 * 3600
+_tunnel_proc = None
+def tunnel_url_from_line(line: str) -> str:
+    for m in TUNNEL_RE.finditer(line):
+        if m.group(0) != "https://api.trycloudflare.com":
+            return m.group(0)
+    return ""
+async def _ensure_cloudflared() -> Optional[str]:
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
+    if not arch:
+        return None
+    path = os.path.join(DATA_DIR, "cloudflared")
+    if os.path.exists(path) and os.path.getsize(path) > 10_000_000:
+        return path
+    log.info("cloudflared をダウンロードします(初回のみ)")
+    url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch}"
+    async with bot.session.get(url, timeout=aiohttp.ClientTimeout(total=600)) as r:
+        if r.status != 200:
+            raise RuntimeError(f"ダウンロード失敗 HTTP {r.status}")
+        with open(path + ".part", "wb") as f:
+            async for chunk in r.content.iter_chunked(1 << 20):
+                f.write(chunk)
+    os.chmod(path + ".part", 0o755)
+    os.replace(path + ".part", path)
+    return path
+async def tunnel_supervisor(port: int) -> None:
+    global TUNNEL_URL, _tunnel_proc
+    delay = 5
+    while True:
+        try:
+            path = await _ensure_cloudflared()
+            if not path:
+                log.info("この環境ではトンネルの自動起動に対応していません(/web はコード方式になります)")
+                return
+            _tunnel_proc = await asyncio.create_subprocess_exec(
+                path, "tunnel", "--url", f"http://127.0.0.1:{port}", "--no-autoupdate",
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            tail = deque(maxlen=12)
+            async for raw in _tunnel_proc.stderr:
+                line = raw.decode("utf-8", "replace").strip()
+                tail.append(line[:300])
+                url = tunnel_url_from_line(line)
+                if url and url != TUNNEL_URL:
+                    TUNNEL_URL, delay = url, 5
+                    log.info("Webダッシュボードの接続先: %s", url)
+            await _tunnel_proc.wait()
+            log.warning("cloudflared が終了しました(コード %s)。%s秒後に再起動します。最後の出力:\n%s",
+                        _tunnel_proc.returncode, delay, "\n".join(tail) or "(出力なし)")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("トンネルの起動に失敗しました。%s秒後にやり直します", delay)
+        TUNNEL_URL = ""
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 300)
+def dash_snapshot(g: discord.Guild) -> dict:
+    c = store.get(g.id)
+    return {
+        "v": 1, "gid": str(g.id),
+        "channels": [{"id": str(x.id), "name": x.name} for x in g.text_channels],
+        "roles": [{"id": str(r.id), "name": r.name} for r in g.roles if not r.is_default() and not r.managed],
+        "cfg": {"log_channel": c["log_channel"], "welcome_channel": c["welcome"]["channel"], "welcome_message": c["welcome"]["message"],
+                "autorole": c["autorole"], "automod_enabled": c["automod"]["enabled"], "block_invites": c["automod"]["block_invites"],
+                "ng_words": c["automod"]["ng_words"], "kaso_enabled": c["kaso"]["enabled"], "kaso_channel": c["kaso"]["channel"],
+                "kaso_threshold": c["kaso"]["threshold"], "meigen_enabled": c["meigen"]["enabled"]}}
+class SettingsError(Exception):
+    pass
+def apply_settings(g: discord.Guild, d: dict) -> None:
+    c = store.get(g.id)
+    def chan(v):
+        if v in (None, "", 0):
+            return None
+        v = int(v)
+        if not g.get_channel(v):
+            raise SettingsError("存在しないチャンネルです")
+        return v
+    try:
+        role = None
+        if d.get("autorole"):
+            role = g.get_role(int(d["autorole"]))
+            if (not role or role.managed or role >= g.me.top_role or any(getattr(role.permissions, n) for n in DANGEROUS_PERMS)):
+                raise SettingsError("このロールは自動ロールに設定できません(権限が強い/BOTより上/管理ロール)")
+        new = {
+            "log": chan(d.get("log_channel")), "wch": chan(d.get("welcome_channel")), "kch": chan(d.get("kaso_channel")),
+            "wmsg": str(d.get("welcome_message", c["welcome"]["message"]))[:1500],
+            "ng": [str(w)[:50] for w in d.get("ng_words", []) if str(w).strip()][:100],
+            "th": max(1, min(100000, int(d.get("kaso_threshold") or c["kaso"]["threshold"]))),
+        }
+    except (ValueError, TypeError, AttributeError):
+        raise SettingsError("入力が正しくありません")
+    c["log_channel"] = new["log"]
+    c["welcome"]["channel"], c["welcome"]["message"] = new["wch"], new["wmsg"]
+    c["autorole"] = role.id if role else None
+    c["automod"]["enabled"], c["automod"]["block_invites"] = bool(d.get("automod_enabled")), bool(d.get("block_invites"))
+    c["automod"]["ng_words"] = new["ng"]
+    c["kaso"]["enabled"], c["kaso"]["channel"], c["kaso"]["threshold"] = bool(d.get("kaso_enabled")), new["kch"], new["th"]
+    c["meigen"]["enabled"] = bool(d.get("meigen_enabled"))
+    store.save()
+async def dash_get(request):
+    g = await _dash_guild(request)
+    return web.json_response(dash_snapshot(g))
+async def dash_save(request):
+    g = await _dash_guild(request)
+    if request.headers.get("X-Requested-With") != "azq-dashboard":
+        raise web.HTTPForbidden()
+    try:
+        apply_settings(g, await request.json())
+    except SettingsError as e:
+        raise web.HTTPBadRequest(text=str(e))
+    return web.json_response({"ok": True})
+def _b64e(d: dict) -> str:
+    raw = zlib.compress(json.dumps(d, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), 9)
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+def _b64d(code: str) -> dict:
+    raw = base64.urlsafe_b64decode(code.strip() + "=" * (-len(code.strip()) % 4))
+    dec = zlib.decompressobj()
+    out = dec.decompress(raw, 300_000)
+    if dec.unconsumed_tail:
+        raise SettingsError("コードが大きすぎます")
+    return json.loads(out.decode("utf-8"))
+def _is_dash_admin(member) -> bool:
+    return isinstance(member, discord.Member) and (member.guild_permissions.administrator or member.guild_permissions.manage_guild)
+class ApplyModal(discord.ui.Modal, title="適用コードを貼り付け"):
+    code = discord.ui.TextInput(label="Webで作った適用コード", style=discord.TextStyle.paragraph, max_length=4000)
+    async def on_submit(self, interaction: discord.Interaction):
+        if not _is_dash_admin(interaction.user):
+            return await interaction.response.send_message("❌ 管理者のみ実行できます。", ephemeral=True)
+        try:
+            data = _b64d(str(self.code))
+            if data.get("v") != 1 or str(data.get("gid")) != str(interaction.guild.id):
+                raise SettingsError("このサーバー用のコードではありません。このサーバーで /web を実行して作り直してください。")
+            apply_settings(interaction.guild, data["cfg"])
+        except SettingsError as e:
+            return await interaction.response.send_message(f"⚠️ {e}", ephemeral=True)
+        except Exception:
+            return await interaction.response.send_message("⚠️ コードを読み取れませんでした。コピーし直してください。", ephemeral=True)
+        await interaction.response.send_message("✅ 設定を反映しました。", ephemeral=True)
+class WebCodeView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=900)
+        self.add_item(discord.ui.Button(label="編集ページを開く", emoji="🌐", style=discord.ButtonStyle.link, url=PAGE_URL))
+    @discord.ui.button(label="適用コードを貼り付ける", emoji="📥", style=discord.ButtonStyle.primary)
+    async def apply(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_dash_admin(interaction.user):
+            return await interaction.response.send_message("❌ 管理者のみ実行できます。", ephemeral=True)
+        await interaction.response.send_modal(ApplyModal())
+def add_dashboard_routes(app: web.Application, oauth: bool = True) -> None:
+    if oauth:
+        if not DASHBOARD_PAGE:
+            app.router.add_get("/", dash_index)
+        app.router.add_get("/login", dash_login)
+        app.router.add_get("/callback", dash_callback)
+        app.router.add_get("/logout", dash_logout)
+    app.router.add_post("/api/logout", dash_logout)
+    app.router.add_get("/api/me", dash_me)
+    app.router.add_get("/api/guild/{gid}", dash_get)
+    app.router.add_post("/api/guild/{gid}", dash_save)
+@bot.tree.command(name="web", description="Webで設定を編集します(設定不要・管理者のみ)")
+@app_commands.guild_only()
+async def web_cmd(interaction: discord.Interaction):
+    if not _is_dash_admin(interaction.user):
+        return await interaction.response.send_message("❌ サーバー管理者のみ使えます。", ephemeral=True)
+    if DASHBOARD_URL and CLIENT_SECRET:
+        v = discord.ui.View()
+        v.add_item(discord.ui.Button(label="ダッシュボードを開く", emoji="🌐", style=discord.ButtonStyle.link, url=PAGE_URL))
+        return await interaction.response.send_message("🌐 Discordでログインすると、設定をブラウザから変更できます。", view=v, ephemeral=True)
+    if TUNNEL_URL:
+        now = time.time()
+        for k in [k for k, v in dash_sessions.items() if v["exp"] < now]:
+            dash_sessions.pop(k, None)
+        sid = secrets.token_urlsafe(32)
+        dash_sessions[sid] = {"exp": now + MAGIC_TTL, "user": {"id": str(interaction.user.id), "name": interaction.user.display_name},
+                              "guilds": {interaction.guild.id: interaction.user.guild_permissions.value}}
+        v = discord.ui.View()
+        v.add_item(discord.ui.Button(label="ダッシュボードを開く", emoji="🌐", style=discord.ButtonStyle.link,
+                                     url=f"{PAGE_URL}
+        return await interaction.response.send_message(
+            "🌐 下のボタンから、このサーバーの設定をブラウザで編集できます。\n"
+            "※ このリンクは**あなた専用**です。他の人に共有しないでください。(3時間有効 / BOTの再起動で無効になります)",
+            view=v, ephemeral=True)
+    code = _b64e(dash_snapshot(interaction.guild))
+    steps = (("⏳ 自動接続を準備中のため、今回はコード方式で案内します。(しばらくしてからもう一度 `/web` を実行するとボタンだけで開けます)\n\n" if TUNNEL_MODE else "")
+             + "🌐 **Webで設定を編集する手順**\n"
+             "1️⃣ 「編集ページを開く」を押し、下の**読み込みコード**を貼り付けます\n"
+             "2️⃣ 設定を編集して「適用コードを作る」→ コピー\n"
+             "3️⃣ 「適用コードを貼り付ける」を押して貼り付けると反映されます\n"
+             "※ コードにはこのサーバーの設定が入っています。他の人に見せないでください。(15分で操作が無効になります)")
+    if len(code) <= 1500:
+        await interaction.response.send_message(f"{steps}\n```{code}```", view=WebCodeView(), ephemeral=True)
+    else:
+        await interaction.response.send_message(steps, view=WebCodeView(), ephemeral=True,
+                                                file=discord.File(io.BytesIO(code.encode()), filename="azq-code.txt"))
+async def _web_hint_check(interaction: discord.Interaction) -> bool:
+    try:
+        cmd = interaction.command
+        root = (getattr(cmd, "root_parent", None) or cmd)
+        if (root and root.name in WEB_HINT_ROOTS
+                and not user_prefs.rec(interaction.user.id).get("web_hint")):
+            user_prefs.rec(interaction.user.id)["web_hint"] = True
+            user_prefs.save()
+            async def hint():
+                await asyncio.sleep(2)
+                v = discord.ui.View()
+                v.add_item(discord.ui.Button(label="Webで操作する", emoji="🌐", style=discord.ButtonStyle.link, url=PAGE_URL))
+                try:
+                    await interaction.followup.send("💡 設定は **Webダッシュボード**(`/web`)でも簡単に変更できます。"
+                                                    "このままスラッシュコマンドで続けてもOKです。(この案内は一度だけ表示されます)", view=v, ephemeral=True)
+                except discord.HTTPException:
+                    pass
+            asyncio.create_task(hint())
+    except Exception:
+        log.exception("Web案内の表示に失敗")
+    return True
+bot.tree.interaction_check = _web_hint_check
 @bot.tree.command(name="help", description="AZQ BOTのコマンド一覧")
 async def help_cmd(interaction: discord.Interaction):
     e = make_embed("🤖 AZQ BOT コマンド一覧")
@@ -2527,9 +3345,10 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🧠 脳内メーカー", value="`/nounai [name]` / ユーザーを右クリック→アプリ→脳内メーカー", inline=False)
     e.add_field(name="🖼️ 名言画像", value="`/meigen text:名言` / メッセージを右クリック→アプリ→名言画像にする\n他の人のアイコン・名前を使うには本人の許可が必要(未設定の人にはDMで確認)。`/meigenprivacy` で自分の許可設定を変更\n管理者は `/config meigen enabled:False` でサーバー内を無効化できます", inline=False)
     e.add_field(name="🏓 ping", value="`/ping` BOT速度 / `/ping target:example.com` Webサイト", inline=False)
-    e.add_field(name="🔐 認証", value="`/verify setup` 設置 / `/verify set` 詳細設定 / `/verify status` 状態\n`/verify approve` `/verify revoke` `/verify bulk_approve` `/verify raid` `/verify panel` `/verify disable`\n方式: ボタン・計算・画像CAPTCHA、未認証ロール、アカウント年齢制限、未認証キック、レイド時の自動強化", inline=False)
+    e.add_field(name="🔐 認証", value="`/verify setup` 設置 / `/verify set` 詳細設定 / `/verify text` パネルの文面を編集 / `/verify status` 状態\n`/verify approve` `/verify revoke` `/verify bulk_approve` `/verify raid` `/verify panel` `/verify disable`\n方式: ボタン・計算・画像CAPTCHA・Web認証(VPN/サブ垢の判定つき)、未認証ロール、アカウント年齢制限、未認証キック、レイド時の自動強化\nロボット確認の強化、疑わしいアカウント対策(デフォルトアイコン・再参加・集団参加 → 承認待ち/キック)は `/verify set` から", inline=False)
     e.add_field(name="🎫 チケット", value="`/ticketconfig setup` 設置 / `/ticketconfig set` `staff` `panel` `block` `unblock` `status` `disable`\nチケット内: `/ticket close` `/ticket add` `/ticket remove` `/ticket rename` `/ticket delete`\nクローズは作成者・スタッフ・管理者、**削除は管理者のみ**(クローズ後は閲覧のみ)\n機能: 非公開chの自動作成、担当者、記録(.txt)の保存/DM、無操作の自動クローズ、認証連携", inline=False)
-    e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
+    e.add_field(name="🌐 Webダッシュボード", value="`/web` でブラウザから設定を編集(設定不要・管理者のみ)", inline=False)
+    e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel text` 文面を編集 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
     e.add_field(name="🔨 モデレーション", value="`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove`", inline=False)
     e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/userinfo` `/serverinfo` `/avatar`", inline=False)
@@ -2688,20 +3507,49 @@ async def cfg_show(interaction: discord.Interaction):
         inline=False,
     )
     await interaction.response.send_message(embed=e, ephemeral=True)
+def _describe_pid(pid: str) -> str:
+    info = []
+    try:
+        with open(f"/proc/{pid}/cgroup", encoding="utf-8") as f:
+            cg = f.read().strip().splitlines()[-1]
+        info.append(f"起動元: {cg.split(':', 2)[-1]}")
+    except OSError:
+        pass
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            info.append("コマンド: " + f.read().replace(b"\0", b" ").decode("utf-8", "replace").strip())
+    except OSError:
+        pass
+    return " / ".join(info)
 def _single_instance_lock():
     try:
         import fcntl
     except ImportError:
         return None
-    fh = open(os.path.join(DATA_DIR, "bot.lock"), "w")
+    fh = open(os.path.join(DATA_DIR, "bot.lock"), "a+")
     try:
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        raise SystemExit("すでに別のプロセスでこのBOTが起動しています。二重起動を防ぐため終了します。\n"
-                         "(確認: ps aux | grep bot.py / systemctl status azq-bot)")
+        fh.seek(0)
+        pid = fh.read().strip()
+        detail = _describe_pid(pid) if pid.isdigit() else ""
+        raise SystemExit(
+            "すでに別のプロセスでこのBOTが起動しています。二重起動を防ぐため終了します。\n"
+            f"先に動いているプロセス: PID {pid or '不明'}" + (f"\n{detail}" if detail else "") + "\n"
+            "(止め方: systemd のサービスなら systemctl stop <サービス名> / 手動起動なら kill <PID>)")
+    fh.seek(0)
+    fh.truncate()
+    fh.write(str(os.getpid()))
+    fh.flush()
     return fh
 if __name__ == "__main__":
     if not TOKEN or TOKEN == "YOUR-TOKEN":
         raise SystemExit("トークンが設定されていません。環境変数 DISCORD_TOKEN(または bot.py 上部の TOKEN)にBOTトークンを設定してください。")
     _lock = _single_instance_lock()
+    def _on_sigterm(signum, frame):
+        raise SystemExit(0)
+    try:
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    except (ValueError, AttributeError):
+        pass
     bot.run(TOKEN, log_handler=None)
