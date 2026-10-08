@@ -97,7 +97,7 @@ nav a{margin-left:14px}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style></head>
-<body><div class="top"><div class="wrap"><nav><b>🛡️ AZQ BOT</b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
+<body><div class="top"><div class="wrap"><nav><b>🛡️ AZQ BOT</b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
 <div class="wrap">
 
 <header class="hero">
@@ -124,12 +124,15 @@ nav a{margin-left:14px}
 <div class="chips sm"><span>連投</span><span>同一投稿</span><span>メンション爆撃</span><span>招待リンク</span><span>NGワード</span><span>レイド検知</span></div></div>
 <div class="tile t-b"><h3>📊 過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
 <div class="tile t-c"><h3>🧠 脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
-<div class="tile t-d"><h3>🖼️ 名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。</p></div>
+<div class="tile t-d"><h3>🖼️ 名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
 <div class="tile t-e"><h3>🏓 ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
 <div class="tile t-g"><h3>🔐 メンバー認証</h3><p>参加したメンバーに認証を行わせ、通過した人だけにロールを付与します。<code>/verify setup</code> で設置でき、荒らし・BOT対策に使えます。</p>
-<div class="chips sm"><span>ボタン認証</span><span>計算認証</span><span>画像CAPTCHA</span><span>未認証ロール</span><span>アカウント年齢制限</span><span>未認証キック</span><span>レイド時に自動強化</span></div></div>
+<div class="chips sm"><span>ボタン認証</span><span>計算認証</span><span>画像CAPTCHA</span><span>未認証ロール</span><span>アカウント年齢制限</span><span>未認証キック</span><span>レイド時に自動強化</span><span>ロボット確認の強化</span><span>Web認証(BOT自身が配信)</span><span>VPN・プロキシの回線を排除</span><span>同じ回線のサブ垢を検出</span><span>サブ垢の疑いを検出(デフォルトアイコン・再参加・集団参加)</span></div></div>
 <div class="tile t-g"><h3>🎫 サポートチケット</h3><p>パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成。クローズは作成者・スタッフ・管理者が行え、<b>削除できるのは管理者のみ</b>です。</p>
 <div class="chips sm"><span>非公開chの自動作成</span><span>担当者の設定</span><span>記録(.txt)の保存・DM</span><span>無操作で自動クローズ</span><span>認証との連携</span></div></div>
+<div class="tile t-g"><h3>🎭 ロールパネル</h3><p>ボタンを押すだけでロールを付与・解除できるパネルを設置できます。<code>/rolepanel create</code> で作成し、設定は管理者のみ。</p>
+<div class="chips sm"><span>ボタンで付与/解除</span><span>1つだけ選択モード</span><span>最大25ロール</span><span>認証前は利用不可</span></div></div>
+<div class="tile t-g"><h3>🔄 再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
 <div class="tile t-f"><div><h3>🔨 モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p></div>
 <div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
 </div>
@@ -139,7 +142,7 @@ nav a{margin-left:14px}
 <h2>安心して使うための情報</h2>
 <p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
 <div class="ok">
-<div class="tile"><h3 class="g">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
+<div class="tile"><h3 class="g">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
 <div class="tile"><h3 class="g n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li></ul></div>
 </div>
 <div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p style="margin-top:10px">チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
@@ -158,7 +161,7 @@ nav a{margin-left:14px}
 <tr><td>メッセージの管理</td><td>荒らしメッセージの自動削除、/purge</td></tr>
 <tr><td>メンバーをキック / BAN</td><td>/kick /ban /unban(管理者のみ実行可能)、時間内に認証しなかった人のキック(設定した場合のみ)</td></tr>
 <tr><td>メンバーをタイムアウト</td><td>/timeout、警告上限・荒らし検知時の自動タイムアウト</td></tr>
-<tr><td>ロールの管理</td><td>自動ロール、/role_add /role_remove、/lock /unlock、認証ロール・未認証ロールの付与と剥奪</td></tr>
+<tr><td>ロールの管理</td><td>自動ロール、/role_add /role_remove、/lock /unlock、認証ロール・未認証ロールの付与と剥奪、ロールパネルでのロール付与</td></tr>
 <tr><td>チャンネルの管理</td><td>/slowmode /lock /unlock、チケットチャンネルの作成・ロック・削除</td></tr>
 </table></div>
 </section>
@@ -180,10 +183,14 @@ nav a{margin-left:14px}
 
 <section id="faq">
 <h2>よくある質問</h2>
+<details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
 <details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
 <details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
 <details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
 <details><summary>チケットは誰が閉じて、誰が削除できますか?</summary><p>クローズは、チケットを作った本人・スタッフロールのメンバー・管理者ができます。クローズすると記録が保存され、チャンネルは閲覧のみになります。チャンネルの削除は管理者だけが行えます(クローズ済みのチケットに付く「削除」ボタン、または /ticket delete)。</p></details>
+<details><summary>自分のアイコンを名言画像に使われたくありません</summary><p>他の人があなたのアイコン・名前で名言画像を作ろうとすると、BOTからあなたにDMが届き、ボタンで「許可する」「許可しない」を選べます。選ぶまでは作成されません。あとから <code>/meigenprivacy</code> でも変更できます。サーバー管理者は <code>/config meigen</code> で、そのサーバー全体の名言画像をOFFにできます。</p></details>
+<details><summary>ロールパネルは誰でも作れますか?</summary><p>パネルの作成・編集は管理者のみです。メンバーはパネルのボタンを押してロールを付与・解除できます。管理者権限などの危険な権限を持つロールはパネルに設定できず、メンバー認証を終えていない人は利用できません。BOTのロールが対象ロールより下にあると付与に失敗するので、ロール順位を確認してください。</p></details>
+<details><summary>Web認証では、IPアドレスを取得しますか?</summary><p>Web認証を使うサーバーでは、認証ページを開いたときにBOTが接続元のIPアドレスを一時的に使います。外部のサービスにIPを送ることはありません。VPN・プロキシ・データセンターの回線かどうかは、公開されているIPアドレスの一覧と照合して、BOTの中だけで判定します。「同じ回線から別のアカウントが認証していないか」の判定を有効にしたサーバーでは、IPアドレスをそのままではなく、元に戻せない値(ハッシュ)にして保存します。いずれも推測による判定なので、学校・会社・家族で同じ回線を使っている場合などに、承認待ちになることがあります。管理者はいつでも保存した値を削除できます。</p></details>
 <details><summary>メンバー認証とは何ですか?</summary><p>参加したメンバーがボタン・計算・画像CAPTCHAのいずれかを通過すると、認証ロールが付与される機能です。アカウント作成からの日数制限や、時間内に認証しない人のキック、レイド検知時の自動強化も設定できます。認証が必要なチャンネルの権限設定は、設置時のメッセージの案内に沿って行ってください。</p></details>
 <details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
 </section>
