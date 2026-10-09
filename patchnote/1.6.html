@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12151c">
+<title>AZQ BOT パッチノート: Web認証にreCAPTCHAを追加</title>
+<style>
+:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>Web認証にreCAPTCHAを追加</h1>
+<p class="meta">AZQ BOT v1.6 パッチノート / 2026年10月9日</p>
+<p class="lead">Web認証のページに、Googleの reCAPTCHA(「私はロボットではありません」)を追加しました。ボットによる自動認証を防げます。チェックが終わるまで「認証する」ボタンはグレーで押せないので、何をすればいいかも分かりやすくなっています。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>Web認証ページに reCAPTCHA</h3>
+<p>認証ページに reCAPTCHA v2(チェックボックス式)が表示されます。チェックを入れてから「認証する」を押すと、認証が完了します。</p>
+<p>環境変数を設定したときだけ有効になります。未設定のときは、これまでと同じ動作です。</p>
+</article>
+<article class="new">
+<h3>チェックが終わるまで、ボタンがグレー</h3>
+<p>チェックを入れる前の「認証する」ボタンはグレーで、押せません。ボタンの下には案内文も出ます。チェックが完了すると青くなり、押せるようになります。チェックの期限が切れたときは、再びグレーに戻ります。</p>
+</article>
+<article class="new">
+<h3>サーバー側での検証</h3>
+<p>ボタンの見た目とは別に、BOTのサーバーがGoogleの検証サーバーでチェックの結果を確認します。ほかのサイトで取られたトークンは使えません。</p>
+<p>Googleの検証サーバーに接続できないときは、認証を通さず、少し待ってからやり直すよう案内します。</p>
+</article>
+<article class="new">
+<h3>状態の表示</h3>
+<p><code>/verify</code> の状態表示と起動ログに、reCAPTCHAが有効か無効かを表示します。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3>チェック忘れは、同じリンクでやり直せる</h3>
+<p>チェックを入れ忘れたり、チェックの期限が切れたりしたときは、エラーを表示して同じ認証ページに戻ります。認証リンクを発行し直す必要はありません。</p>
+<p>ただし、5回失敗するとそのリンクは使えなくなります。その場合は、Discordの認証パネルのボタンを押し直してください。</p>
+</article>
+<article class="chg">
+<h3>認証リンクの使い切りを、二重送信にも対応</h3>
+<p>認証リンクは1回限りです。ボタンを素早く2回押しても、認証処理が2回通らないようにしました。</p>
+</article>
+<article class="chg">
+<h3>認証ページとプライバシーポリシーの記載</h3>
+<p>reCAPTCHAが有効なとき、認証ページに Google のプライバシーポリシーと利用規約へのリンクを表示します。</p>
+<p>プライバシーポリシーには、新しく次の2つの項目を追加しました。「Web認証とIPアドレスの取扱い」(接続元IPの用途と、IPのハッシュ値の保存・削除)と、「Google reCAPTCHA について」(Googleへ送られる情報と、Botが保存しないもの)です。</p>
+</article>
+
+<h2 class="chg">環境変数</h2>
+<div class="wrap">
+<table>
+<tr><th>名前</th><th>内容</th></tr>
+<tr><td><code>RECAPTCHA_SITE_KEY</code></td><td>reCAPTCHA の「サイトキー」。認証ページに表示するために使います。</td></tr>
+<tr><td><code>RECAPTCHA_SECRET_KEY</code></td><td>reCAPTCHA の「シークレットキー」。BOTがチェックの結果を確認するために使います。人に見せないでください。</td></tr>
+</table>
+</div>
+<p class="meta" style="margin-top:12px">2つとも設定すると有効になります。どちらかが空のときは、reCAPTCHAは表示されません。</p>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>reCAPTCHAが働くのは、認証方式が「Web認証」のときだけです。</b>ボタン・計算・画像の認証方式には影響しません。</li>
+<li><b>設定は、このBOTを使うすべてのサーバーで共通です。</b>環境変数を設定すると、Web認証を使うどのサーバーでも reCAPTCHA が表示されます。</li>
+<li><b>設定したあとは、BOTを再起動してください。</b>認証リンクはボタンを押した時点で作られるので、すでに出ているリンクを開いても、再起動後の新しい認証ページが表示されます。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b>キーは、reCAPTCHAの管理画面で作ります。</b><a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener">reCAPTCHA の管理画面</a>で「reCAPTCHA v2 → 「私はロボットではありません」チェックボックス」を選び、ドメインに <code>WEB_URL</code> のドメインを登録してください。</li>
+<li><b>IPアドレス直指定の <code>WEB_URL</code> では使えません。</b>reCAPTCHAには、ドメインの登録が必要です。<code>http://203.0.113.5:8080</code> のようなURLの場合は、ドメインを用意してください。</li>
+<li><b>BOTのサーバーから Google へ、HTTPSで接続できる必要があります。</b>外へのアクセスを制限している環境では、<code>www.google.com</code> への接続を許可してください。</li>
+<li><b>systemd で動かしている場合は、<code>EnvironmentFile=</code> で <code>.env</code> を読み込むのが簡単です。</b>設定が反映されたかは、起動ログの「Web認証のreCAPTCHA」の行で確認できます。</li>
+</ul>
+</main>
+</body>
+</html>
