@@ -332,6 +332,7 @@ class AzqBot(commands.Bot):
         cleanup_trackers.start()
         verify_watch.start()
         ticket_watch.start()
+        activity_save.start()
         self._lag_task = asyncio.create_task(loop_lag_monitor())
 
     async def close(self):
@@ -339,6 +340,7 @@ class AzqBot(commands.Bot):
         if t:
             t.cancel()
         await store.flush_async()  # 終了前に未保存の設定を書き出す
+        await act_flush_async()    # 過疎診断の記録も保存する(保存時刻が、次回起動時の「欠け」の開始になる)
         if self.session:
             await self.session.close()
         if self.web_runner:
@@ -551,6 +553,8 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
 
 @bot.event
 async def on_message(message: discord.Message):
+    if message.guild and not message.author.bot and isinstance(message.channel, discord.TextChannel):
+        record_activity(message.guild.id, message.channel.id, message.author.id, message.created_at.timestamp())  # 過疎診断用の記録
     if message.author.bot or not message.guild or not isinstance(message.author, discord.Member):
         return
     am = store.get(message.guild.id)["automod"]
@@ -715,11 +719,19 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 
 
 @bot.event
+async def on_connect():
+    global act_conn_time
+    if act_conn_time is None:  # この時刻以降のメッセージはリアルタイムで記録される(それ以前の止まっていた期間は「欠け」)
+        act_conn_time = time.time()
+
+
+@bot.event
 async def on_ready():
     log.info("ログイン: %s (サーバー数: %d)", bot.user, len(bot.guilds))
     if getattr(bot, "_restored", False):  # 再接続でも on_ready は再度呼ばれるため、1回だけ実行
         return
     bot._restored = True
+    init_activity_gaps()  # 止まっていた期間などを「欠け」として登録(実際に埋めるのは /kaso が必要としたとき)
     if not store.existed and bot.guilds:
         log.warning("設定ファイル %s がありません。初回起動か、再起動でデータが初期化された可能性があります。"
                     "DATA_DIR に永続ボリュームを指定してください。", store.path)
@@ -841,6 +853,8 @@ async def on_guild_join(guild: discord.Guild):
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
     log.info("サーバーから退出: %s (%s)", guild.name, guild.id)
+    act.pop(guild.id, None)
+    act_locks.pop(guild.id, None)
 
 
 @tasks.loop(minutes=10)
@@ -865,41 +879,213 @@ async def cleanup_trackers():
         ticket_last.pop(k, None)
 
 
-_scan_sem: Optional[asyncio.Semaphore] = None   # ループ起動後に作る(Python 3.9 対策)
+# ---- 過疎診断のための発言記録 -------------------------------------------
+# メッセージが投稿されるたびに「15分ごとのチャンネル別件数」と「ユーザーごとの最終発言時刻」を記録し、ファイルにも保存する。
+# /kaso はその記録を集計するだけなので、履歴を取りに行かず一瞬で終わり、件数の上限もない。
+# BOTが止まっていた期間や、記録を始める前の期間(「欠け」と呼ぶ)は、必要になったときだけ履歴から取得して埋める。
+# メモリ節約: メッセージ本文は保存せず数値だけ。発言者数は「期間内に発言したユーザー = 最終発言が期間内のユーザー」として
+#            ユーザー1人につき1件だけ持つ(時間帯ごとの発言者リストは持たない)。
+ACT_BUCKET = 900                 # 件数の記録単位(秒)
+ACT_KEEP = 8 * 86400             # 記録を保持する期間(/kaso の最大168時間より長く)
+ACT_MAX_USERS = 300_000          # 1サーバーで記録するユーザー数の上限(超えたら古い順に捨てる / 通常は到達しない)
+ACT_SAVE_MINUTES = 5             # ファイルへの保存間隔
+ACT_FILE = os.path.join(DATA_DIR, "activity.json")
+ACT_BACKFILL_CONCURRENCY = 4     # 欠けを埋めるときに同時に読むチャンネル数
+act: dict = {}                   # guild_id -> {"b": {bucket: {channel_id: 件数}}, "u": {user_id: 最終発言時刻}, "gaps": [[開始, 終了], ...]}
+act_locks: dict = {}             # guild_id -> 欠けを埋める処理の二重実行を防ぐロック
+act_dirty = False
+act_loaded_saved = 0.0           # 前回ファイルに保存した時刻(これ以降〜今回の接続までが「欠け」になる)
+act_conn_time: Optional[float] = None   # 今回ゲートウェイに接続した時刻(これ以降のメッセージはリアルタイムで記録される)
+_scan_sem: Optional[asyncio.Semaphore] = None   # 履歴の取得はサーバーをまたいで同時に1つだけ(ループ起動後に作る)
+_act_write_lock = threading.Lock()
 
 
-async def measure_activity(guild: discord.Guild, hours: int = 24, per_channel: int = 500, max_channels: int = 50):
-    # メッセージ履歴の取得は Discord API を大量に使うため、サーバーをまたいで同時に1つだけ実行する
-    global _scan_sem
-    if _scan_sem is None:
-        _scan_sem = asyncio.Semaphore(1)
-    async with _scan_sem:
-        return await _measure_activity(guild, hours, per_channel, max_channels)
+def _load_activity() -> None:
+    global act_loaded_saved
+    if not os.path.exists(ACT_FILE):
+        return
+    try:
+        with open(ACT_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        act_loaded_saved = float(raw.get("saved", 0))
+        for gid, r in raw.get("g", {}).items():
+            act[int(gid)] = {"b": {int(b): {int(c): int(n) for c, n in chs.items()} for b, chs in r.get("b", {}).items()},
+                             "u": {int(u): float(t) for u, t in r.get("u", {}).items()},
+                             "gaps": [[float(x), float(y)] for x, y in r.get("gaps", [])]}
+    except Exception:
+        log.exception("過疎診断の記録の読み込みに失敗しました。空の状態で始めます。")
+        act.clear()
 
 
-async def _measure_activity(guild: discord.Guild, hours: int, per_channel: int, max_channels: int):
-    since = discord.utils.utcnow() - timedelta(hours=hours)
-    total, authors, per = 0, set(), {}
-    channels = [
-        c for c in guild.text_channels
-        if c.permissions_for(guild.me).view_channel and c.permissions_for(guild.me).read_message_history
-    ][:max_channels]
-    for c in channels:
-        n = 0
-        try:
-            async for m in c.history(after=since, limit=per_channel):
-                if m.author.bot:
+_load_activity()
+
+
+def _act_rec(gid: int) -> dict:
+    rec = act.get(gid)
+    if rec is None:  # 新しく参加したサーバー: 記録を始めた時点より前は欠けとして扱う
+        now = time.time()
+        rec = act[gid] = {"b": {}, "u": {}, "gaps": [[now - ACT_KEEP, now]]}
+    return rec
+
+
+def record_activity(guild_id: int, channel_id: int, author_id: int, ts: float) -> None:
+    global act_dirty
+    rec = _act_rec(guild_id)
+    chs = rec["b"].setdefault(int(ts // ACT_BUCKET), {})
+    chs[channel_id] = chs.get(channel_id, 0) + 1
+    if ts > rec["u"].get(author_id, 0):
+        rec["u"][author_id] = ts
+    act_dirty = True
+
+
+def init_activity_gaps() -> None:
+    """起動時(on_ready)に1回だけ。止まっていた期間・記録のなかったサーバーを「欠け」として登録し、BOTにいないサーバーの記録を捨てる"""
+    global act_dirty
+    end = act_conn_time or time.time()
+    floor = end - ACT_KEEP
+    ids = {g.id for g in bot.guilds}
+    for gid in [g for g in act if g not in ids]:
+        act.pop(gid, None)
+    for gid in ids:
+        rec = act.get(gid)
+        if rec is None:
+            act[gid] = {"b": {}, "u": {}, "gaps": [[floor, end]]}
+        elif end - act_loaded_saved > 30:
+            rec["gaps"].append([max(act_loaded_saved, floor), end])
+    act_dirty = True
+
+
+async def _backfill_activity(guild: discord.Guild, lo: float, hi: float) -> None:
+    after = datetime.fromtimestamp(lo, timezone.utc)
+    before = datetime.fromtimestamp(hi, timezone.utc)
+    me = guild.me
+    channels = [c for c in guild.text_channels
+                if c.permissions_for(me).view_channel and c.permissions_for(me).read_message_history]
+    sem = asyncio.Semaphore(ACT_BACKFILL_CONCURRENCY)
+
+    async def one(c: discord.TextChannel):
+        async with sem:
+            try:
+                async for m in c.history(after=after, before=before, limit=None):  # 件数の上限なし
+                    if not m.author.bot:
+                        record_activity(guild.id, c.id, m.author.id, m.created_at.timestamp())
+            except discord.HTTPException:
+                log.warning("過疎診断: 履歴の取得に失敗 guild=%s channel=%s", guild.id, c.id)
+
+    await asyncio.gather(*(one(c) for c in channels))
+
+
+async def ensure_activity(guild: discord.Guild, since: float) -> None:
+    """集計したい期間(since〜現在)に欠けがあれば、その部分だけ履歴から埋める。埋めた部分は記録に残り、次からは取得しない"""
+    global _scan_sem, act_dirty
+    rec = _act_rec(guild.id)
+    lock = act_locks.setdefault(guild.id, asyncio.Lock())
+    async with lock:
+        if not any(e > since for _, e in rec["gaps"]):
+            return
+        if _scan_sem is None:
+            _scan_sem = asyncio.Semaphore(1)
+        async with _scan_sem:
+            rest = []
+            for s, e in rec["gaps"]:
+                if e <= since:
+                    rest.append([s, e])  # 期間より前の欠け(もっと長い期間を指定されたときに埋める)
                     continue
-                n += 1
-                authors.add(m.author.id)
-        except discord.HTTPException:
+                lo = max(s, (since // ACT_BUCKET) * ACT_BUCKET)  # 集計は15分単位なので、その区切りまで取得する
+                if lo < e:
+                    await _backfill_activity(guild, lo, e)
+                if lo > s:
+                    rest.append([s, lo])
+            rec["gaps"] = rest
+            act_dirty = True
+
+
+async def measure_activity(guild: discord.Guild, hours: int = 24):
+    since = time.time() - hours * 3600
+    await ensure_activity(guild, since)
+    rec = _act_rec(guild.id)
+    sb = int(since // ACT_BUCKET)
+    total, per = 0, {}
+    for b, chs in list(rec["b"].items()):
+        if b < sb:
             continue
-        if n:
-            per[c] = n
+        for cid, n in chs.items():
+            per[cid] = per.get(cid, 0) + n
             total += n
-        await asyncio.sleep(0.3)  # 他の処理(コマンド応答など)にAPIの枠を譲る
+    per_ch = {}
+    for cid, n in per.items():
+        ch = guild.get_channel(cid)
+        if ch is not None:
+            per_ch[ch] = n
     humans = sum(1 for m in guild.members if not m.bot)
-    return total, len(authors), humans, per
+    active = sum(1 for u, t in list(rec["u"].items()) if t >= since and guild.get_member(u) is not None)
+    return total, active, humans, per_ch
+
+
+def prune_activity() -> None:
+    now = time.time()
+    cut = now - ACT_KEEP
+    cb = int(cut // ACT_BUCKET)
+    for rec in act.values():
+        for b in [b for b in rec["b"] if b < cb]:
+            rec["b"].pop(b, None)
+        for u in [u for u, t in rec["u"].items() if t < cut]:
+            rec["u"].pop(u, None)
+        if len(rec["u"]) > ACT_MAX_USERS:
+            for u, _ in sorted(rec["u"].items(), key=lambda kv: kv[1])[:len(rec["u"]) - ACT_MAX_USERS]:
+                rec["u"].pop(u, None)
+        rec["gaps"] = [[max(s, cut), e] for s, e in rec["gaps"] if e > cut]
+
+
+def _act_dump() -> str:
+    global act_dirty
+    act_dirty = False
+    return json.dumps({"v": 1, "saved": time.time(), "g": {str(g): r for g, r in act.items()}}, separators=(",", ":"))
+
+
+def _act_write(payload: str) -> None:
+    with _act_write_lock:
+        tmp = ACT_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(payload)
+        os.replace(tmp, ACT_FILE)
+
+
+async def act_flush_async() -> None:
+    global act_dirty
+    if not act_dirty:
+        return
+    try:
+        payload = _act_dump()  # 保存時刻の記録と中身の確定は、awaitを挟まず同時に行う(欠けの開始時刻がずれないように)
+        await asyncio.get_running_loop().run_in_executor(None, _act_write, payload)
+    except Exception:
+        act_dirty = True
+        log.exception("過疎診断の記録の保存に失敗しました")
+
+
+def act_flush_sync() -> None:
+    global act_dirty
+    if not act_dirty:
+        return
+    try:
+        _act_write(_act_dump())
+    except Exception:
+        act_dirty = True
+        log.exception("過疎診断の記録の保存に失敗しました")
+
+
+atexit.register(act_flush_sync)
+
+
+@tasks.loop(minutes=ACT_SAVE_MINUTES)
+async def activity_save():
+    prune_activity()
+    await act_flush_async()
+
+
+@activity_save.before_loop
+async def _before_activity_save():
+    await bot.wait_until_ready()
 
 
 def kaso_level(total: int, hours: int, ratio: float):
@@ -931,7 +1117,7 @@ async def kaso(interaction: discord.Interaction, hours: app_commands.Range[int, 
     if per:
         top = sorted(per.items(), key=lambda kv: kv[1], reverse=True)[:3]
         e.add_field(name="盛り上がっているチャンネル", value="\n".join(f"{c.mention}: {n:,}" for c, n in top), inline=False)
-    e.set_footer(text="※ BOTが閲覧可能なチャンネルのみ・1chあたり最大500件まで集計 / BOT発言は除外")
+    e.set_footer(text="※ BOTが閲覧可能なチャンネルのみ・件数の上限なし / BOT発言は除外")
     await interaction.followup.send(embed=e)
 
 
