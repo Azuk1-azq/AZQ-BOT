@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d0e14">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark;--bg:#0d0e14;--panel:#161823;--panel2:#1d2030;--line:#2a2e42;--text:#eceef7;--mute:#9499b3;--blue:#5865F2;--blue2:#7c88ff;--red:#ED4245;--green:#57F287;--yellow:#FEE75C;
 --font:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif}
@@ -18,6 +18,13 @@ a{color:var(--blue2)}
 .top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
 nav{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0}
 nav b{font-weight:900;font-size:18px;white-space:nowrap}
+.logo{display:inline-flex;align-items:center;gap:10px;font:700 21px/1 "Space Grotesk",system-ui,sans-serif;letter-spacing:-.02em}
+.logo .azq-mark{width:34px;height:34px;flex:none}
+.logo-word{filter:drop-shadow(0 2px 6px rgba(34,211,238,.3))}
+.logo-a,.logo-b{color:#fff;-webkit-background-clip:text;background-clip:text}
+.logo-a{background-image:linear-gradient(180deg,#fff 20%,#a9b3cc 100%)}
+.logo-b{font-weight:500;letter-spacing:.02em;color:#22d3ee;background-image:linear-gradient(180deg,#a5f0ff 10%,#22d3ee 100%)}
+@supports ((-webkit-background-clip:text) or (background-clip:text)){.logo-a,.logo-b{color:transparent}}
 nav div{display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap;justify-content:flex-end}
 nav a{color:var(--mute);text-decoration:none;font-size:14px}
 nav a:hover{color:var(--text)}
@@ -59,7 +66,8 @@ details p{margin:0 0 16px;color:var(--mute);font-size:15px}
 .av{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:15px;color:#fff}
 .who{font-weight:700}.who small{color:var(--mute);font-weight:400;margin-left:6px}
 .gone{color:var(--mute);text-decoration:line-through;text-decoration-color:var(--red)}
-.bot .av{background:var(--blue)}
+.bot .av{background:#070910;box-shadow:inset 0 0 0 1px var(--line)}
+.av .azq-mark{width:28px;height:28px}
 .tag{background:var(--blue);color:#fff;font-size:11px;padding:1px 6px;border-radius:5px;margin-left:6px;vertical-align:1px}
 .note{border-left:4px solid var(--red);background:var(--panel2);border-radius:6px;padding:10px 14px;margin-top:6px}
 .note em{font-style:normal;color:var(--yellow)}
@@ -95,9 +103,31 @@ footer a{color:var(--mute)}
 .t-a,.t-b,.t-c,.t-d,.t-e,.t-f,.t-g{grid-column:span 6}
 .two,.ok,.steps{grid-template-columns:1fr}
 nav a{margin-left:14px}
+.logo{font-size:19px;gap:8px}
+.logo .azq-mark{width:30px;height:30px}
 }
 </style></head>
-<body><div class="top"><div class="wrap"><nav><b>🛡️ AZQ BOT</b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<linearGradient id="azqBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C5CFF"/><stop offset="1" stop-color="#22D3EE"/></linearGradient>
+<linearGradient id="azqShade" x1="0" y1="0" x2="0" y2="1"><stop offset=".4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient>
+<linearGradient id="azqGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".68"/><stop offset="1" stop-color="#fff" stop-opacity=".04"/></linearGradient>
+<linearGradient id="azqRim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity=".38"/></linearGradient>
+<linearGradient id="azqRing" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#BFEFFF"/></linearGradient>
+<radialGradient id="azqEye" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#6FE3F7"/></radialGradient>
+<radialGradient id="azqBounce" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#7DE9FA" stop-opacity=".55"/><stop offset="1" stop-color="#7DE9FA" stop-opacity="0"/></radialGradient>
+<clipPath id="azqClip"><path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z"/></clipPath>
+<filter id="azqDs" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity=".35"/></filter>
+<symbol id="azqMark" viewBox="0 3 200 200">
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="url(#azqBody)"/>
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="url(#azqShade)"/>
+<g clip-path="url(#azqClip)"><ellipse cx="100" cy="16" rx="140" ry="76" fill="url(#azqGloss)"/><ellipse cx="100" cy="200" rx="80" ry="40" fill="url(#azqBounce)"/></g>
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="none" stroke="url(#azqRim)" stroke-width="3" stroke-linejoin="round"/>
+<g filter="url(#azqDs)"><circle cx="100" cy="94" r="34" fill="none" stroke="url(#azqRing)" stroke-width="15"/><line x1="124" y1="118" x2="146" y2="140" stroke="url(#azqRing)" stroke-width="15" stroke-linecap="round"/><circle cx="100" cy="94" r="9" fill="url(#azqEye)"/></g>
+</symbol>
+</defs>
+</svg>
+<div class="top"><div class="wrap"><nav><b class="logo"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg><span class="logo-word"><span class="logo-a">AZQ</span> <span class="logo-b">BOT</span></span></b><div><a href="#features">機能</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a></div></nav></div></div>
 <div class="wrap">
 
 <header class="hero">
@@ -110,7 +140,7 @@ nav a{margin-left:14px}
 </div>
 <div class="chat" aria-label="荒らし対策の動作イメージ">
 <div class="msg"><div class="av" style="background:#8a5a44">荒</div><div><div class="who">荒らし太郎<small>今日 21:04</small></div><div class="gone">discord.gg/xxxxxxx 参加してね!!</div></div></div>
-<div class="msg bot"><div class="av">A</div><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="msg bot"><div class="av"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg></div><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
 <div class="note">@荒らし太郎 ⚠️ <em>招待リンクの投稿</em> を検知したためメッセージを削除しました。</div></div></div>
 <div class="msg" style="margin:0"><div class="av" style="background:#3f7f6a">管</div><div><div class="who">管理者<small>今日 21:06</small></div><div class="cmd"><b>/kaso</b> 過疎度を診断</div></div></div>
 </div>
