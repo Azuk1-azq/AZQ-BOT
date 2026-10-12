@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12151c">
+<title>AZQ BOT パッチノート: ウェルカム画像を追加</title>
+<style>
+:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>ウェルカム画像を追加</h1>
+<p class="meta">AZQ BOT v1.7 パッチノート / 2026年10月12日</p>
+<p class="lead">参加したメンバーのアイコンと名前を使った「ウェルカム画像」を、ウェルカムメッセージに添付できるようになりました。設定は Webダッシュボード(<code>/web</code>)だけで行います。スラッシュコマンドから設定しようとすると、<code>/web</code> にアクセスするよう案内します。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>ウェルカム画像</h3>
+<p>メンバーが参加すると、ウェルカムメッセージと一緒に画像が送られます。画像には、メンバーのアイコン(丸型)・名前・タイトル・サブタイトル・「◯人目のメンバー」が入ります。</p>
+<p>初期状態はオフです。オンにするまで、これまでと同じ動作です。</p>
+</article>
+<article class="new">
+<h3>Webダッシュボードで設定</h3>
+<p><code>/web</code> を開き、「基本」タブの「ウェルカム画像」で設定します。変更できる項目は次のとおりです。</p>
+<p><b>オン/オフ</b>・<b>タイトル</b>(24文字まで)・<b>サブタイトル</b>(60文字まで)・<b>デザイン</b>(ブラック/ホワイト/ブルー)・<b>アイコンのカラー/モノクロ</b>・<b>人数の表示</b></p>
+<p>タイトルとサブタイトルには <code>{user}</code> <code>{server}</code> <code>{count}</code> が使えます。</p>
+</article>
+<article class="new">
+<h3>背景画像を変更できる</h3>
+<p>「基本」タブの「ウェルカム画像の背景」から、好きな画像をアップロードできます。PNG・JPEG・WebP・GIF(5MBまで)に対応しています。</p>
+<p>画像は横長(1000×360)に切り取られ、文字が読めるように、選んだデザインの色が重なります。アップロードはすぐ保存され、「背景を削除」で元のグラデーションに戻せます。</p>
+</article>
+<article class="new">
+<h3><code>/config welcome_image</code></h3>
+<p>このコマンドでは設定できません。実行すると、「<code>/web</code> にアクセスして設定してください」と案内し、ダッシュボードを開くボタンを表示します。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3>保存時のチェック</h3>
+<p>画像をオンにしたのに、ウェルカムメッセージの送信先チャンネルが未設定のときは、保存できずにエラーを表示します。</p>
+</article>
+<article class="chg">
+<h3>画像が作れなかったとき</h3>
+<p>BOTに「ファイルを添付」権限がないときや、画像の生成に失敗したときは、画像なしで文章だけを送ります。ウェルカムメッセージが止まることはありません。</p>
+</article>
+<article class="chg">
+<h3><code>/help</code> の表記</h3>
+<p>設定の一覧に <code>/config welcome_image</code>(Webで設定)を追加しました。</p>
+</article>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>画像の設定ができるのは、Webダッシュボードだけです。</b><code>/web</code> を使えるのは、サーバーの管理者(または「サーバー管理」権限を持つ人)です。</li>
+<li><b>BOTに「ファイルを添付」権限が必要です。</b>送信先チャンネルで、BOTにこの権限があるか確認してください。</li>
+<li><b>設定は、このBOTを使うサーバーごとに別々です。</b>認証を使っているサーバーでは、画像は参加した時点で送られます。認証が完了したときには送られません。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b>Webダッシュボードの設定が必要です。</b>環境変数 <code>DISCORD_CLIENT_SECRET</code> と <code>WEB_URL</code> を設定し、Developer Portal の OAuth2 &gt; Redirects に <code>&lt;公開URL&gt;/callback</code> を登録してください。</li>
+<li><b><code>bot.py</code> と <code>dashboard.html</code> の両方を入れ替えてください。</b>画面の項目は <code>dashboard.html</code> にあります。入れ替えたあとは、BOTを再起動してください。</li>
+<li><b>背景画像は、<code>data/welcome_bg/</code> に保存されます。</b>サーバーごとに1枚です。BOTがサーバーから退出すると、その画像は削除されます。</li>
+<li><b>日本語フォントが必要です。</b>名言画像と同じフォントを使うので、すでに名言画像が動いていれば、追加の準備はいりません。</li>
+</ul>
+</main>
+</body>
+</html>
