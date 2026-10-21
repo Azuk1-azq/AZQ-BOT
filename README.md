@@ -4,7 +4,7 @@
 
 - 📢 サポートサーバー: https://discord.gg/tAKTK9MYdc
   (メンテナンス・障害・アップデートのお知らせはここでのみ配信します)
-- 🌐 公式サイト: https://azq.f5.si
+- 🌐 公式サイト: [https://azq.f5.si](https://sys.azuk1.com/)
 
 ---
 
