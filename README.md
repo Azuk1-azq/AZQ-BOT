@@ -2,9 +2,9 @@
 
 荒らし対策・メンバー認証・サポートチケット・ロールパネル・過疎診断・モデレーションなど、サーバー管理に必要な機能を1つにまとめた高機能 Discord Bot です。`discord.py` 製で、`bot.py` 1ファイルで動きます。
 
-- 📢 サポートサーバー: https://discord.gg/tAKTK9MYdc
+- 📢 サポートサーバー: [discord.gg/tAKTK9MYdc]([https://sys.azuk1.com/](https://discord.gg/tAKTK9MYdc))
   (メンテナンス・障害・アップデートのお知らせはここでのみ配信します)
-- 🌐 公式サイト: [https://azq.f5.si](https://sys.azuk1.com/)
+- 🌐 公式サイト: [sys.azuk1.com](https://sys.azuk1.com/)
 
 ---
 
