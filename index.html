@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AZQ BOT - サーバー管理Discord Bot</title>
-<meta name="description" content="荒らし検知・メンバー認証・チケット・過疎診断・脳内メーカー・名言画像・モデレーションが使える高機能Discord Bot">
+<meta name="description" content="荒らし検知・メンバー認証・チケット・過疎診断・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
 <meta name="theme-color" content="#06070d">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -268,7 +268,7 @@ section{padding:64px 0}
 <main id="main"><div class="wrap" id="top">
 
 <div class="hero">
-<a class="pill" href="../patchnote/1.7.html"><b>v1.7</b><span>ウェルカム画像を追加</span><i>→</i></a>
+<a class="pill" href="../patchnote/1.8.html"><b>v1.8</b><span>王様ゲームを追加</span><i>→</i></a>
 <h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
 <p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
 <div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a></div>
@@ -327,9 +327,10 @@ section{padding:64px 0}
 <div class="tile"><span class="k">DIAGNOSIS</span><h3>過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
 <div class="tile"><span class="k">FUN</span><h3>脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
 <div class="tile"><span class="k">FUN</span><h3>名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
+<div class="tile"><span class="k">FUN</span><h3>王様ゲーム</h3><p><code>/ousama</code> で参加者を募集して開始すると、王様と番号が自動で決まります。チャンネルには王様と参加者を表示し、各自の番号はDMで届きます。命令は自由に出せます。</p></div>
 <div class="tile"><span class="k">UTILITY</span><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
 <div class="tile"><span class="k">RELIABILITY</span><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
-<div class="tile"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
+<div class="tile" style="grid-column:1/-1"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
 <div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
 </div>
 </section>
@@ -348,6 +349,7 @@ section{padding:64px 0}
 <button class="ci" type="button" data-role="all-user" data-copy="/nounai"><code>/nounai</code><span>名前から脳内を表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/meigen"><code>/meigen</code><span>アイコン付きの名言画像を作成</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/meigenprivacy"><code>/meigenprivacy</code><span>自分のアイコン・名前の使用許可を変更</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/ousama"><code>/ousama</code><span>王様ゲームを開始(王様と番号を自動で決定)</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/ping"><code>/ping</code><span>BOT・Webサイトの応答速度を測定</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/userinfo"><code>/userinfo</code><span>ユーザー情報を表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/serverinfo"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
@@ -380,7 +382,8 @@ section{padding:64px 0}
 <h2>最近のアップデート</h2>
 <p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
 <ul class="list">
-<li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span><span class="new">最新</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
+<li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span><span class="new">最新</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>
+<li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
 <li><a class="item" href="../patchnote/1.6.html"><div class="meta"><span class="ver">v1.6</span></div><h3>バージョン 1.6 のパッチノート</h3><p>Web認証にreCAPTCHAを追加</p></a></li>
 <li><a class="item" href="../patchnote/1.5.html"><div class="meta"><span class="ver">v1.5</span></div><h3>バージョン 1.5 のパッチノート</h3><p>このバージョンの変更内容を見る</p></a></li>
 </ul>
@@ -393,7 +396,7 @@ section{padding:64px 0}
 <p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
 <div class="two">
 <div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
-<div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li></ul></div>
+<div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
 </div>
 <div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
 
@@ -441,7 +444,7 @@ section{padding:64px 0}
 <details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
 <details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
 <details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
-<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
+<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ousama /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
 <details><summary>チケットは誰が閉じて、誰が削除できますか?</summary><p>クローズは、チケットを作った本人・スタッフロールのメンバー・管理者ができます。クローズすると記録が保存され、チャンネルは閲覧のみになります。チャンネルの削除は管理者だけが行えます(クローズ済みのチケットに付く「削除」ボタン、または /ticket delete)。</p></details>
 <details><summary>自分のアイコンを名言画像に使われたくありません</summary><p>他の人があなたのアイコン・名前で名言画像を作ろうとすると、BOTからあなたにDMが届き、ボタンで「許可する」「許可しない」を選べます。選ぶまでは作成されません。あとから <code>/meigenprivacy</code> でも変更できます。サーバー管理者は <code>/config meigen</code> で、そのサーバー全体の名言画像をOFFにできます。</p></details>
 <details><summary>ロールパネルは誰でも作れますか?</summary><p>パネルの作成・編集は管理者のみです。メンバーはパネルのボタンを押してロールを付与・解除できます。管理者権限などの危険な権限を持つロールはパネルに設定できず、メンバー認証を終えていない人は利用できません。BOTのロールが対象ロールより下にあると付与に失敗するので、ロール順位を確認してください。</p></details>
