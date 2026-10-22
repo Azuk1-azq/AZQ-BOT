@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12151c">
+<title>AZQ BOT パッチノート: 王様ゲームを追加</title>
+<style>
+:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>王様ゲームを追加</h1>
+<p class="meta">AZQ BOT v1.8 パッチノート / 2026年10月22日</p>
+<p class="lead">コマンド1つで遊べる「王様ゲーム」を追加しました。参加者を募って開始するだけで、王様と番号が自動で決まります。チャンネルには王様と参加者が表示され、各自の番号はDMで届きます。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>王様ゲーム <code>/ousama</code></h3>
+<p><code>/ousama</code> を実行すると、参加者の募集パネルが表示されます。「参加する」を押して参加し、ホストが「開始」を押すとゲームが始まります。</p>
+<p><b>人数</b>は3〜20人(<code>max_players</code> で最大人数を指定。既定は10人)です。募集は15分でタイムアウトします。</p>
+</article>
+<article class="new">
+<h3>王様と番号を自動で振り分け</h3>
+<p>開始すると、参加者の中から王様が1人選ばれ、残りの全員に 1〜(人数-1)番の番号がランダムに配られます。</p>
+<p>開始したチャンネルには、<b>王様</b>と<b>参加者の一覧</b>が表示されます。番号は伏せたままです。</p>
+</article>
+<article class="new">
+<h3>番号はDMで届く</h3>
+<p>各自の番号が、DMで1回だけ届きます。王様には、王様に選ばれたことを知らせるDMが届きます。</p>
+<p>命令は、王様がチャンネルで自由に出します(例:「2番が5番を褒める」)。BOTは命令の内容に関与しません。</p>
+</article>
+<article class="new">
+<h3>募集中の操作</h3>
+<p>募集中は「退出」で抜けられます。ホストは「中止」で募集をやめられます。開始と中止ができるのは、ホストと「サーバー管理」権限を持つ人です。</p>
+<p>同じチャンネルで同時に募集できるのは1つまでです。もう一度遊ぶときは、<code>/ousama</code> をもう一度実行します。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3><code>/help</code> の表記</h3>
+<p>コマンド一覧に「王様ゲーム」の説明を追加しました。</p>
+</article>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>参加者はDMを受け取れる設定にしてください。</b>DMを送れなかった人がいると、チャンネルにお知らせが出ます。その場合は、DMを許可してから <code>/ousama</code> をやり直してください。</li>
+<li><b>BOTに「メッセージを送信」権限が必要です。</b>ゲームを行うチャンネルで、BOTにこの権限があるか確認してください。</li>
+<li><b>王様ゲームのデータは保存されません。</b>参加者・王様・番号は、BOTが保存しません。募集中にBOTが再起動すると、その募集は消えます。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b><code>bot.py</code> を入れ替えてください。</b>入れ替えたあとは、BOTを再起動してください。<code>dashboard.html</code> の変更はありません。</li>
+<li><b>追加の設定は不要です。</b>新しい環境変数や権限は使いません。スラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+</ul>
+</main>
+</body>
+</html>
