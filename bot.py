@@ -100,7 +100,9 @@ log = logging.getLogger("azqbot")
 
 DEFAULTS = {
     "log_channel": None,
-    "welcome": {"channel": None, "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)"},
+    "welcome": {"channel": None, "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)",
+                "image": {"enabled": False, "title": "WELCOME", "subtitle": "{server} へようこそ!", "style": "black",
+                          "color": True, "show_count": True, "bg": False}},   # 画像つきウェルカム(設定は /web のみ)
     "autorole": None,
     "warn_limit": 3,
     "warn_timeout_minutes": 60,
@@ -400,7 +402,7 @@ async def start_web():
     if not port:
         log.info("Webサーバーは無効です(PORT または WEB_URL を設定すると有効になります)")
         return
-    app = web.Application()
+    app = web.Application(client_max_size=6 * 1024 * 1024)   # 背景画像のアップロード用(通常のJSONは小さい)
     app.router.add_get("/health", health)
     if DASH_BASE:
         add_dashboard_routes(app)
@@ -607,18 +609,39 @@ async def apply_autorole(member: discord.Member) -> None:
             pass
 
 
-async def send_welcome(member: discord.Member) -> None:
+async def send_welcome(member: discord.Member, test: bool = False) -> tuple:
+    """ウェルカムメッセージ(画像つき)を送る。失敗した理由を文字列で返す(成功なら None)。戻り値: (送れたか, 理由・補足)。送れなかった理由はログにも残す"""
     guild = member.guild
     wc = store.get(guild.id)["welcome"]
     ch = guild.get_channel(wc["channel"]) if wc["channel"] else None
     if not ch:
-        return
+        return False, "送信先チャンネルが設定されていません(または削除されています)。"
+    p = ch.permissions_for(guild.me)
+    if not (p.view_channel and p.send_messages):
+        log.warning("ウェルカムを送れません: BOTに #%s での「チャンネルを見る・メッセージを送信」権限がありません guild=%s", ch.name, guild.id)
+        return False, f"BOTが #{ch.name} で「チャンネルを見る・メッセージを送信」を行えません。"
     text = (wc["message"].replace("{user}", member.mention)
             .replace("{server}", guild.name).replace("{count}", str(guild.member_count)))
+    if test:
+        text = "🧪 **テスト送信**(メンバーが参加したときは、この内容が送られます)\n" + text
+    im, file, note = wc.get("image") or {}, None, ""
+    if im.get("enabled"):
+        if not p.attach_files:
+            log.warning("ウェルカム画像を付けられません: BOTに #%s での「ファイルを添付」権限がありません guild=%s", ch.name, guild.id)
+            note = f"画像は付けられませんでした。BOTに #{ch.name} での「ファイルを添付」権限がありません。"
+        else:
+            try:
+                file = await make_welcome_file(member, im)
+            except Exception as e:
+                log.exception("ウェルカム画像の生成に失敗しました。文章だけ送ります。")
+                note = f"画像を作れなかったので文章だけ送りました({type(e).__name__})。BOTのログを確認してください。"
     try:  # 設定文に @everyone 等が含まれていても本人以外には通知しない
-        await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[member]))
-    except discord.HTTPException:
-        pass
+        kw = {"file": file} if file else {}
+        await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[member]), **kw)
+    except discord.HTTPException as e:
+        log.warning("ウェルカムの送信に失敗 guild=%s channel=%s: %s", guild.id, ch.id, e)
+        return False, f"Discordに送信を拒否されました({e.status})。BOTの権限を確認してください。"
+    return True, note or None
 
 
 @bot.event
@@ -644,7 +667,10 @@ async def on_member_join(member: discord.Member):
                                            + "\n認証ボタンを押しても、設定に従って保留またはキックされます。", YELLOW))
     else:
         await apply_autorole(member)
-    await send_welcome(member)  # ウェルカムメッセージは参加時にだけ送る(認証完了時には送らない)
+    try:  # ウェルカムで失敗しても、以降の処理(参加ログ・レイド検知)は止めない
+        await send_welcome(member)  # ウェルカムメッセージは参加時にだけ送る(認証完了時には送らない)
+    except Exception:
+        log.exception("ウェルカムメッセージの送信で想定外のエラー guild=%s", guild.id)
 
     age_days = (discord.utils.utcnow() - member.created_at).days
     e = make_embed("📥 メンバー参加", f"{member.mention} (`{member.id}`)", GREEN)
@@ -855,6 +881,10 @@ async def on_guild_remove(guild: discord.Guild):
     log.info("サーバーから退出: %s (%s)", guild.name, guild.id)
     act.pop(guild.id, None)
     act_locks.pop(guild.id, None)
+    try:
+        os.remove(welcome_bg_path(guild.id))
+    except OSError:
+        pass
 
 
 @tasks.loop(minutes=10)
@@ -1393,6 +1423,110 @@ def render_meigen(avatar_bytes: bytes, text: str, author: str, handle: str, styl
     return buf
 
 
+WELCOME_STYLES = {"black": ((18, 20, 28), (40, 44, 66), (245, 246, 250), (160, 166, 190), (88, 101, 242)),
+                  "white": ((250, 250, 252), (222, 228, 250), (24, 26, 34), (110, 116, 140), (88, 101, 242)),
+                  "blue": ((38, 52, 150), (88, 101, 242), (255, 255, 255), (214, 220, 255), (255, 255, 255))}
+
+
+def _wl_vars(text: str, name: str, guild_name: str, count: int) -> str:
+    return text.replace("{user}", name).replace("{server}", guild_name).replace("{count}", str(count))
+
+
+def render_welcome(avatar_bytes: bytes, name: str, title: str, subtitle: str, count_text: str, style: str,
+                   color: bool, font_path: str, bg_bytes: Optional[bytes] = None) -> io.BytesIO:
+    W, H = 1000, 360
+    bg1, bg2, fg, sub, accent = WELCOME_STYLES.get(style, WELCOME_STYLES["black"])
+    img = Image.new("RGB", (W, H), bg1)
+    d = ImageDraw.Draw(img)
+    if bg_bytes:  # 背景画像: 文字が読めるよう、デザインの色を重ねる
+        photo = ImageOps.fit(Image.open(io.BytesIO(bg_bytes)).convert("RGB"), (W, H), Image.Resampling.LANCZOS)
+        img = Image.blend(photo, Image.new("RGB", (W, H), bg1), 0.6)
+        d = ImageDraw.Draw(img)
+    else:
+        for x in range(W):  # 左→右のグラデーション
+            t = x / (W - 1)
+            d.line([(x, 0), (x, H)], fill=tuple(round(bg1[i] + (bg2[i] - bg1[i]) * t) for i in range(3)))
+    S, cx, cy = 220, 40 + 110 + 20, H // 2
+    av = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
+    av = ImageOps.fit(av, (S, S), Image.Resampling.LANCZOS)
+    if not color:
+        av = ImageOps.grayscale(av).convert("RGB")
+    ring = S + 16
+    big = Image.new("L", (ring * 4, ring * 4), 0)  # 4倍で描いて縮小(滑らかな円)
+    ImageDraw.Draw(big).ellipse((0, 0, ring * 4 - 1, ring * 4 - 1), fill=255)
+    img.paste(Image.new("RGB", (ring, ring), accent), (cx - ring // 2, cy - ring // 2), big.resize((ring, ring), Image.Resampling.LANCZOS))
+    m = Image.new("L", (S * 4, S * 4), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, S * 4 - 1, S * 4 - 1), fill=255)
+    img.paste(av, (cx - S // 2, cy - S // 2), m.resize((S, S), Image.Resampling.LANCZOS))
+    left, area = cx + ring // 2 + 44, W - (cx + ring // 2 + 44) - 40
+    tf, nf, sf = (ImageFont.truetype(font_path, z) for z in (70, 40, 26))
+    title = _ellipsize(title, tf, area)
+    name = _ellipsize(name, nf, area)
+    lines = _wrap(subtitle, sf, area)[:2]
+    if count_text:
+        lines.append(count_text)
+    block = 70 + 18 + 40 + 16 + len(lines) * 36
+    y = (H - block) // 2
+    d.text((left, y + 62), title, font=tf, fill=fg, anchor="ls")
+    d.rectangle((left, y + 80, left + 80, y + 85), fill=accent)
+    d.text((left, y + 138), name, font=nf, fill=fg, anchor="ls")
+    for i, ln in enumerate(lines):
+        d.text((left, y + 190 + i * 36), ln, font=sf, fill=sub, anchor="ls")
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return buf
+
+
+WELCOME_BG_DIR = os.path.join(DATA_DIR, "welcome_bg")
+
+
+def welcome_bg_path(guild_id: int) -> str:
+    return os.path.join(WELCOME_BG_DIR, f"{int(guild_id)}.jpg")
+
+
+def save_welcome_bg(guild_id: int, data: bytes) -> None:
+    """アップロードされた画像を検証し、1000x360 に整えて保存する(別スレッドで実行)"""
+    try:
+        im = Image.open(io.BytesIO(data))
+        fmt, (w, h) = im.format, im.size
+    except Exception:
+        raise SettingsError("画像として読み込めませんでした。PNG・JPEG・WebP・GIF を選んでください。")
+    if fmt not in ("PNG", "JPEG", "WEBP", "GIF"):
+        raise SettingsError("PNG・JPEG・WebP・GIF の画像だけ使えます。")
+    if w * h > 40_000_000:
+        raise SettingsError("画像が大きすぎます。(4000万画素まで)")
+    try:
+        im = ImageOps.fit(ImageOps.exif_transpose(im).convert("RGB"), (1000, 360), Image.Resampling.LANCZOS)
+    except Exception:
+        raise SettingsError("画像を処理できませんでした。別の画像でお試しください。")
+    os.makedirs(WELCOME_BG_DIR, exist_ok=True)
+    tmp = welcome_bg_path(guild_id) + ".tmp"
+    im.save(tmp, "JPEG", quality=88)
+    os.replace(tmp, welcome_bg_path(guild_id))
+
+
+def _read_welcome_bg(guild_id: int) -> Optional[bytes]:
+    try:
+        with open(welcome_bg_path(guild_id), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+async def make_welcome_file(member: discord.Member, im: dict) -> discord.File:
+    font_path = await ensure_font()
+    avatar = await member.display_avatar.replace(size=512, format="png").read()
+    g, n = member.guild, member.display_name
+    bg = await run_heavy(_read_welcome_bg, g.id) if im.get("bg") else None
+    buf = await run_heavy(
+        render_welcome, avatar, n, _wl_vars(im.get("title") or "WELCOME", n, g.name, g.member_count),
+        _wl_vars(im.get("subtitle") or "", n, g.name, g.member_count),
+        f"{g.member_count} 人目のメンバー" if im.get("show_count", True) else "",
+        im.get("style", "black"), bool(im.get("color", True)), font_path, bg)
+    return discord.File(buf, filename="welcome.png")
+
+
 async def make_meigen_file(user: discord.abc.User, text: str, author: Optional[str], style: str, color: bool) -> discord.File:
     font_path = await ensure_font()
     avatar = await user.display_avatar.replace(size=1024, format="png").read()
@@ -1830,12 +1964,206 @@ async def serverinfo(interaction: discord.Interaction):
     await interaction.response.send_message(embed=e)
 
 
+@bot.tree.command(name="bot_users", description="BOT全体の利用ユーザー数を集計します（指定ユーザー専用）")
+async def bot_users(interaction: discord.Interaction):
+    # このコマンドを実行できるのは指定されたDiscordユーザーIDのみ
+    if interaction.user.id != 1453953586626166899:
+        await interaction.response.send_message(
+            "❌ このコマンドを利用できるのは指定されたユーザーのみです。",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    unique_users = set()
+    total_memberships = 0
+    incomplete_guilds = 0
+
+    # BOTが参加している全サーバーのメンバーを集計し、同じユーザーは重複カウントしない。
+    # メンバーキャッシュが未完成のサーバーは、可能ならメンバー一覧を取得してから集計する。
+    for guild in bot.guilds:
+        try:
+            members = guild.members if guild.chunked else await guild.chunk(cache=True)
+        except Exception:
+            log.warning("利用ユーザー数の集計でメンバー取得に失敗 guild=%s (%s)", guild.id, guild.name, exc_info=True)
+            members = guild.members
+            incomplete_guilds += 1
+
+        humans = [member for member in members if not member.bot]
+        total_memberships += len(humans)
+        unique_users.update(member.id for member in humans)
+
+    e = make_embed("📊 AZQ BOT 利用ユーザー数", color=BLUE)
+    e.add_field(name="利用ユーザー数（重複除外）", value=f"**{len(unique_users):,} 人**", inline=False)
+    e.add_field(name="サーバー内の人間メンバー合計（重複あり）", value=f"{total_memberships:,} 人分", inline=False)
+    e.add_field(name="導入サーバー数", value=f"{len(bot.guilds):,} サーバー", inline=False)
+    e.set_footer(text="BOTアカウントは除外しています。")
+    if incomplete_guilds:
+        e.description = (
+            f"⚠️ {incomplete_guilds} サーバーでメンバー一覧を完全取得できなかったため、\n"
+            "利用ユーザー数はキャッシュ済みメンバーのみの集計を含みます。"
+        )
+    await interaction.followup.send(embed=e, ephemeral=True)
+
+
 @bot.tree.command(name="avatar", description="アイコン画像を表示します")
 async def avatar(interaction: discord.Interaction, user: Optional[discord.User] = None):
     u = user or interaction.user
     e = make_embed(f"🖼️ {u} のアイコン")
     e.set_image(url=u.display_avatar.replace(size=1024).url)
     await interaction.response.send_message(embed=e)
+
+
+# =====================================================================
+# 王様ゲーム(/ousama)
+#   - 参加者を募集 → 開始すると、王様1人と番号(1〜人数-1)が自動で決まる
+#   - チャンネルには「王様」と「参加者」を表示、各自の番号(王様はその旨)はDMで1回だけ送る
+#   - 命令は各自が自由にチャンネルで出す(BOTは関与しない)
+# =====================================================================
+KING_MIN, KING_MAX = 3, 20
+KING_LOBBY_SEC = 900           # 募集の有効時間
+KING_GAMES: dict = {}          # channel_id -> KingGame(募集中のみ)
+_king_rng = random.SystemRandom()
+
+
+class KingGame:
+    def __init__(self, channel_id: int, host_id: int, max_players: int):
+        self.channel_id = channel_id
+        self.host_id = host_id
+        self.max_players = max_players
+        self.players: list = [host_id]
+        self.started = False
+        self.message_id: Optional[int] = None
+
+
+def _king_is_host(interaction: discord.Interaction, game: KingGame) -> bool:
+    perms = getattr(interaction.user, "guild_permissions", None)
+    return interaction.user.id == game.host_id or bool(perms and perms.manage_guild)
+
+
+def _king_release(game: KingGame) -> None:
+    if KING_GAMES.get(game.channel_id) is game:
+        del KING_GAMES[game.channel_id]
+
+
+def king_lobby_embed(game: KingGame) -> discord.Embed:
+    e = make_embed("👑 王様ゲーム 参加者募集中",
+                   f"ホスト: <@{game.host_id}>\n「参加する」を押して参加してください。\n"
+                   f"{KING_MIN}人以上({game.max_players}人まで)集まったら、ホストが「開始」を押します。", YELLOW)
+    e.add_field(name=f"参加者 ({len(game.players)}/{game.max_players})",
+                value="\n".join(f"{i}. <@{u}>" for i, u in enumerate(game.players, 1)), inline=False)
+    e.set_footer(text="開始すると王様と番号が自動で決まり、番号はDMで届きます(DMを受け取れる設定にしてください)")
+    return e
+
+
+class KingLobbyView(discord.ui.View):
+    def __init__(self, game: KingGame):
+        super().__init__(timeout=KING_LOBBY_SEC)
+        self.game = game
+
+    @discord.ui.button(label="参加する", emoji="🙋", style=discord.ButtonStyle.success)
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        g = self.game
+        if interaction.user.id in g.players:
+            return await interaction.response.send_message("すでに参加しています。", ephemeral=True)
+        if len(g.players) >= g.max_players:
+            return await interaction.response.send_message("❌ 満員です。", ephemeral=True)
+        g.players.append(interaction.user.id)
+        await interaction.response.edit_message(embed=king_lobby_embed(g))
+
+    @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary)
+    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+        g = self.game
+        if interaction.user.id not in g.players:
+            return await interaction.response.send_message("参加していません。", ephemeral=True)
+        if interaction.user.id == g.host_id:
+            return await interaction.response.send_message("ホストは退出できません。やめる場合は「中止」を押してください。", ephemeral=True)
+        g.players.remove(interaction.user.id)
+        await interaction.response.edit_message(embed=king_lobby_embed(g))
+
+    @discord.ui.button(label="開始", emoji="▶️", style=discord.ButtonStyle.primary)
+    async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        g = self.game
+        if not _king_is_host(interaction, g):
+            return await interaction.response.send_message("❌ 開始できるのはホストだけです。", ephemeral=True)
+        if len(g.players) < KING_MIN:
+            return await interaction.response.send_message(f"❌ {KING_MIN}人以上必要です(現在 {len(g.players)}人)。", ephemeral=True)
+        g.started = True
+        _king_release(g)
+        self.stop()
+
+        # 王様1人を決め、残りに 1〜N-1 の番号をランダムに配る
+        order = g.players[:]
+        _king_rng.shuffle(order)
+        king = order[0]
+        numbers = {uid: i for i, uid in enumerate(order[1:], start=1)}
+
+        e = make_embed("👑 王様ゲーム スタート!",
+                       f"王様は <@{king}> さんです!\n"
+                       "各自の番号はDMで送りました。王様の命令を待ちましょう。\n"
+                       "(命令は自由に、チャンネルで「○番が△番に…」のように出してください)", YELLOW)
+        e.add_field(name=f"参加者 ({len(g.players)}人)", value=" ".join(f"<@{u}>" for u in g.players), inline=False)
+        e.add_field(name="番号", value=f"1〜{len(g.players) - 1}番", inline=True)
+        await interaction.response.edit_message(
+            embed=e, view=None, allowed_mentions=discord.AllowedMentions.none())
+
+        # DMで役を1回だけ送る
+        failed = []
+        for uid in g.players:
+            if uid == king:
+                de = make_embed("👑 あなたは王様です!", f"**{interaction.guild.name}** の王様ゲームで王様に選ばれました。\n"
+                                "チャンネルで好きな命令を出してください。(番号は 1〜%d番)" % (len(g.players) - 1), YELLOW)
+            else:
+                de = make_embed(f"🔢 あなたは {numbers[uid]}番 です", f"**{interaction.guild.name}** の王様ゲームの番号です。\n"
+                                "王様の命令を待ちましょう。(他の人に見せないでね)", BLUE)
+            try:
+                user = interaction.guild.get_member(uid) or await bot.fetch_user(uid)
+                await user.send(embed=de)
+            except (discord.Forbidden, discord.HTTPException):
+                failed.append(uid)
+        if failed:
+            await interaction.followup.send(
+                "⚠️ " + " ".join(f"<@{u}>" for u in failed)
+                + " にDMを送れませんでした。DMを許可してから、もう一度 `/ousama` でやり直してください。",
+                allowed_mentions=discord.AllowedMentions(users=[discord.Object(id=u) for u in failed]))
+
+    @discord.ui.button(label="中止", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        g = self.game
+        if not _king_is_host(interaction, g):
+            return await interaction.response.send_message("❌ 中止できるのはホストだけです。", ephemeral=True)
+        _king_release(g)
+        self.stop()
+        await interaction.response.edit_message(embed=make_embed("👑 王様ゲーム", "募集を中止しました。", GRAY), view=None)
+
+    async def on_timeout(self):
+        g = self.game
+        if g.started:
+            return
+        _king_release(g)
+        ch = bot.get_channel(g.channel_id)
+        if ch and g.message_id:
+            try:
+                await ch.get_partial_message(g.message_id).edit(
+                    embed=make_embed("👑 王様ゲーム", "募集がタイムアウトしました。", GRAY), view=None)
+            except discord.HTTPException:
+                pass
+
+
+@bot.tree.command(name="ousama", description="王様ゲームを始めます(王様と番号を自動で決めてDMで通知)")
+@app_commands.describe(max_players=f"最大参加人数({KING_MIN}〜{KING_MAX}、既定10)")
+@app_commands.guild_only()
+async def ousama(interaction: discord.Interaction, max_players: app_commands.Range[int, KING_MIN, KING_MAX] = 10):
+    if interaction.channel_id in KING_GAMES:
+        return await interaction.response.send_message("❌ このチャンネルでは、すでに王様ゲームを募集中です。", ephemeral=True)
+    game = KingGame(interaction.channel_id, interaction.user.id, max_players)
+    KING_GAMES[interaction.channel_id] = game
+    await interaction.response.send_message(embed=king_lobby_embed(game), view=KingLobbyView(game))
+    try:
+        game.message_id = (await interaction.original_response()).id
+    except discord.HTTPException:
+        pass
 
 
 # =====================================================================
@@ -4167,6 +4495,10 @@ def dash_snapshot(g: discord.Guild) -> dict:
         "categories": [{"id": str(x.id), "name": x.name} for x in g.categories],
         "roles": [{"id": str(r.id), "name": r.name} for r in g.roles if not r.is_default() and not r.managed],
         "cfg": {"log_channel": _s(c["log_channel"]), "welcome_channel": _s(c["welcome"]["channel"]), "welcome_message": c["welcome"]["message"],
+                **{"welcome_image_" + k: v for k, v in {**DEFAULTS["welcome"]["image"], **c["welcome"].get("image", {})}.items()
+                   if k in ("enabled", "title", "subtitle", "style", "color")},
+                "welcome_image_count": c["welcome"].get("image", {}).get("show_count", True),
+                "welcome_image_bg": bool(c["welcome"].get("image", {}).get("bg")),
                 "autorole": _s(c["autorole"]), "meigen_enabled": c["meigen"]["enabled"],
                 "warn_limit": c["warn_limit"], "warn_timeout_minutes": c["warn_timeout_minutes"],
                 "automod_enabled": am["enabled"], "block_invites": am["block_invites"], "ng_words": am["ng_words"],
@@ -4258,8 +4590,23 @@ def apply_settings(g: discord.Guild, d: dict) -> None:
             "ich": [ch.id for ch in (_chan(g, x, (discord.abc.GuildChannel,), "除外チャンネル") for x in d.get("ignore_channels", [])[:100]) if ch],
             "irl": [r.id for r in (_role(g, x, "除外ロール") for x in d.get("ignore_roles", [])[:100]) if r],
         }
+        wi_style = str(d.get("welcome_image_style", "black"))
+        if wi_style not in WELCOME_STYLES:
+            raise SettingsError("ウェルカム画像のデザインが正しくありません")
+        wi_title = str(d.get("welcome_image_title", "")).strip()
+        if not 1 <= len(wi_title) <= 24:
+            raise SettingsError("ウェルカム画像のタイトルは 1〜24 文字で入力してください")
+        wi_sub = str(d.get("welcome_image_subtitle", "")).replace("\n", " ").strip()
+        if len(wi_sub) > 60:
+            raise SettingsError("ウェルカム画像のサブタイトルは 60 文字以内で入力してください")
+        new["wi"] = {"enabled": bool(d.get("welcome_image_enabled")), "title": wi_title, "subtitle": wi_sub, "style": wi_style,
+                     "color": bool(d.get("welcome_image_color")), "show_count": bool(d.get("welcome_image_count")),
+                     "bg": bool(c["welcome"].get("image", {}).get("bg"))}
     except (ValueError, TypeError, AttributeError):
         raise SettingsError("入力が正しくありません")
+    if new["wi"]["enabled"] and not new["wch"]:
+        raise SettingsError("ウェルカム画像を使うには、ウェルカムメッセージの送信先チャンネルを選んでください")
+    c["welcome"]["image"] = new["wi"]
     c["log_channel"] = new["log"].id if new["log"] else None
     c["welcome"]["channel"], c["welcome"]["message"] = (new["wch"].id if new["wch"] else None), new["wmsg"]
     c["autorole"] = role.id if role else None
@@ -4643,7 +4990,49 @@ async def act_verify_bulk(g, m, d):
     return f"✅ {done}人に認証ロールを付与しました(失敗 {failed}人)。" + (f" 対象が多いため先頭{cap}人までです。もう一度実行してください。" if len(targets) > cap else ""), None
 
 
-DASH_ACTIONS = {"member_search": act_member_search, "warn_remove": act_warn_remove, "warn_clear": act_warn_clear,
+async def act_welcome_bg_delete(g, m, d):
+    store.get(g.id)["welcome"]["image"]["bg"] = False
+    store.save()
+    try:
+        os.remove(welcome_bg_path(g.id))
+    except OSError:
+        pass
+    return "✅ 背景画像を削除しました。(元のグラデーションに戻ります)"
+
+
+dash_wtest_last: dict = {}
+
+
+async def act_welcome_test(g, m, d):
+    now = time.time()
+    if now - dash_wtest_last.get(g.id, 0) < 10:
+        raise SettingsError("テスト送信は10秒に1回までです。")
+    dash_wtest_last[g.id] = now
+    ok, why = await send_welcome(m, test=True)
+    if not ok:
+        raise SettingsError(why)
+    ch = g.get_channel(store.get(g.id)["welcome"]["channel"])
+    return f"✅ テストを #{ch.name} に送信しました。" + (f" ⚠️ {why}" if why else "")
+
+
+async def dash_welcome_bg(request):
+    g = await _dash_guild(request)
+    if request.headers.get("X-Requested-With") != "azq-dashboard":  # CSRF対策
+        raise web.HTTPForbidden()
+    try:
+        _dash_admin_member(request, g)
+        data = await request.read()   # 上限(6MB)を超えると自動で 413
+        if not data:
+            raise SettingsError("画像が空です。")
+        await run_heavy(save_welcome_bg, g.id, data)
+    except SettingsError as e:
+        raise web.HTTPBadRequest(text=str(e))
+    store.get(g.id)["welcome"]["image"]["bg"] = True
+    store.save()
+    return web.json_response({"ok": True, "msg": "✅ 背景画像を設定しました。"})
+
+
+DASH_ACTIONS = {"welcome_test": act_welcome_test, "welcome_bg_delete": act_welcome_bg_delete, "member_search": act_member_search, "warn_remove": act_warn_remove, "warn_clear": act_warn_clear,
                 "verify_approve": act_verify_approve, "verify_revoke": act_verify_revoke, "verify_bulk": act_verify_bulk,
                 "verify_save": act_verify_save, "verify_raid": act_verify_raid, "verify_clearips": act_verify_clearips,
                 "ticket_save": act_ticket_save, "rp_save": act_rp_save, "rp_delete": act_rp_delete}
@@ -4684,6 +5073,7 @@ def add_dashboard_routes(app: web.Application) -> None:
     app.router.add_get("/api/guild/{gid}", dash_get)
     app.router.add_post("/api/guild/{gid}", dash_save)
     app.router.add_post("/api/guild/{gid}/do", dash_do)
+    app.router.add_post("/api/guild/{gid}/welcome_bg", dash_welcome_bg)
 
 
 @bot.tree.command(name="web", description="Webで設定を編集します(管理者のみ)")
@@ -4744,13 +5134,14 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="📊 過疎検出", value="`/kaso` 診断 / `/config kaso` 自動アラート設定", inline=False)
     e.add_field(name="🧠 脳内メーカー", value="`/nounai [name]` / ユーザーを右クリック→アプリ→脳内メーカー", inline=False)
     e.add_field(name="🖼️ 名言画像", value="`/meigen text:名言` / メッセージを右クリック→アプリ→名言画像にする\n他の人のアイコン・名前を使うには本人の許可が必要(未設定の人にはDMで確認)。`/meigenprivacy` で自分の許可設定を変更\n管理者は `/config meigen enabled:False` でサーバー内を無効化できます", inline=False)
+    e.add_field(name="👑 王様ゲーム", value="`/ousama [max_players]` 参加者を募集 → 開始で王様と番号が自動で決まる\nチャンネルに王様と参加者を表示し、各自の番号はDMで届きます(命令は自由)", inline=False)
     e.add_field(name="🏓 ping", value="`/ping` BOT速度 / `/ping target:example.com` Webサイト", inline=False)
     e.add_field(name="🔐 認証", value="`/verify setup` 設置 / `/verify set` 詳細設定 / `/verify text` パネルの文面を編集 / `/verify status` 状態\n`/verify approve` `/verify revoke` `/verify bulk_approve` `/verify raid` `/verify panel` `/verify disable`\n方式: ボタン・計算・画像CAPTCHA・Web認証(VPN/サブ垢の判定つき)、未認証ロール、アカウント年齢制限、未認証キック、レイド時の自動強化\nロボット確認の強化、疑わしいアカウント対策(デフォルトアイコン・再参加・集団参加 → 承認待ち/キック)は `/verify set` から", inline=False)
     e.add_field(name="🎫 チケット", value="`/ticketconfig setup` 設置 / `/ticketconfig set` `staff` `panel` `block` `unblock` `status` `disable`\nチケット内: `/ticket close` `/ticket add` `/ticket remove` `/ticket rename` `/ticket delete`\nクローズは作成者・スタッフ・管理者、**削除は管理者のみ**(クローズ後は閲覧のみ)\n機能: 非公開chの自動作成、担当者、記録(.txt)の保存/DM、無操作の自動クローズ、認証連携", inline=False)
     e.add_field(name="🌐 Webダッシュボード", value="`/web` でブラウザから設定を編集(設定不要・管理者のみ)", inline=False)
     e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel text` 文面を編集 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
     e.add_field(name="🔨 モデレーション", value="`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove`", inline=False)
-    e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
+    e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config welcome_image`(Webで設定) `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
 
@@ -4801,8 +5192,22 @@ async def cfg_welcome(interaction: discord.Interaction, channel: Optional[discor
         wc["message"] = message[:500]
     store.save()
     await interaction.response.send_message(
-        f"✅ ウェルカム: {channel.mention if channel else '無効'}\n{wc['message']}", ephemeral=True,
+        f"✅ ウェルカム: {channel.mention if channel else '無効'}\n{wc['message']}\n🖼️ 画像を付けるオプションは `/web` で設定できます。", ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none())
+
+
+@config_group.command(name="welcome_image", description="ウェルカムメッセージの画像オプション(Webダッシュボード専用)")
+@app_commands.checks.has_permissions(administrator=True)
+async def cfg_welcome_image(interaction: discord.Interaction):
+    if not OAUTH_READY:
+        return await interaction.response.send_message(
+            "🖼️ ウェルカム画像の設定は **Webダッシュボード(`/web`)専用**です。\n"
+            "このBOTではダッシュボードがまだ有効になっていません。BOTの管理者が `DISCORD_CLIENT_SECRET` と `WEB_URL` を設定してください。", ephemeral=True)
+    v = discord.ui.View()
+    v.add_item(discord.ui.Button(label="Webで設定する", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
+    await interaction.response.send_message(
+        "🖼️ ウェルカム画像の設定は、スラッシュコマンドではできません。\n**`/web` にアクセスして**、「基本」タブの「ウェルカムメッセージ」にある画像のオプションから設定してください。",
+        view=v, ephemeral=True)
 
 
 @config_group.command(name="autorole", description="参加時に自動付与するロールを設定(省略で解除)")
