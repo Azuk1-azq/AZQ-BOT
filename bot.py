@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import bisect
 import copy
+import functools
 import hashlib
 import hmac
 import ipaddress
@@ -43,55 +44,40 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 
-TOKEN = "YOUR-TOKEN"   # ← ここにBOTトークンを直接貼り付けてください
-TOKEN = os.getenv("DISCORD_TOKEN") or TOKEN   # (任意)環境変数 DISCORD_TOKEN があればそちらを優先
-DEV_GUILD_ID = ""      # 開発用: 数字のサーバーIDを入れるとそのサーバーだけに即時反映。公開時は空のまま(グローバル同期)
+TOKEN = "YOUR-TOKEN"
+TOKEN = os.getenv("DISCORD_TOKEN") or TOKEN
+DEV_GUILD_ID = ""
 DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", DEV_GUILD_ID).strip()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "").strip().rstrip("/")   # ダッシュボードの公開URL(省略すると WEB_URL を使う)。Discordの Redirects に <URL>/callback を登録
+DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "").strip().rstrip("/")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or ""
-# Web認証(BOT自身がブラウザ用の認証ページを配信する。外部サービス・Caddy・ドメインは不要)。
-# WEB_URL に、このサーバーの公開URL(例: http://203.0.113.5:8080)を設定すると有効になります。
-# このWEB_URL(HTTPS含む)は、/web(Webダッシュボード)の配信にもそのまま使われます。
-# HTTPS(任意): 証明書と秘密鍵のファイルのパスを指定すると、BOT自身がHTTPSで配信する(プロキシ不要なので接続元IPもそのまま見える)。
-#   例: TLS_CERT=/etc/letsencrypt/live/example.com/fullchain.pem  TLS_KEY=/etc/letsencrypt/live/example.com/privkey.pem
 TLS_CERT = (os.getenv("TLS_CERT") or "").strip()
 TLS_KEY = (os.getenv("TLS_KEY") or "").strip()
 TLS_READY = bool(TLS_CERT and TLS_KEY)
 WEB_URL = (os.getenv("WEB_URL") or "").strip().rstrip("/")
 if WEB_URL and not re.match(r"^https?://", WEB_URL, re.I):
-    WEB_URL = ("https://" if TLS_READY else "http://") + WEB_URL   # スキームが抜けていたら自動で補う
+    WEB_URL = ("https://" if TLS_READY else "http://") + WEB_URL
 WEB_READY = bool(WEB_URL)
-# Web認証のreCAPTCHA(Google reCAPTCHA v2「私はロボットではありません」)。両方の環境変数を設定すると有効になります。
-#   取得: https://www.google.com/recaptcha/admin で「reCAPTCHA v2 > チェックボックス」を作成し、ドメインに WEB_URL のドメインを登録する。
-#   ※ IPアドレス直指定の WEB_URL(例: http://203.0.113.5:8080)には使えません。ドメインが必要です。
 RECAPTCHA_SITE_KEY = (os.getenv("RECAPTCHA_SITE_KEY") or "").strip()
 RECAPTCHA_SECRET_KEY = (os.getenv("RECAPTCHA_SECRET_KEY") or "").strip()
 RECAPTCHA_READY = bool(RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY)
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
-# VPN・データセンター判定に使う公開IPレンジのリスト(GitHub上のテキスト。1日1回取得してファイルに保存し、判定はBOTの中だけで行う)
 VPN_LIST_URLS = [u for u in (os.getenv("VPN_LIST_URLS") or
                              "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt,"
                              "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt").split(",") if u.strip()]
-VPN_LIST_AUTO = os.getenv("VPN_LIST_AUTO", "1") != "0"   # 0 にすると自動取得しない(data/vpn_ranges.txt を手動で置く)
-# Webダッシュボード(/web): Discordのアカウントでログイン(OAuth)して使う。画面もAPIもBOT自身が配信する(GitHub Pages等は不要)。
-#   必要なもの: 環境変数 DISCORD_CLIENT_SECRET(Developer Portal > OAuth2 > Client Secret) と、
-#               Developer Portal > OAuth2 > Redirects に「<公開URL>/callback」を登録すること。
-#   公開URLは DASHBOARD_URL、未設定なら WEB_URL(Web認証と同じURL・同じHTTPS)を使う。
+VPN_LIST_AUTO = os.getenv("VPN_LIST_AUTO", "1") != "0"
 if DASHBOARD_URL and not re.match(r"^https?://", DASHBOARD_URL, re.I):
     DASHBOARD_URL = ("https://" if TLS_READY else "http://") + DASHBOARD_URL
 DASH_BASE = DASHBOARD_URL or WEB_URL
 OAUTH_READY = bool(DASH_BASE and CLIENT_SECRET)
-DATA_DIR = os.getenv("DATA_DIR") or os.path.join(BASE_DIR, "data")   # 設定の保存先(既定: bot.py と同じ場所の data/)
-# ヘルスチェック用HTTPサーバーのポート。Oracle等のVPSでは不要なので既定は無効(PORT未設定=起動しない)。
-# SnapDeploy等のコンテナ環境では環境変数 PORT を設定すると有効になります。
+DATA_DIR = os.getenv("DATA_DIR") or os.path.join(BASE_DIR, "data")
 try:
     PORT = int(os.getenv("PORT", "0") or 0)
 except ValueError:
     PORT = 0
 
 BLUE, RED, GREEN, YELLOW, GRAY = 0x5865F2, 0xED4245, 0x57F287, 0xFEE75C, 0x99AAB5
-SUPPORT_URL = "https://discord.gg/tAKTK9MYdc"   # サポートサーバー(メンテナンス等のお知らせ)
+SUPPORT_URL = "https://discord.gg/tAKTK9MYdc"
 INVITE_RE = re.compile(r"(?:discord\.gg|discord(?:app)?\.com/invite)/[\w-]+", re.I)
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
 
@@ -102,7 +88,7 @@ DEFAULTS = {
     "log_channel": None,
     "welcome": {"channel": None, "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)",
                 "image": {"enabled": False, "title": "WELCOME", "subtitle": "{server} へようこそ!", "style": "black",
-                          "color": True, "show_count": True, "bg": False}},   # 画像つきウェルカム(設定は /web のみ)
+                          "color": True, "show_count": True, "bg": False}},
     "autorole": None,
     "warn_limit": 3,
     "warn_timeout_minutes": 60,
@@ -125,54 +111,54 @@ DEFAULTS = {
     "kaso": {"enabled": False, "channel": None, "threshold": 20, "last_alert": 0},
     "verify": {
         "enabled": False,
-        "mode": "button",            # button / math / image
-        "role": None,                # 認証後に付与するロール
-        "unverified_role": None,     # 参加時に付与し、認証後に外すロール(任意)
+        "mode": "button",
+        "role": None,
+        "unverified_role": None,
         "panel_channel": None,
         "panel_message": None,
         "panel_title": "✅ メンバー認証",
         "panel_text": "下のボタンを押して認証を完了すると、サーバーのチャンネルが利用できるようになります。\n荒らし・BOT対策へのご協力をお願いします。",
-        "panel_button": "認証する",   # 認証パネルのボタンの名前
+        "panel_button": "認証する",
         "min_account_days": 0,
-        "kick_minutes": 0,           # 0=未認証でもキックしない
+        "kick_minutes": 0,
         "max_attempts": 3,
         "lockout_minutes": 10,
-        "violation": "deny",         # deny / kick
-        "bot_check": False,          # ロボット確認の強化(早すぎる回答は失敗 / ボタン方式は計算に / 疑わしい人は画像認証に)
-        "block_default_avatar": False,   # デフォルトアイコンのままのアカウントを自動で通さない
-        "block_rejoin": False,       # 認証失敗・未認証でキックされた人の再参加を通さない
-        "block_cluster": False,      # 作成時刻が近いアカウントが短時間に複数参加(サブ垢の疑い)したら通さない
-        "block_vpn": False,          # Web認証: VPN・プロキシ・データセンターの回線から認証させない
-        "block_alt_ip": True,        # Web認証: 同じ回線から別アカウントが認証済みなら通さない(IPは暗号化したハッシュだけを保存)
-        "ip_hashes": {},             # IPのハッシュ -> 認証したユーザーID(サブ垢の検出用。生のIPは保存しない)
-        "suspect_action": "hold",    # 疑わしい人への処置: hold=管理者の承認待ち / kick
-        "flagged": {},               # user_id -> 認証関連でキックした時刻(再参加の検出用)
-        "suspects": {},              # user_id -> 疑わしい理由
-        "pending": {},               # user_id -> 参加時刻
+        "violation": "deny",
+        "bot_check": False,
+        "block_default_avatar": False,
+        "block_rejoin": False,
+        "block_cluster": False,
+        "block_vpn": False,
+        "block_alt_ip": True,
+        "ip_hashes": {},
+        "suspect_action": "hold",
+        "flagged": {},
+        "suspects": {},
+        "pending": {},
         "stats": {"verified": 0, "failed": 0, "denied": 0, "kicked": 0},
     },
     "ticket": {
         "enabled": False,
-        "category": None,            # チケットchを作るカテゴリ
+        "category": None,
         "staff_roles": [],
-        "transcript_channel": None,  # 未設定ならログチャンネル
+        "transcript_channel": None,
         "panel_channel": None,
         "panel_message": None,
         "panel_title": "🎫 サポートチケット",
         "panel_text": "ご質問・ご相談・報告は、下のボタンからチケットを作成してください。\n専用の非公開チャンネルが作成され、スタッフが対応します。",
         "max_open": 1,
-        "auto_close_hours": 0,       # 0=自動クローズしない
+        "auto_close_hours": 0,
         "ping_staff": True,
         "dm_transcript": True,
         "counter": 0,
-        "open": {},                  # channel_id -> {owner, number, created, claimed_by, subject, closed, closed_by, closed_at}  (closed=クローズ済み・削除待ち)
+        "open": {},
         "blocked": [],
         "stats": {"created": 0, "closed": 0},
     },
     "rolepanel": {
-        "panels": {},                # message_id -> {channel, title, text, exclusive, roles:[{id,label}]}
+        "panels": {},
     },
-    "meigen": {"enabled": True},     # False=このサーバーでは名言画像(/meigen・右クリック)を使えない
+    "meigen": {"enabled": True},
 }
 
 
@@ -185,7 +171,7 @@ def deep_merge(base: dict, over: dict) -> dict:
     return base
 
 
-STORE_SAVE_DELAY = 1.5   # 設定の保存は、この秒数ぶんの変更をまとめて1回だけ行う
+STORE_SAVE_DELAY = 1.5
 
 
 class Store:
@@ -193,7 +179,7 @@ class Store:
         os.makedirs(directory, exist_ok=True)
         self.path = os.path.join(directory, "guilds.json")
         self.data: dict = {}
-        self.existed = os.path.exists(self.path)  # 起動時に設定ファイルがあったか
+        self.existed = os.path.exists(self.path)
         self._dirty = False
         self._task: Optional[asyncio.Task] = None
         self._write_lock = threading.Lock()
@@ -217,7 +203,7 @@ class Store:
         self._dirty = True
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError:  # イベントループの外(起動前など)は即時に保存
+        except RuntimeError:
             return self.flush()
         if self._task is None or self._task.done():
             self._task = loop.create_task(self._flush_later())
@@ -242,10 +228,10 @@ class Store:
             return
         self._dirty = False
         try:
-            payload = self._dump()  # 辞書の変更と競合しないよう、シリアライズはループ上で行う(高速)
+            payload = self._dump()
             await asyncio.get_running_loop().run_in_executor(None, self._write, payload)
         except Exception:
-            self._dirty = True  # 失敗したら次回やり直す
+            self._dirty = True
             log.exception("設定の保存に失敗しました")
 
     def flush(self) -> None:
@@ -261,7 +247,7 @@ class Store:
 
 
 store = Store(DATA_DIR)
-atexit.register(store.flush)   # 終了時に未保存の変更を書き出す
+atexit.register(store.flush)
 
 
 class UserPrefs:
@@ -290,8 +276,8 @@ class UserPrefs:
 user_prefs = UserPrefs(DATA_DIR)
 
 intents = discord.Intents.default()
-intents.message_content = True  # 要: Developer Portal で Message Content Intent を ON
-intents.members = True          # 要: Developer Portal で Server Members Intent を ON
+intents.message_content = True
+intents.members = True
 
 
 class AzqBot(commands.Bot):
@@ -310,17 +296,18 @@ class AzqBot(commands.Bot):
         self.session = aiohttp.ClientSession(headers={"User-Agent": BROWSER_UA})
         self.tree.add_command(config_group)
         self.tree.add_command(verify_group)
-        self.add_view(VerifyPanelView())  # 再起動後も認証ボタンを有効にする
+        self.add_view(VerifyPanelView())
         self.tree.add_command(ticket_group)
         self.tree.add_command(ticketconfig_group)
-        self.add_view(TicketPanelView())  # 再起動後もチケットのボタンを有効にする
+        self.add_view(TicketPanelView())
         self.add_view(TicketControlView())
         self.add_view(TicketClosedView())
         self.add_view(MeigenConsentView())
         self.tree.add_command(rolepanel_group)
-        for _cfg in store.data.values():  # 再起動後もロールパネルのボタンを有効にする
+        for _cfg in store.data.values():
             for _mid, _p in _cfg.get("rolepanel", {}).get("panels", {}).items():
                 self.add_view(RolePanelView(_p["roles"]), message_id=int(_mid))
+        srvadm_install()
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
             self.tree.copy_global_to(guild=guild)
@@ -341,8 +328,9 @@ class AzqBot(commands.Bot):
         t = getattr(self, "_tls_task", None)
         if t:
             t.cancel()
-        await store.flush_async()  # 終了前に未保存の設定を書き出す
-        await act_flush_async()    # 過疎診断の記録も保存する(保存時刻が、次回起動時の「欠け」の開始になる)
+        await store.flush_async()
+        await act_flush_async()
+        await srvadm_flush()
         if self.session:
             await self.session.close()
         if self.web_runner:
@@ -402,7 +390,7 @@ async def start_web():
     if not port:
         log.info("Webサーバーは無効です(PORT または WEB_URL を設定すると有効になります)")
         return
-    app = web.Application(client_max_size=6 * 1024 * 1024)   # 背景画像のアップロード用(通常のJSONは小さい)
+    app = web.Application(client_max_size=6 * 1024 * 1024)
     app.router.add_get("/health", health)
     if DASH_BASE:
         add_dashboard_routes(app)
@@ -426,7 +414,6 @@ async def start_web():
     try:
         await web.TCPSite(runner, "0.0.0.0", port, ssl_context=ssl_ctx).start()
     except OSError as e:
-        # ポートが使用中でも、BOT本体は止めずに起動を続ける(ヘルスチェックは補助機能のため)
         log.warning("Webサーバーを起動できませんでした(ポート %s: %s)。BOTは続行します。"
                     "すでに別のBOTプロセスが動いていないか確認してください。", port, e)
         await runner.cleanup()
@@ -447,6 +434,10 @@ def make_embed(title: str, desc: Optional[str] = None, color: int = BLUE) -> dis
 
 
 async def send_log(guild: discord.Guild, embed: discord.Embed) -> None:
+    try:
+        record_log(guild.id, embed)
+    except Exception:
+        log.exception("管理ログの保存に失敗しました")
     channel_id = store.get(guild.id)["log_channel"]
     channel = guild.get_channel(channel_id) if channel_id else None
     if channel:
@@ -468,7 +459,7 @@ def hierarchy_error(interaction: discord.Interaction, target: discord.Member) ->
         return "あなたと同位以上のロールを持つメンバーには実行できません。"
     if target.top_role >= guild.me.top_role:
         return "BOTのロールより上位(または同位)のメンバーです。サーバー設定でBOTのロールを上に移動してください。"
-    return None
+    return rank_conflict(interaction.user, target)
 
 
 async def try_dm(user: discord.abc.User, text: str) -> None:
@@ -479,7 +470,9 @@ async def try_dm(user: discord.abc.User, text: str) -> None:
 
 @bot.tree.error
 async def on_app_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(error, RankError):
+        msg = str(error)
+    elif isinstance(error, app_commands.MissingPermissions):
         msg = "❌ このコマンドを実行する権限がありません。"
     elif isinstance(error, app_commands.BotMissingPermissions):
         msg = "❌ BOTに必要な権限が不足しています: " + ", ".join(error.missing_permissions)
@@ -499,10 +492,10 @@ async def on_app_error(interaction: discord.Interaction, error: app_commands.App
     else:
         await interaction.response.send_message(msg, ephemeral=True)
 
-recent_msgs = defaultdict(lambda: deque(maxlen=30))  # (guild,user) -> (time, message)
-recent_dups = defaultdict(lambda: deque(maxlen=10))  # (guild,user) -> (time, content)
-strikes = defaultdict(deque)                          # (guild,user) -> times
-join_times = defaultdict(deque)                       # guild -> times
+recent_msgs = defaultdict(lambda: deque(maxlen=30))
+recent_dups = defaultdict(lambda: deque(maxlen=10))
+strikes = defaultdict(deque)
+join_times = defaultdict(deque)
 last_raid_alert = {}
 
 
@@ -556,7 +549,7 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
 @bot.event
 async def on_message(message: discord.Message):
     if message.guild and not message.author.bot and isinstance(message.channel, discord.TextChannel):
-        record_activity(message.guild.id, message.channel.id, message.author.id, message.created_at.timestamp())  # 過疎診断用の記録
+        record_activity(message.guild.id, message.channel.id, message.author.id, message.created_at.timestamp())
     if message.author.bot or not message.guild or not isinstance(message.author, discord.Member):
         return
     am = store.get(message.guild.id)["automod"]
@@ -635,7 +628,7 @@ async def send_welcome(member: discord.Member, test: bool = False) -> tuple:
             except Exception as e:
                 log.exception("ウェルカム画像の生成に失敗しました。文章だけ送ります。")
                 note = f"画像を作れなかったので文章だけ送りました({type(e).__name__})。BOTのログを確認してください。"
-    try:  # 設定文に @everyone 等が含まれていても本人以外には通知しない
+    try:
         kw = {"file": file} if file else {}
         await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[member]), **kw)
     except discord.HTTPException as e:
@@ -649,7 +642,6 @@ async def on_member_join(member: discord.Member):
     guild = member.guild
     cfg = store.get(guild.id)
 
-    # 認証が有効なら、認証完了まで自動ロールを保留して未認証ロールを付与する(ウェルカムは参加時に送る)
     gated = verify_active(cfg) and not member.bot
     if gated:
         v = cfg["verify"]
@@ -667,8 +659,8 @@ async def on_member_join(member: discord.Member):
                                            + "\n認証ボタンを押しても、設定に従って保留またはキックされます。", YELLOW))
     else:
         await apply_autorole(member)
-    try:  # ウェルカムで失敗しても、以降の処理(参加ログ・レイド検知)は止めない
-        await send_welcome(member)  # ウェルカムメッセージは参加時にだけ送る(認証完了時には送らない)
+    try:
+        await send_welcome(member)
     except Exception:
         log.exception("ウェルカムメッセージの送信で想定外のエラー guild=%s", guild.id)
 
@@ -682,7 +674,6 @@ async def on_member_join(member: discord.Member):
         e.color = YELLOW
     await send_log(guild, e)
 
-    # レイド検知(認証が有効なら自動で認証を強化)
     am = cfg["automod"]
     now = time.time()
     dq = join_times[guild.id]
@@ -708,7 +699,7 @@ async def on_member_remove(member: discord.Member):
     v = store.get(member.guild.id)["verify"]
     if v["pending"].pop(str(member.id), None) is not None:
         store.save()
-    for cid, info in list(store.get(member.guild.id)["ticket"]["open"].items()):  # チケット作成者の退出を通知
+    for cid, info in list(store.get(member.guild.id)["ticket"]["open"].items()):
         if info["owner"] == member.id and not info.get("closed"):
             tch = member.guild.get_channel(int(cid))
             if tch:
@@ -747,17 +738,17 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
 @bot.event
 async def on_connect():
     global act_conn_time
-    if act_conn_time is None:  # この時刻以降のメッセージはリアルタイムで記録される(それ以前の止まっていた期間は「欠け」)
+    if act_conn_time is None:
         act_conn_time = time.time()
 
 
 @bot.event
 async def on_ready():
     log.info("ログイン: %s (サーバー数: %d)", bot.user, len(bot.guilds))
-    if getattr(bot, "_restored", False):  # 再接続でも on_ready は再度呼ばれるため、1回だけ実行
+    if getattr(bot, "_restored", False):
         return
     bot._restored = True
-    init_activity_gaps()  # 止まっていた期間などを「欠け」として登録(実際に埋めるのは /kaso が必要としたとき)
+    init_activity_gaps()
     if not store.existed and bot.guilds:
         log.warning("設定ファイル %s がありません。初回起動か、再起動でデータが初期化された可能性があります。"
                     "DATA_DIR に永続ボリュームを指定してください。", store.path)
@@ -768,7 +759,6 @@ async def on_ready():
 
 
 async def _panel_gone(guild: discord.Guild, channel_id, message_id) -> Optional[discord.TextChannel]:
-    # パネルのメッセージが削除されていると確認できた場合のみチャンネルを返す(通信エラー等では何もしない)
     ch = guild.get_channel(channel_id) if channel_id else None
     if not isinstance(ch, discord.TextChannel) or not message_id:
         return None
@@ -782,7 +772,6 @@ async def _panel_gone(guild: discord.Guild, channel_id, message_id) -> Optional[
 
 
 async def restore_panels() -> None:
-    # BOTのオフライン中にパネルが消えていた場合、起動時に自動で再設置する
     for guild in list(bot.guilds):
         cfg = store.data.get(str(guild.id))
         if not cfg or guild.unavailable:
@@ -818,7 +807,6 @@ async def restore_panels() -> None:
 
 @bot.event
 async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
-    # 管理者などが手動で消したパネルを、再起動時に勝手に復活させないよう設定から外す
     cfg = store.data.get(str(payload.guild_id)) if payload.guild_id else None
     if not cfg:
         return
@@ -855,7 +843,6 @@ async def on_guild_join(guild: discord.Guild):
     )
     view = discord.ui.View()
     view.add_item(discord.ui.Button(label="サポートサーバーに参加", emoji="📢", style=discord.ButtonStyle.link, url=SUPPORT_URL))
-    # 送信先: システムチャンネル → 送信できる最初のテキストチャンネル → サーバー所有者へDM
     me = guild.me
     targets = []
     if guild.system_channel:
@@ -909,24 +896,18 @@ async def cleanup_trackers():
         ticket_last.pop(k, None)
 
 
-# ---- 過疎診断のための発言記録 -------------------------------------------
-# メッセージが投稿されるたびに「15分ごとのチャンネル別件数」と「ユーザーごとの最終発言時刻」を記録し、ファイルにも保存する。
-# /kaso はその記録を集計するだけなので、履歴を取りに行かず一瞬で終わり、件数の上限もない。
-# BOTが止まっていた期間や、記録を始める前の期間(「欠け」と呼ぶ)は、必要になったときだけ履歴から取得して埋める。
-# メモリ節約: メッセージ本文は保存せず数値だけ。発言者数は「期間内に発言したユーザー = 最終発言が期間内のユーザー」として
-#            ユーザー1人につき1件だけ持つ(時間帯ごとの発言者リストは持たない)。
-ACT_BUCKET = 900                 # 件数の記録単位(秒)
-ACT_KEEP = 8 * 86400             # 記録を保持する期間(/kaso の最大168時間より長く)
-ACT_MAX_USERS = 300_000          # 1サーバーで記録するユーザー数の上限(超えたら古い順に捨てる / 通常は到達しない)
-ACT_SAVE_MINUTES = 5             # ファイルへの保存間隔
+ACT_BUCKET = 900
+ACT_KEEP = 8 * 86400
+ACT_MAX_USERS = 300_000
+ACT_SAVE_MINUTES = 5
 ACT_FILE = os.path.join(DATA_DIR, "activity.json")
-ACT_BACKFILL_CONCURRENCY = 4     # 欠けを埋めるときに同時に読むチャンネル数
-act: dict = {}                   # guild_id -> {"b": {bucket: {channel_id: 件数}}, "u": {user_id: 最終発言時刻}, "gaps": [[開始, 終了], ...]}
-act_locks: dict = {}             # guild_id -> 欠けを埋める処理の二重実行を防ぐロック
+ACT_BACKFILL_CONCURRENCY = 4
+act: dict = {}
+act_locks: dict = {}
 act_dirty = False
-act_loaded_saved = 0.0           # 前回ファイルに保存した時刻(これ以降〜今回の接続までが「欠け」になる)
-act_conn_time: Optional[float] = None   # 今回ゲートウェイに接続した時刻(これ以降のメッセージはリアルタイムで記録される)
-_scan_sem: Optional[asyncio.Semaphore] = None   # 履歴の取得はサーバーをまたいで同時に1つだけ(ループ起動後に作る)
+act_loaded_saved = 0.0
+act_conn_time: Optional[float] = None
+_scan_sem: Optional[asyncio.Semaphore] = None
 _act_write_lock = threading.Lock()
 
 
@@ -952,7 +933,7 @@ _load_activity()
 
 def _act_rec(gid: int) -> dict:
     rec = act.get(gid)
-    if rec is None:  # 新しく参加したサーバー: 記録を始めた時点より前は欠けとして扱う
+    if rec is None:
         now = time.time()
         rec = act[gid] = {"b": {}, "u": {}, "gaps": [[now - ACT_KEEP, now]]}
     return rec
@@ -996,7 +977,7 @@ async def _backfill_activity(guild: discord.Guild, lo: float, hi: float) -> None
     async def one(c: discord.TextChannel):
         async with sem:
             try:
-                async for m in c.history(after=after, before=before, limit=None):  # 件数の上限なし
+                async for m in c.history(after=after, before=before, limit=None):
                     if not m.author.bot:
                         record_activity(guild.id, c.id, m.author.id, m.created_at.timestamp())
             except discord.HTTPException:
@@ -1019,9 +1000,9 @@ async def ensure_activity(guild: discord.Guild, since: float) -> None:
             rest = []
             for s, e in rec["gaps"]:
                 if e <= since:
-                    rest.append([s, e])  # 期間より前の欠け(もっと長い期間を指定されたときに埋める)
+                    rest.append([s, e])
                     continue
-                lo = max(s, (since // ACT_BUCKET) * ACT_BUCKET)  # 集計は15分単位なので、その区切りまで取得する
+                lo = max(s, (since // ACT_BUCKET) * ACT_BUCKET)
                 if lo < e:
                     await _backfill_activity(guild, lo, e)
                 if lo > s:
@@ -1086,7 +1067,7 @@ async def act_flush_async() -> None:
     if not act_dirty:
         return
     try:
-        payload = _act_dump()  # 保存時刻の記録と中身の確定は、awaitを挟まず同時に行う(欠けの開始時刻がずれないように)
+        payload = _act_dump()
         await asyncio.get_running_loop().run_in_executor(None, _act_write, payload)
     except Exception:
         act_dirty = True
@@ -1175,7 +1156,7 @@ async def kaso_watch():
 @kaso_watch.before_loop
 async def _before_kaso_watch():
     await bot.wait_until_ready()
-    await asyncio.sleep(60)   # 起動直後の混雑を避けて開始をずらす
+    await asyncio.sleep(60)
 
 
 async def build_nounai(name: str):
@@ -1217,54 +1198,49 @@ async def nounai_ctx(interaction: discord.Interaction, member: discord.Member):
         await interaction.followup.send(embed=embed)
 
 
-# 名言画像のデザインは参考画像(1200x630)をピクセル単位で実測して再現しています。
-# フォントは参考画像と同じ M PLUS 1p Regular(初回のみ自動ダウンロードして data/ に保存)。
 FONT_SOURCES = [
     ("MPLUS1p-Regular.ttf", "https://raw.githubusercontent.com/google/fonts/main/ofl/mplus1p/MPLUS1p-Regular.ttf"),
     ("NotoSansJP-Regular.otf", "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf"),
 ]
-FONT_CANDIDATES = [  # 上のダウンロードが全部失敗したときの予備
+FONT_CANDIDATES = [
     r"C:\Windows\Fonts\YuGothR.ttc", r"C:\Windows\Fonts\meiryo.ttc", r"C:\Windows\Fonts\msgothic.ttc",
     "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",   # Oracle Linux / RHEL系
+    "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
 ]
-KINSOKU = set("、。，．・」』）】〉》〕｝！？!?,.)]}:;…ー々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")  # 行頭禁則(ぶら下げ)
-OPENERS = set("「『（【〈《〔｛([{")                                                         # 行末禁則(次の行へ送る)
+KINSOKU = set("、。，．・」』）】〉》〕｝！？!?,.)]}:;…ー々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")
+OPENERS = set("「『（【〈《〔｛([{")
 
 MG_W, MG_H = 1200, 630
 
-# 画像生成などCPUを使う処理の専用スレッドプール。同時実行数を制限し、サーバーの他の処理を圧迫しない(超過分は順番待ち)
-# 同時実行数は環境変数 HEAVY_WORKERS で変更できます(既定: CPUコア数に合わせて 2〜4)
 try:
     HEAVY_WORKERS = int(os.getenv("HEAVY_WORKERS") or 0)
 except ValueError:
     HEAVY_WORKERS = 0
-if HEAVY_WORKERS < 1:  # 未指定・不正な値のときは既定値
+if HEAVY_WORKERS < 1:
     HEAVY_WORKERS = max(2, min(4, os.cpu_count() or 2))
 HEAVY_POOL = ThreadPoolExecutor(max_workers=HEAVY_WORKERS, thread_name_prefix="heavy")
-# 認証(CAPTCHA)画像は専用の枠。名言画像などが混んでいても、認証が待たされないようにする
 CAPTCHA_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="captcha")
 
 
 async def run_heavy(fn, *args, pool=None):
     return await asyncio.get_running_loop().run_in_executor(pool or HEAVY_POOL, fn, *args)
 
-MG_CX = 855                  # テキスト領域の中心x
-MG_AREA_W = 590              # 自動改行する幅
-MG_TITLE_MAX, MG_TITLE_MIN = 60, 20   # 名言の文字サイズ(長文は自動で小さくなる)
+MG_CX = 855
+MG_AREA_W = 590
+MG_TITLE_MAX, MG_TITLE_MIN = 60, 20
 MG_AUTHOR_SIZE, MG_HANDLE_SIZE = 35, 20
-MG_SHEAR = 0.17              # 作者行の斜体(擬似オブリーク)
+MG_SHEAR = 0.17
 MG_AUTHOR_DX = 1.5
-MG_TITLE_BASE = 306.0        # 1行のときの名言の基準線y
-MG_GAP_AUTHOR = 66.0         # 名言の最終行 → 作者行 の基準線間隔
-MG_GAP_HANDLE = 30.0         # 作者行 → @ユーザー名 の基準線間隔
-MG_TOP_RATIO = 49 / 60       # 基準線からインク上端まで(名言サイズ比)
+MG_TITLE_BASE = 306.0
+MG_GAP_AUTHOR = 66.0
+MG_GAP_HANDLE = 30.0
+MG_TOP_RATIO = 49 / 60
 MG_BOTTOM_OFF = 2
-MG_LINE_RATIO = 1.35         # 複数行のときの行間
-MG_FADE = (220, 570)         # アバターが黒へ溶けていく範囲(x)
-MG_BLOCK_MAX = 520           # テキストブロックの最大高さ
+MG_LINE_RATIO = 1.35
+MG_FADE = (220, 570)
+MG_BLOCK_MAX = 520
 _font_path: Optional[str] = None
 
 
@@ -1328,7 +1304,7 @@ def _wrap(text: str, font, max_w: int) -> list:
             cur = tail
             if tok.isspace():
                 continue
-            if font.getlength(cur + tok) > max_w:  # 1語が長すぎる場合は文字単位で分割
+            if font.getlength(cur + tok) > max_w:
                 for ch in tok:
                     if cur and font.getlength(cur + ch) > max_w and ch not in KINSOKU:
                         lines.append(cur)
@@ -1364,7 +1340,7 @@ def _draw_oblique(img, text: str, font, cx: float, baseline: float, fill, shear:
 
 def draw_quote_text(img, text: str, author: str, handle: str, fg, sub, font_path: str) -> None:
     draw = ImageDraw.Draw(img)
-    for size in range(MG_TITLE_MAX, MG_TITLE_MIN - 1, -2):  # 収まる最大サイズを探す
+    for size in range(MG_TITLE_MAX, MG_TITLE_MIN - 1, -2):
         font = ImageFont.truetype(font_path, size)
         lines = _wrap(text, font, MG_AREA_W)
         lh = round(size * MG_LINE_RATIO)
@@ -1379,7 +1355,6 @@ def draw_quote_text(img, text: str, author: str, handle: str, fg, sub, font_path
     n = len(lines)
     top_off = MG_TOP_RATIO * size
     block_h = top_off + (n - 1) * lh + MG_GAP_AUTHOR + MG_GAP_HANDLE + MG_BOTTOM_OFF
-    # 1行のとき名言の基準線が MG_TITLE_BASE になるよう、同じ中心から上下に広げる
     center = (MG_TITLE_BASE - MG_TOP_RATIO * MG_TITLE_MAX
               + MG_TITLE_BASE + MG_GAP_AUTHOR + MG_GAP_HANDLE + MG_BOTTOM_OFF) / 2
     base = center - block_h / 2 + top_off
@@ -1407,7 +1382,7 @@ def render_meigen(avatar_bytes: bytes, text: str, author: str, handle: str, styl
     av = ImageOps.fit(flat.convert("RGB"), (MG_H, MG_H), Image.Resampling.LANCZOS)
     if not color:
         av = ImageOps.grayscale(av).convert("RGB")
-    f0, f1 = MG_FADE  # 左→右へ滑らか(smoothstep)に背景色へ溶かす
+    f0, f1 = MG_FADE
     mask = Image.new("L", (MG_H, MG_H), 0)
     md = ImageDraw.Draw(mask)
     for x in range(MG_H):
@@ -1438,12 +1413,12 @@ def render_welcome(avatar_bytes: bytes, name: str, title: str, subtitle: str, co
     bg1, bg2, fg, sub, accent = WELCOME_STYLES.get(style, WELCOME_STYLES["black"])
     img = Image.new("RGB", (W, H), bg1)
     d = ImageDraw.Draw(img)
-    if bg_bytes:  # 背景画像: 文字が読めるよう、デザインの色を重ねる
+    if bg_bytes:
         photo = ImageOps.fit(Image.open(io.BytesIO(bg_bytes)).convert("RGB"), (W, H), Image.Resampling.LANCZOS)
         img = Image.blend(photo, Image.new("RGB", (W, H), bg1), 0.6)
         d = ImageDraw.Draw(img)
     else:
-        for x in range(W):  # 左→右のグラデーション
+        for x in range(W):
             t = x / (W - 1)
             d.line([(x, 0), (x, H)], fill=tuple(round(bg1[i] + (bg2[i] - bg1[i]) * t) for i in range(3)))
     S, cx, cy = 220, 40 + 110 + 20, H // 2
@@ -1452,7 +1427,7 @@ def render_welcome(avatar_bytes: bytes, name: str, title: str, subtitle: str, co
     if not color:
         av = ImageOps.grayscale(av).convert("RGB")
     ring = S + 16
-    big = Image.new("L", (ring * 4, ring * 4), 0)  # 4倍で描いて縮小(滑らかな円)
+    big = Image.new("L", (ring * 4, ring * 4), 0)
     ImageDraw.Draw(big).ellipse((0, 0, ring * 4 - 1, ring * 4 - 1), fill=255)
     img.paste(Image.new("RGB", (ring, ring), accent), (cx - ring // 2, cy - ring // 2), big.resize((ring, ring), Image.Resampling.LANCZOS))
     m = Image.new("L", (S * 4, S * 4), 0)
@@ -1535,10 +1510,6 @@ async def make_meigen_file(user: discord.abc.User, text: str, author: Optional[s
     return discord.File(buf, filename="meigen.png")
 
 
-# ---- 名言画像の使用許可 -----------------------------------------------
-#   - サーバー側: /config meigen で管理者がそのサーバーでの名言画像をOFFにできる
-#   - ユーザー側: 他の人のアイコン・名前を使う場合は、本人がDMのボタンで「許可する/許可しない」を選ぶ
-#     (未設定の人が使われそうになるとDMで確認。許可されるまで作成されない。確認DMは24時間に1回まで)
 MEIGEN_ASK_COOLDOWN = 24 * 3600
 
 
@@ -1592,7 +1563,6 @@ async def meigen_gate(interaction: discord.Interaction, target: discord.abc.User
     if pref == "deny":
         await interaction.response.send_message("🚫 このユーザーは、自分のアイコン・名前を名言画像に使うことを許可していません。", ephemeral=True)
         return False
-    # 未設定: 本人にDMでボタン選択を促す(確認が済むまで作成しない)
     if time.time() - rec.get("asked", 0) < MEIGEN_ASK_COOLDOWN:
         await interaction.response.send_message("⏳ このユーザーにはすでにDMで確認しています。返答があるまでお待ちください。", ephemeral=True)
         return False
@@ -1717,9 +1687,1955 @@ async def ping(interaction: discord.Interaction, target: Optional[str] = None):
     await interaction.followup.send(embed=e)
 
 
+# ═════════════════════════ サーバー運営(役職・申請・応募・ロール・ポイント) ═════════════════════════
+# 役職(管理者〜一般スタッフ)ごとの権限管理 / 参加申請・スタッフ応募 / ロール管理 / ポイント・ランキング / 管理ログ。
+# データは DATA_DIR/server_admin.json に保存される。/web のサーバー管理ページ(/web/manage)も、ここの処理を共通で使う。
+
+NONE = discord.AllowedMentions.none()
+
+RANK_NAMES = {5: "管理者", 4: "副管理者", 3: "幹部", 2: "モデレーター", 1: "一般スタッフ"}
+
+# key: (既定の必要ランク, 説明)
+PERMS = {
+    "warn": (2, "警告を与える (/warn)"),
+    "warnings": (1, "警告履歴を見る (/warnings)"),
+    "unwarn": (3, "警告を1件取り消す (/unwarn)"),
+    "clearwarns": (3, "警告を全消去 (/clearwarns)"),
+    "timeout": (2, "タイムアウト (/timeout)"),
+    "untimeout": (2, "タイムアウト解除 (/untimeout)"),
+    "kick": (3, "キック (/kick)"),
+    "ban": (4, "BAN (/ban)"),
+    "unban": (4, "BAN解除 (/unban)"),
+    "purge": (2, "メッセージ一括削除 (/purge)"),
+    "slowmode": (2, "低速モード (/slowmode)"),
+    "lock": (2, "チャンネルのロック・解除 (/lock /unlock)"),
+    "role_add": (3, "ロール付与 (/role_add)"),
+    "role_remove": (3, "ロール剥奪 (/role_remove)"),
+    "role_grant": (3, "登録ロールの付与・剥奪 (/manage role_grant)"),
+    "apply_review": (2, "参加申請の承認・却下"),
+    "staff_review": (3, "スタッフ応募の審査(志望役職より上の役職が必要)"),
+    "points_add": (2, "ポイント付与 (/points add)"),
+    "points_remove": (3, "ポイント減算 (/points remove)"),
+    "points_undo": (3, "ポイント履歴の取り消し (/points undo)"),
+    "points_peek": (2, "他人のポイント履歴を見る"),
+    "mvp": (4, "月間MVPの発表 (/points mvp)"),
+    "audit_view": (3, "管理ログ・各種履歴の閲覧"),
+    "rank_manage": (5, "役職・各種設定の変更(変更不可)"),
+}
+HEAVY = {"kick", "ban", "timeout", "purge"}
+HEAVY_LIMIT, HEAVY_WINDOW = 5, 600
+
+CAT_CHOICES = [app_commands.Choice(name=n, value=v) for v, n in (
+    ("info", "情報共有"), ("article", "記事・投稿"), ("sns", "SNS運用"), ("ops", "運営活動"), ("other", "その他"))]
+CAT_NAMES = {"info": "情報共有", "article": "記事・投稿", "sns": "SNS運用", "ops": "運営活動", "other": "その他",
+             "auto": "自動", "undo": "取消"}
+
+REGIONS = {
+    "北海道": ["北海道"],
+    "東北": ["青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県"],
+    "関東": ["茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県"],
+    "中部": ["新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県", "静岡県", "愛知県"],
+    "近畿": ["三重県", "滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県"],
+    "中国": ["鳥取県", "島根県", "岡山県", "広島県", "山口県"],
+    "四国": ["徳島県", "香川県", "愛媛県", "高知県"],
+    "九州・沖縄": ["福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"],
+}
+PREF_TO_REGION = {p: r for r, ps in REGIONS.items() for p in ps}
+
+
+def _norm_pref(s: str) -> str:
+    s = re.sub(r"\s+", "", s or "")
+    return s if s == "北海道" else (s[:-1] if s and s[-1] in "都府県" else s)
+
+
+PREF_NORM = {_norm_pref(p): p for p in PREF_TO_REGION}
+
+
+def match_pref(text: str) -> Optional[str]:
+    """回答が都道府県名と完全に一致するときだけ返す(「京都」と「東京都」の部分一致を避ける)"""
+    return PREF_NORM.get(_norm_pref((text or "").strip()))
+
+
+LG_DEFAULTS = {
+    "ranks": {"5": None, "4": None, "3": None, "2": None, "1": None},
+    "perm": {},
+    "slots": {},
+    "temp_roles": [],
+    "role_hist": [],
+    "audit": [],
+    "tickets": [],
+    "apply": {
+        "enabled": False, "panel_channel": None, "panel_message": None, "review_channel": None, "role": None,
+        "title": "📝 参加申請",
+        "text": "参加を希望される方は、下のボタンから申請してください。\n内容を確認し、スタッフが承認・却下します。結果はDMでお知らせします。",
+        "questions": ["参加の動機を教えてください", "お住まいの都道府県(例: 福岡県)", "自己紹介・活動できる時間帯"],
+        "cooldown_hours": 24, "counter": 0, "apps": {},
+    },
+    "staff": {
+        "enabled": False, "panel_channel": None, "panel_message": None, "review_channel": None,
+        "title": "🧑‍💼 運営スタッフ募集",
+        "text": "一緒に運営してくれる仲間を募集しています。\n下のメニューから希望する役職を選んで応募してください。審査結果はDMでお知らせします。",
+        "questions": ["志望動機", "これまでの経験・実績", "活動できる時間帯・頻度"],
+        "cooldown_hours": 72, "counter": 0, "apps": {},
+        "positions": {
+            "info": {"label": "情報収集スタッフ", "rank": 1, "role": None, "enabled": True},
+            "writer": {"label": "記事・投稿作成スタッフ", "rank": 1, "role": None, "enabled": True},
+            "sns": {"label": "SNS運用スタッフ", "rank": 1, "role": None, "enabled": True},
+            "discord": {"label": "Discord運営スタッフ", "rank": 1, "role": None, "enabled": True},
+            "mod": {"label": "モデレーター", "rank": 2, "role": None, "enabled": True},
+            "exec": {"label": "幹部", "rank": 3, "role": None, "enabled": True},
+            "vice": {"label": "副管理者", "rank": 4, "role": None, "enabled": True},
+        },
+    },
+    "points": {
+        "balance": {}, "daily": {}, "log": [], "counter": 0,
+        "max_award": 100, "staff_daily_budget": 300, "user_daily_cap": 200, "alert_threshold": 100,
+        "auto_channels": [], "auto_points": 1, "auto_min_len": 30, "auto_cooldown": 120, "auto_daily_cap": 20,
+        "min_member_days": 3,
+        "used": {"date": "", "give": {}, "get": {}, "auto": {}},
+        "mvp_channel": None, "mvp_role": None, "mvp_auto": True, "mvp_last": "", "mvp_hist": [],
+    },
+    "region": {"pref": {}, "region": {}, "panel_channel": None, "panel_message": None},
+}
+
+SEC = {"j": "apply", "s": "staff"}
+LABEL = {"j": "参加申請", "s": "スタッフ応募"}
+
+
+def _merge(base: dict, over: dict) -> dict:
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
+def cap(lst: list, n: int) -> None:
+    if len(lst) > n:
+        del lst[:len(lst) - n]
+
+
+class SrvAdmStore:
+    SAVE_DELAY = 5.0
+
+    def __init__(self, directory: str):
+        os.makedirs(directory, exist_ok=True)
+        self.path = os.path.join(directory, "server_admin.json")
+        self.data: dict = {}
+        self._dirty = False
+        self._task: Optional[asyncio.Task] = None
+        self._lock = threading.Lock()
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, encoding="utf-8") as f:
+                    raw = json.load(f)
+                for gid, cfg in raw.items():
+                    self.data[gid] = _merge(copy.deepcopy(LG_DEFAULTS), cfg)
+            except Exception:
+                log.exception("server_admin.json を読み込めませんでした。壊れたファイルを server_admin.json.broken に退避して空で起動します。")
+                try:
+                    os.replace(self.path, self.path + ".broken")
+                except OSError:
+                    pass
+                self.data = {}
+
+    def get(self, gid: int) -> dict:
+        k = str(gid)
+        if k not in self.data:
+            self.data[k] = copy.deepcopy(LG_DEFAULTS)
+        return self.data[k]
+
+    def save(self) -> None:
+        self._dirty = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return self.flush()
+        if self._task is None or self._task.done():
+            self._task = loop.create_task(self._later())
+
+    async def _later(self) -> None:
+        while self._dirty:
+            await asyncio.sleep(self.SAVE_DELAY)
+            await self.flush_async()
+
+    def _dump(self) -> str:
+        return json.dumps(self.data, ensure_ascii=False, separators=(",", ":"))
+
+    def _write(self, payload: str) -> None:
+        with self._lock:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, self.path)
+
+    async def flush_async(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            payload = self._dump()
+            await asyncio.get_running_loop().run_in_executor(None, self._write, payload)
+        except Exception:
+            self._dirty = True
+            log.exception("server_admin.json の保存に失敗しました")
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            self._write(self._dump())
+        except Exception:
+            self._dirty = True
+            log.exception("server_admin.json の保存に失敗しました")
+
+
+lg = SrvAdmStore(DATA_DIR)
+atexit.register(lg.flush)
+
+
+async def srvadm_flush() -> None:
+    await lg.flush_async()
+
+
+# ───────────────────────── 共通ヘルパー ─────────────────────────
+
+async def eph(interaction: discord.Interaction, text: str) -> None:
+    if interaction.response.is_done():
+        await interaction.followup.send(text, ephemeral=True, allowed_mentions=NONE)
+    else:
+        await interaction.response.send_message(text, ephemeral=True, allowed_mentions=NONE)
+
+
+def rname(r: int) -> str:
+    return RANK_NAMES.get(r, "役職なし")
+
+
+def can_post(ch, me: discord.Member) -> bool:
+    p = ch.permissions_for(me)
+    return p.view_channel and p.send_messages and p.embed_links
+
+
+def dangerous(role: discord.Role) -> list:
+    return [n for n in DANGEROUS_PERMS if getattr(role.permissions, n)]
+
+
+def bot_can_grant(g: discord.Guild, role: Optional[discord.Role]) -> bool:
+    me = g.me
+    return bool(role and not role.is_default() and not role.managed and role < me.top_role
+                and me.guild_permissions.manage_roles)
+
+
+def jst(ts: float, fmt: str = "%m/%d %H:%M") -> str:
+    return datetime.fromtimestamp(ts, JST).strftime(fmt)
+
+
+# ───────────────────────── 共通の処理本体(スラッシュコマンドと /web の両方から使う) ─────────────────────────
+
+class SrvAdmError(Exception):
+    """利用者にそのまま見せるエラー(スラッシュコマンドとWebで共通)"""
+
+
+def lg_guard(fn):
+    """コマンドの中で起きた SrvAdmError を、本人にだけ見えるエラーメッセージとして返す"""
+    @functools.wraps(fn)
+    async def wrapper(interaction, *args, **kwargs):
+        try:
+            return await fn(interaction, *args, **kwargs)
+        except SrvAdmError as e:
+            await eph(interaction, f"❌ {e}")
+    return wrapper
+
+
+def need_rank(g: discord.Guild, m, key: str) -> None:
+    r, n = rank_of(m), need(g.id, key)
+    if r < n:
+        raise SrvAdmError(f"この操作には「{rname(n)}」以上の役職が必要です。(あなた: {rname(r)})")
+
+
+def _lgctx(g: discord.Guild, u):
+    """role_problem() に渡すための、interaction の代わり"""
+    return SimpleNamespace(guild=g, user=u)
+
+
+def core_rank_set(g: discord.Guild, rank: int, role: Optional[discord.Role]) -> str:
+    if rank not in RANK_NAMES:
+        raise SrvAdmError("役職が正しくありません。")
+    ranks = lg.get(g.id)["ranks"]
+    if role:
+        if role.is_default() or role.managed:
+            raise SrvAdmError("@everyone やBOT管理のロールは指定できません。")
+        for k, rid in ranks.items():
+            if rid == role.id and int(k) != rank:
+                raise SrvAdmError(f"そのロールはすでに「{rname(int(k))}」に設定されています。")
+    ranks[str(rank)] = role.id if role else None
+    lg.save()
+    extra = "\n⚠️ このロールを持つ人は、BOTの全機能を操作できる管理者になります。ロールの付与権限は慎重に管理してください。" if role and rank == 5 else ""
+    return f"✅ {rname(rank)}: {role.name if role else '解除'}{extra}"
+
+
+async def core_perm_set(g: discord.Guild, actor, key: str, rank: Optional[int]) -> str:
+    if key not in PERMS or key == "rank_manage":
+        raise SrvAdmError("その機能は変更できません。候補から選んでください。")
+    if rank is not None and rank not in RANK_NAMES:
+        raise SrvAdmError("役職が正しくありません。")
+    ov = lg.get(g.id)["perm"]
+    if rank is not None:
+        ov[key] = rank
+    else:
+        ov.pop(key, None)
+    lg.save()
+    await send_log(g, make_embed("🔑 権限の変更", f"`{key}` → {rname(need(g.id, key))}以上\n実行者: {actor}", YELLOW))
+    return f"✅ `{key}` の必要役職: **{rname(need(g.id, key))}以上**"
+
+
+def core_role_set(g: discord.Guild, user, name: str, role: discord.Role) -> str:
+    name = (name or "").strip()
+    if not 1 <= len(name) <= 20:
+        raise SrvAdmError("登録名は1〜20文字で入力してください。")
+    if p := role_problem(_lgctx(g, user), role, True):
+        raise SrvAdmError(p)
+    slots = lg.get(g.id)["slots"]
+    if name not in slots and len(slots) >= 50:
+        raise SrvAdmError("登録できるロールは50個までです。")
+    slots[name] = role.id
+    lg.save()
+    return f"✅ 「{name}」= {role.name} を登録しました。`/manage role_grant` か、Webの「ロール」から付与できます。"
+
+
+def core_role_unset(g: discord.Guild, name: str) -> str:
+    if lg.get(g.id)["slots"].pop(name, None) is None:
+        raise SrvAdmError("その登録名はありません。")
+    lg.save()
+    return f"✅ 「{name}」を登録から外しました。(Discord上のロールは消えません)"
+
+
+async def core_role_grant(g: discord.Guild, actor, member: discord.Member, name: str, days: Optional[int]) -> str:
+    c = lg.get(g.id)
+    role = g.get_role(c["slots"].get(name) or 0)
+    if not role:
+        raise SrvAdmError("その登録名のロールがありません。登録ロールの一覧を確認してください。")
+    if days is not None and not 1 <= days <= 365:
+        raise SrvAdmError("日数は 1〜365 で指定してください。")
+    if member.bot:
+        raise SrvAdmError("BOTには付与できません。")
+    if member.id == actor.id and rank_of(actor) < 5:
+        raise SrvAdmError("自分自身には付与できません。")
+    if err := role_grant_error(g, actor, role):
+        raise SrvAdmError(err)
+    try:
+        await member.add_roles(role, reason=f"AZQ BOT ロール付与 by {actor}")
+    except discord.HTTPException:
+        raise SrvAdmError("付与に失敗しました。BOTの権限を確認してください。")
+    c["temp_roles"] = [t for t in c["temp_roles"] if not (t["u"] == member.id and t["r"] == role.id)]
+    if days:
+        c["temp_roles"].append({"u": member.id, "r": role.id, "exp": time.time() + days * 86400, "by": actor.id})
+        cap(c["temp_roles"], 5000)
+    lg.save()
+    await send_log(g, make_embed("🏷️ ロール付与", f"{member} (`{member.id}`) ← {role.name}\n実行者: {actor}"
+                                 + (f"\n期限: {days}日後" if days else ""), GREEN))
+    return f"✅ {member.display_name} に {role.name} を付与しました。" + (f"({days}日後に自動で外れます)" if days else "")
+
+
+async def core_role_revoke(g: discord.Guild, actor, member: discord.Member, name: str) -> str:
+    c = lg.get(g.id)
+    role = g.get_role(c["slots"].get(name) or 0)
+    if not role:
+        raise SrvAdmError("その登録名のロールがありません。")
+    if err := role_grant_error(g, actor, role):
+        raise SrvAdmError(err)
+    try:
+        if role in member.roles:
+            await member.remove_roles(role, reason=f"AZQ BOT ロール剥奪 by {actor}")
+    except discord.HTTPException:
+        raise SrvAdmError("剥奪に失敗しました。BOTの権限を確認してください。")
+    c["temp_roles"] = [t for t in c["temp_roles"] if not (t["u"] == member.id and t["r"] == role.id)]
+    lg.save()
+    await send_log(g, make_embed("🏷️ ロール剥奪", f"{member} (`{member.id}`) ← {role.name}\n実行者: {actor}", YELLOW))
+    return f"✅ {member.display_name} から {role.name} を外しました。"
+
+
+def core_set_questions(g: discord.Guild, kind: str, questions) -> str:
+    qs = [str(x).strip() for x in questions if str(x).strip()]
+    if kind not in SEC or not 1 <= len(qs) <= 5 or any(len(x) > 45 for x in qs):
+        raise SrvAdmError("質問は1〜5個、各45文字以内にしてください。")
+    lg.get(g.id)[SEC[kind]]["questions"] = qs
+    lg.save()
+    return "✅ 質問を更新しました。(「都道府県」を含む質問の回答は、地域ロールの自動付与に使われます)"
+
+
+async def core_apply_setup(g: discord.Guild, user, panel, review, role: discord.Role, cooldown: Optional[int]) -> str:
+    if p := role_problem(_lgctx(g, user), role, True):
+        raise SrvAdmError(f"承認ロール: {p}")
+    if err := _setup_common(g, panel, review):
+        raise SrvAdmError(err)
+    if cooldown is not None and not 0 <= cooldown <= 720:
+        raise SrvAdmError("再申請までの時間は 0〜720 時間で指定してください。")
+    sec = lg.get(g.id)["apply"]
+    sec.update(enabled=True, review_channel=review.id, role=role.id)
+    if cooldown is not None:
+        sec["cooldown_hours"] = cooldown
+    try:
+        await lg_post_panel(g, "j", panel)
+    except discord.HTTPException:
+        sec["enabled"] = False
+        lg.save()
+        raise SrvAdmError("パネルを送信できませんでした。BOTの権限を確認してください。")
+    lg.save()
+    return (f"✅ 参加申請を有効化しました。\nパネル: #{panel.name} / 審査: #{review.name} / 承認ロール: {role.name}\n"
+            "質問の変更は `/apply questions` かWebから、履歴は `/apply history` です。" + _privacy_note(g, review))
+
+
+async def core_apply_disable(g: discord.Guild) -> str:
+    lg.get(g.id)["apply"]["enabled"] = False
+    await lg_delete_panel(g, "j")
+    lg.save()
+    return "✅ 参加申請を無効化しました。(審査待ちの申請は、審査チャンネルやWebから処理できます)"
+
+
+async def core_staff_setup(g: discord.Guild, panel, review, cooldown: Optional[int]) -> str:
+    if err := _setup_common(g, panel, review):
+        raise SrvAdmError(err)
+    if cooldown is not None and not 0 <= cooldown <= 720:
+        raise SrvAdmError("再応募までの時間は 0〜720 時間で指定してください。")
+    c = lg.get(g.id)
+    sec = c["staff"]
+    sec.update(enabled=True, review_channel=review.id)
+    if cooldown is not None:
+        sec["cooldown_hours"] = cooldown
+    try:
+        await lg_post_panel(g, "s", panel)
+    except discord.HTTPException:
+        sec["enabled"] = False
+        lg.save()
+        raise SrvAdmError("パネルを送信できませんでした。BOTの権限を確認してください。")
+    lg.save()
+    noroles = [p["label"] for p in sec["positions"].values()
+               if p["enabled"] and not p["role"] and not (p["rank"] >= 2 and c["ranks"].get(str(p["rank"])))]
+    warn = ("\n⚠️ 次の役職は付与ロールが未設定です(合格にできません): " + " / ".join(noroles) + "\n`/staffapp position` かWebの「スタッフ応募」、`/manage rank_set` で設定してください。") if noroles else ""
+    return (f"✅ スタッフ応募を有効化しました。\nパネル: #{panel.name} / 審査: #{review.name}\n"
+            "審査できる役職: 一般職・モデレーターは幹部以上 / 幹部は副管理者以上 / 副管理者は管理者のみ" + warn + _privacy_note(g, review))
+
+
+async def core_staff_disable(g: discord.Guild) -> str:
+    lg.get(g.id)["staff"]["enabled"] = False
+    await lg_delete_panel(g, "s")
+    lg.save()
+    return "✅ スタッフ応募を無効化しました。"
+
+
+async def core_staff_position(g: discord.Guild, user, key: str, role: Optional[discord.Role], label: Optional[str],
+                              enabled: Optional[bool], clear_role: bool) -> str:
+    pos = lg.get(g.id)["staff"]["positions"].get(key)
+    if not pos:
+        raise SrvAdmError("その役職はありません。候補から選んでください。")
+    if label is not None and not 1 <= len(label) <= 40:
+        raise SrvAdmError("表示名は1〜40文字で入力してください。")
+    warn = ""
+    if role:
+        if p := role_problem(_lgctx(g, user), role, False):
+            raise SrvAdmError(p)
+        pos["role"] = role.id
+        if bad := dangerous(role):
+            warn = "\n⚠️ このロールには強い権限が含まれています: " + ", ".join(bad)
+    elif clear_role:
+        pos["role"] = None
+    if label:
+        pos["label"] = label
+    if enabled is not None:
+        pos["enabled"] = enabled
+    lg.save()
+    await refresh_staff_panel(g)
+    r = g.get_role(pos["role"]) if pos["role"] else None
+    return f"✅ {pos['label']} (`{key}`): ロール {r.name if r else '未設定'} / 募集 {'ON' if pos['enabled'] else 'OFF'} / 役職ランク {rname(pos['rank'])}" + warn
+
+
+async def core_region_create(g: discord.Guild, include_prefectures: bool) -> str:
+    if not g.me.guild_permissions.manage_roles:
+        raise SrvAdmError("BOTに「ロールの管理」権限がありません。")
+    reg = lg.get(g.id)["region"]
+    names = list(REGIONS) + (list(PREF_TO_REGION) if include_prefectures else [])
+    existing = {r.name: r for r in g.roles if not r.managed and not r.is_default()}
+    todo = [n for n in names if n not in existing]
+    if len(g.roles) + len(todo) > 245:
+        raise SrvAdmError(f"ロール数の上限(250)に近いため作成できません。(現在 {len(g.roles)} + 新規 {len(todo)})")
+    created, skipped, failed = 0, [], 0
+    for n in names:
+        role = existing.get(n)
+        if role is not None and dangerous(role):
+            skipped.append(n)
+            continue
+        if role is None:
+            try:
+                role = await g.create_role(name=n, reason="AZQ BOT 地域ロール作成")
+                created += 1
+                await asyncio.sleep(0.5)
+            except discord.HTTPException:
+                failed += 1
+                continue
+        (reg["region"] if n in REGIONS else reg["pref"])[n] = role.id
+    lg.save()
+    return (f"✅ 作成 {created}件 / 登録済み {len(reg['region'])}地方・{len(reg['pref'])}都道府県"
+            + (f"\n⚠️ 強い権限を持つ同名ロールは使いません: {', '.join(skipped)}" if skipped else "")
+            + (f"\n⚠️ 作成に失敗: {failed}件" if failed else "")
+            + "\n次に、選択パネルを設置してください。")
+
+
+async def core_region_panel(g: discord.Guild, channel) -> str:
+    if not can_post(channel, g.me):
+        raise SrvAdmError(f"BOTが #{channel.name} に送信できません。")
+    reg = lg.get(g.id)["region"]
+    if not reg["pref"] and not reg["region"]:
+        raise SrvAdmError("先に地域ロールを作成してください。")
+    await lg_delete_panel(g, "r")
+    e = make_embed("📍 地域ロール", "お住まいの地方 → 都道府県の順に選ぶと、地域ロールが付与されます。\n選び直すと自動で付け替わります。", BLUE)
+    try:
+        msg = await channel.send(embed=e, view=RegionPanelView())
+    except discord.HTTPException:
+        raise SrvAdmError("パネルを送信できませんでした。")
+    reg["panel_channel"], reg["panel_message"] = channel.id, msg.id
+    lg.save()
+    return f"✅ #{channel.name} に設置しました。"
+
+
+def core_region_set_role(g: discord.Guild, user, name: str, role: discord.Role) -> str:
+    if name not in REGIONS and name not in PREF_TO_REGION:
+        raise SrvAdmError("地方・都道府県の名前を候補から選んでください。")
+    if p := role_problem(_lgctx(g, user), role, True):
+        raise SrvAdmError(p)
+    reg = lg.get(g.id)["region"]
+    (reg["region"] if name in REGIONS else reg["pref"])[name] = role.id
+    lg.save()
+    return f"✅ {name} = {role.name}"
+
+
+async def core_points_add(g: discord.Guild, actor, member: discord.Member, amount: int, reason: str, cat: str):
+    if not 1 <= amount <= 100000:
+        raise SrvAdmError("ポイントは 1〜100000 で指定してください。")
+    reason = (reason or "").strip()
+    if not 1 <= len(reason) <= 100:
+        raise SrvAdmError("理由は1〜100文字で入力してください。")
+    if cat not in CAT_NAMES or cat in ("auto", "undo"):
+        cat = "other"
+    if err := award_error(g, actor, member, amount, reason):
+        raise SrvAdmError(err)
+    ent = apply_points(g.id, member.id, amount, reason, actor.id, cat)
+    p = lg.get(g.id)["points"]
+    used = _used(p)
+    used["give"][str(actor.id)] = used["give"].get(str(actor.id), 0) + amount
+    used["get"][str(member.id)] = used["get"].get(str(member.id), 0) + amount
+    lg.save()
+    await send_log(g, make_embed("💰 ポイント付与" + (" (高額)" if amount >= p["alert_threshold"] else ""),
+                                 f"{member} (`{member.id}`) +{amount}pt [#{ent['id']}]\n付与: {actor} (`{actor.id}`)\n理由: {reason}",
+                                 YELLOW if amount >= p["alert_threshold"] else GREEN))
+    return ent, p["balance"].get(str(member.id), 0)
+
+
+async def core_points_remove(g: discord.Guild, actor, member: discord.Member, amount: int, reason: str):
+    if not 1 <= amount <= 100000:
+        raise SrvAdmError("ポイントは 1〜100000 で指定してください。")
+    reason = (reason or "").strip()
+    if not 1 <= len(reason) <= 100:
+        raise SrvAdmError("理由は1〜100文字で入力してください。")
+    if member.bot:
+        raise SrvAdmError("BOTは対象にできません。")
+    if err := rank_conflict(actor, member):
+        raise SrvAdmError(err)
+    ent = apply_points(g.id, member.id, -amount, reason, actor.id, "other")
+    if not ent:
+        raise SrvAdmError("そのメンバーのポイントは0です。")
+    await send_log(g, make_embed("➖ ポイント減算", f"{member} (`{member.id}`) {ent['d']}pt [#{ent['id']}]\n実行者: {actor} (`{actor.id}`)\n理由: {reason}", YELLOW))
+    return ent, lg.get(g.id)["points"]["balance"].get(str(member.id), 0)
+
+
+async def core_points_undo(g: discord.Guild, actor, entry_id: int) -> str:
+    p = lg.get(g.id)["points"]
+    ent = next((e for e in reversed(p["log"]) if e["id"] == entry_id), None)
+    if not ent:
+        raise SrvAdmError("その履歴は見つかりません。(古い履歴は削除されます)")
+    if ent.get("x") or ent["cat"] == "undo":
+        raise SrvAdmError("すでに取り消し済み、または取り消しの履歴です。")
+    target = g.get_member(ent["u"])
+    if target and (err := rank_conflict(actor, target)):
+        raise SrvAdmError(err)
+    res = apply_points(g.id, ent["u"], -ent["d"], f"取消 #{entry_id}", actor.id, "undo")
+    ent["x"] = True
+    lg.save()
+    await send_log(g, make_embed("↩️ ポイント取消", f"#{entry_id} <@{ent['u']}> {ent['d']:+d}pt\n実行者: {actor}", YELLOW))
+    return f"↩️ #{entry_id} を取り消しました。" + ("" if res else "(残高が足りず、残高は変わりませんでした)")
+
+
+POINT_RANGES = {"max_award": (1, 100000), "staff_daily_budget": (1, 1000000), "user_daily_cap": (1, 1000000),
+                "alert_threshold": (1, 1000000), "auto_points": (0, 100), "auto_min_len": (1, 500), "auto_cooldown": (10, 86400),
+                "auto_daily_cap": (1, 10000), "min_member_days": (0, 365)}
+
+
+async def core_points_config(g: discord.Guild, user, vals: dict, mvp_channel=None, mvp_role=None,
+                             ch_add=None, ch_remove=None) -> str:
+    p = lg.get(g.id)["points"]
+    changed = []
+    if mvp_channel and not can_post(mvp_channel, g.me):
+        raise SrvAdmError(f"BOTが #{mvp_channel.name} に送信できません。")
+    if mvp_role and (pr := role_problem(_lgctx(g, user), mvp_role, True)):
+        raise SrvAdmError(f"MVPロール: {pr}")
+    for key, (lo, hi) in POINT_RANGES.items():
+        v = vals.get(key)
+        if v is None:
+            continue
+        if not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi:
+            raise SrvAdmError(f"`{key}` は {lo}〜{hi} の数字で指定してください。")
+        p[key] = v
+        changed.append(f"`{key}` = `{v}`")
+    if vals.get("mvp_auto") is not None:
+        p["mvp_auto"] = bool(vals["mvp_auto"])
+        changed.append(f"`mvp_auto` = `{p['mvp_auto']}`")
+    if mvp_channel:
+        p["mvp_channel"] = mvp_channel.id
+        changed.append(f"`mvp_channel` = #{mvp_channel.name}")
+    if mvp_role:
+        p["mvp_role"] = mvp_role.id
+        changed.append(f"`mvp_role` = {mvp_role.name}")
+    if ch_add and ch_add.id not in p["auto_channels"]:
+        if len(p["auto_channels"]) >= 50:
+            raise SrvAdmError("自動付与のチャンネルは50個までです。")
+        p["auto_channels"].append(ch_add.id)
+        changed.append(f"自動付与に追加: #{ch_add.name}")
+    if ch_remove and ch_remove.id in p["auto_channels"]:
+        p["auto_channels"].remove(ch_remove.id)
+        changed.append(f"自動付与から除外: #{ch_remove.name}")
+    if not changed:
+        autos = " ".join(f"#{c.name}" for c in (g.get_channel(i) for i in p["auto_channels"]) if c) or "なし"
+        mch = g.get_channel(p["mvp_channel"]) if p["mvp_channel"] else None
+        return (f"**現在の設定**\n付与上限 {p['max_award']}pt/回・スタッフ {p['staff_daily_budget']}pt/日・受取 {p['user_daily_cap']}pt/日\n"
+                f"自動付与: {p['auto_points']}pt/回(最低{p['auto_min_len']}文字・{p['auto_cooldown']}秒間隔・上限{p['auto_daily_cap']}pt/日・参加{p['min_member_days']}日以上)\n対象: {autos}\n"
+                f"MVP: {('#' + mch.name) if mch else '未設定'} / 自動発表 {'ON' if p['mvp_auto'] else 'OFF'}")
+    lg.save()
+    return "✅ 更新しました:\n" + "\n".join(changed)
+
+
+async def core_mvp(g: discord.Guild, month: Optional[str], channel) -> str:
+    first = datetime.now(JST).replace(day=1)
+    ym = (month or (first - timedelta(days=1)).strftime("%Y-%m")).strip()
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", ym) or ym > first.strftime("%Y-%m"):
+        raise SrvAdmError("月は `2026-09` の形式で、未来でない月を指定してください。")
+    ok, msg = await announce_mvp(g, ym, channel)
+    return ("✅ " if ok else "⚠️ ") + msg
+
+
+# ───────────────────────── 役職(権限)管理 ─────────────────────────
+
+class RankError(app_commands.CheckFailure):
+    """役職が足りないときのエラー(メッセージをそのままユーザーに見せる)"""
+
+
+def rank_of(member) -> int:
+    """サーバーオーナーと Discord の管理者権限を持つ人は、常に管理者(5)として扱う(締め出し防止)"""
+    if not isinstance(member, discord.Member):
+        return 0
+    g = member.guild
+    if member.id == g.owner_id or member.guild_permissions.administrator:
+        return 5
+    ids = {r.id for r in member.roles}
+    best = 0
+    for k, rid in lg.get(g.id)["ranks"].items():
+        if rid and rid in ids:
+            best = max(best, int(k))
+    return best
+
+
+def need(gid: int, key: str) -> int:
+    if key == "rank_manage":
+        return 5
+    try:
+        return int(lg.get(gid)["perm"].get(key, PERMS[key][0]))
+    except (KeyError, ValueError):
+        return 5
+
+
+def rank_conflict(actor, target) -> Optional[str]:
+    """自分と同位以上の役職の人には、処罰やポイント減算ができない"""
+    if not isinstance(actor, discord.Member) or not isinstance(target, discord.Member):
+        return None
+    if actor.id == actor.guild.owner_id:
+        return None
+    tr = rank_of(target)
+    if tr > 0 and tr >= rank_of(actor):
+        return f"あなたと同位以上の役職({rname(tr)})のメンバーには実行できません。"
+    return None
+
+
+_heavy: dict = defaultdict(deque)
+
+
+def perm_check(key: str):
+    async def pred(interaction: discord.Interaction) -> bool:
+        if interaction.guild is None:
+            raise app_commands.NoPrivateMessage()
+        r, n = rank_of(interaction.user), need(interaction.guild.id, key)
+        if r < n:
+            raise RankError(f"❌ この操作には「{rname(n)}」以上の役職が必要です。(あなた: {rname(r)})")
+        if key in HEAVY and r < 5:
+            now, k = time.time(), (interaction.guild.id, interaction.user.id)
+            dq = _heavy[k]
+            while dq and now - dq[0] > HEAVY_WINDOW:
+                dq.popleft()
+            if len(dq) >= HEAVY_LIMIT:
+                e = make_embed("🚨 処罰コマンドの連続実行", f"{interaction.user.mention} (`{interaction.user.id}`) が "
+                                 f"{HEAVY_WINDOW // 60}分以内に {HEAVY_LIMIT}回以上 `/{key}` 系を実行しようとしたため制限しました。", RED)
+                asyncio.create_task(send_log(interaction.guild, e))
+                raise RankError("⏳ 短時間に処罰コマンドを実行しすぎです。しばらく待ってください。(誤操作・乗っ取り対策)")
+            dq.append(now)
+        return True
+    return app_commands.check(pred)
+
+
+# ───────────────────────── 管理ログ(永続) ─────────────────────────
+
+SKIP_TITLES = ("🗑️ メッセージ削除", "✏️ メッセージ編集")
+SKIP_FIELDS = {"内容", "編集前", "編集後"}
+
+
+def record_log(gid: int, embed: discord.Embed) -> None:
+    """send_log に流れた管理ログを、再起動後も見られるよう保存する(メッセージ本文は保存しない)"""
+    if lg is None:
+        return
+    title = embed.title or ""
+    if title.startswith(SKIP_TITLES):
+        return
+    parts = [embed.description] if embed.description else []
+    parts += [f"{f.name}: {f.value}" for f in embed.fields if f.name not in SKIP_FIELDS]
+    a = lg.get(gid)["audit"]
+    a.append({"t": int(time.time()), "title": title[:60], "text": " | ".join(parts).replace("\n", " / ")[:400]})
+    cap(a, 2000)
+    lg.save()
+
+
+def record_ticket_close(gid: int, info: dict, closer, reason: Optional[str]) -> None:
+    if lg is None:
+        return
+    h = lg.get(gid)["tickets"]
+    h.append({"n": info.get("number"), "owner": info.get("owner"), "subject": info.get("subject", ""),
+              "claimed": info.get("claimed_by"), "created": info.get("created"), "closed": int(time.time()),
+              "by": closer.id if closer else None, "why": (reason or "")[:200]})
+    cap(h, 3000)
+    lg.save()
+
+
+# ───────────────────────── コマンド群の定義 ─────────────────────────
+
+srvadm_group = app_commands.Group(name="manage", description="役職・ロール・履歴の管理(サーバー運営)", guild_only=True)
+apply_group = app_commands.Group(name="apply", description="参加申請の設定・履歴", guild_only=True)
+staff_group = app_commands.Group(name="staffapp", description="スタッフ応募の設定・履歴", guild_only=True)
+points_group = app_commands.Group(name="points", description="ポイントの付与・確認・設定", guild_only=True)
+region_group = app_commands.Group(name="region", description="地域(都道府県)ロールの設定", guild_only=True)
+
+
+# ── 役職 ──
+
+@srvadm_group.command(name="rank_set", description="役職に対応するDiscordロールを設定(roleを省略すると解除)")
+@app_commands.describe(rank="役職", role="その役職として扱うロール")
+@app_commands.choices(rank=[app_commands.Choice(name=n, value=k) for k, n in RANK_NAMES.items()])
+@perm_check("rank_manage")
+@lg_guard
+async def lg_rank_set(interaction: discord.Interaction, rank: app_commands.Choice[int], role: Optional[discord.Role] = None):
+    await eph(interaction, core_rank_set(interaction.guild, rank.value, role))
+
+
+@srvadm_group.command(name="rank_show", description="役職とロールの対応・あなたの役職を表示")
+@perm_check("audit_view")
+async def lg_rank_show(interaction: discord.Interaction):
+    g = interaction.guild
+    ranks = lg.get(g.id)["ranks"]
+    e = make_embed("🎖️ 役職一覧", color=BLUE)
+    for k in ("5", "4", "3", "2", "1"):
+        role = g.get_role(ranks[k]) if ranks[k] else None
+        e.add_field(name=rname(int(k)), value=f"{role.mention} ({len(role.members)}人)" if role else "未設定")
+    e.add_field(name="あなたの役職", value=rname(rank_of(interaction.user)), inline=False)
+    e.set_footer(text="サーバーオーナーとDiscordの管理者権限を持つ人は、常に管理者として扱われます")
+    await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=NONE)
+
+
+@srvadm_group.command(name="perm_list", description="機能ごとの必要役職を表示")
+@perm_check("audit_view")
+async def lg_perm_list(interaction: discord.Interaction):
+    ov = lg.get(interaction.guild.id)["perm"]
+    lines = [f"`{k}` {desc} → **{rname(need(interaction.guild.id, k))}以上**" + (" *(変更済み)*" if k in ov else "")
+             for k, (_, desc) in PERMS.items()]
+    e = make_embed("🔑 機能ごとの権限", color=BLUE)
+    e.add_field(name="運用", value="\n".join(lines[:12]), inline=False)
+    e.add_field(name="運用(続き)", value="\n".join(lines[12:]), inline=False)
+    e.set_footer(text="変更は /manage perm_set (管理者のみ)")
+    await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+@srvadm_group.command(name="perm_set", description="機能ごとの必要役職を変更(rankを省略すると既定に戻す)")
+@app_commands.describe(key="機能", rank="必要な役職")
+@app_commands.choices(rank=[app_commands.Choice(name=f"{n}以上", value=k) for k, n in RANK_NAMES.items()])
+@perm_check("rank_manage")
+@lg_guard
+async def lg_perm_set(interaction: discord.Interaction, key: str, rank: Optional[app_commands.Choice[int]] = None):
+    await eph(interaction, await core_perm_set(interaction.guild, interaction.user, key, rank.value if rank else None))
+
+
+@lg_perm_set.autocomplete("key")
+async def _perm_key_ac(interaction: discord.Interaction, current: str):
+    return [app_commands.Choice(name=f"{k} - {d}"[:100], value=k) for k, (_, d) in PERMS.items()
+            if k != "rank_manage" and (current.lower() in k or current in d)][:25]
+
+
+# ── 登録ロール(メンバー・情報提供者・スタッフ など) ──
+
+async def _slot_ac(interaction: discord.Interaction, current: str):
+    return [app_commands.Choice(name=n, value=n) for n in lg.get(interaction.guild.id)["slots"] if current.lower() in n.lower()][:25]
+
+
+@srvadm_group.command(name="role_set", description="管理するロールに名前を付けて登録(例: メンバー / 情報提供者)")
+@app_commands.describe(name="登録名(20文字まで)", role="Discordのロール")
+@perm_check("rank_manage")
+@lg_guard
+async def lg_role_set(interaction: discord.Interaction, name: app_commands.Range[str, 1, 20], role: discord.Role):
+    await eph(interaction, core_role_set(interaction.guild, interaction.user, name, role))
+
+
+@srvadm_group.command(name="role_unset", description="登録したロールを登録から外す(Discord上のロールは消えません)")
+@perm_check("rank_manage")
+@lg_guard
+async def lg_role_unset(interaction: discord.Interaction, name: str):
+    await eph(interaction, core_role_unset(interaction.guild, name))
+
+
+@srvadm_group.command(name="role_list", description="登録ロールと期限つき付与の一覧")
+@perm_check("audit_view")
+async def lg_role_list(interaction: discord.Interaction):
+    g = interaction.guild
+    c = lg.get(g.id)
+    lines = [f"・**{n}** = " + (g.get_role(r).mention if g.get_role(r) else "(削除済み)") for n, r in c["slots"].items()]
+    e = make_embed("🏷️ 登録ロール", "\n".join(lines) or "未登録です。`/manage role_set` で登録してください。", BLUE)
+    if c["temp_roles"]:
+        now = time.time()
+        e.add_field(name=f"期限つき付与 ({len(c['temp_roles'])}件)", value="\n".join(
+            f"<@{t['u']}> <@&{t['r']}> <t:{int(t['exp'])}:R>" for t in sorted(c["temp_roles"], key=lambda t: t["exp"])[:15]), inline=False)
+    await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=NONE)
+
+
+def role_grant_error(g: discord.Guild, u, role: discord.Role) -> Optional[str]:
+    if role.is_default() or role.managed:
+        return "そのロールは操作できません。"
+    if not bot_can_grant(g, role):
+        return "BOTがそのロールを操作できません。(「ロールの管理」権限・ロールの順位を確認してください)"
+    if u.id != g.owner_id and role >= u.top_role:
+        return "あなたと同位以上のロールは操作できません。"
+    if dangerous(role):
+        return "危険な権限を含むロールは、この機能では操作できません。"
+    ur = rank_of(u)
+    for k, rid in lg.get(g.id)["ranks"].items():
+        if rid == role.id and int(k) >= ur and u.id != g.owner_id:
+            return "自分と同位以上の役職ロールは、付与も剥奪もできません。"
+    return None
+
+
+@srvadm_group.command(name="role_grant", description="登録ロールをメンバーに付与します(期限も指定できます)")
+@app_commands.describe(member="対象メンバー", name="登録名", days="この日数が過ぎたら自動で外す(省略=外さない)")
+@perm_check("role_grant")
+@lg_guard
+async def lg_role_grant(interaction: discord.Interaction, member: discord.Member, name: str,
+                        days: Optional[app_commands.Range[int, 1, 365]] = None):
+    await interaction.response.defer(ephemeral=True)
+    msg = await core_role_grant(interaction.guild, interaction.user, member, name, days)
+    await interaction.followup.send(msg, ephemeral=True, allowed_mentions=NONE)
+
+
+@srvadm_group.command(name="role_revoke", description="登録ロールをメンバーから外します")
+@perm_check("role_grant")
+@lg_guard
+async def lg_role_revoke(interaction: discord.Interaction, member: discord.Member, name: str):
+    await interaction.response.defer(ephemeral=True)
+    msg = await core_role_revoke(interaction.guild, interaction.user, member, name)
+    await interaction.followup.send(msg, ephemeral=True, allowed_mentions=NONE)
+
+
+lg_role_unset.autocomplete("name")(_slot_ac)
+lg_role_grant.autocomplete("name")(_slot_ac)
+lg_role_revoke.autocomplete("name")(_slot_ac)
+
+
+# ── 履歴の閲覧 ──
+
+def _lines_embed(title: str, lines: list, color: int = BLUE) -> discord.Embed:
+    out, size = [], 0
+    for ln in lines:
+        if size + len(ln) + 1 > 3900:
+            out.append("…(以降省略)")
+            break
+        out.append(ln)
+        size += len(ln) + 1
+    return make_embed(title, "\n".join(out) or "記録はありません。", color)
+
+
+@srvadm_group.command(name="role_history", description="ロール変更の履歴を表示します")
+@app_commands.describe(member="このメンバーのみ", count="表示件数(1〜30)")
+@perm_check("audit_view")
+async def lg_role_history(interaction: discord.Interaction, member: Optional[discord.User] = None,
+                          count: app_commands.Range[int, 1, 30] = 15):
+    h = [x for x in lg.get(interaction.guild.id)["role_hist"] if not member or x["u"] == member.id]
+    lines = []
+    for x in reversed(h[-count:]):
+        ch = " ".join([f"➕<@&{r}>" for r in x["add"]] + [f"➖<@&{r}>" for r in x["rem"]])
+        by = f"<@{x['by']}>" if x.get("by") else "不明"
+        lines.append(f"<t:{x['t']}:f> <@{x['u']}> {ch}\n　実行: {by}" + (f" / {x['why'][:60]}" if x.get("why") else ""))
+    await interaction.response.send_message(embed=_lines_embed("🏷️ ロール変更履歴", lines), ephemeral=True, allowed_mentions=NONE)
+
+
+@srvadm_group.command(name="ticket_history", description="チケットの対応履歴を表示します")
+@app_commands.describe(member="このメンバーが作成したチケットのみ", count="表示件数(1〜30)")
+@perm_check("audit_view")
+async def lg_ticket_history(interaction: discord.Interaction, member: Optional[discord.User] = None,
+                            count: app_commands.Range[int, 1, 30] = 15):
+    h = [x for x in lg.get(interaction.guild.id)["tickets"] if not member or x["owner"] == member.id]
+    lines = []
+    for x in reversed(h[-count:]):
+        claim = f" 担当<@{x['claimed']}>" if x.get("claimed") else ""
+        by = f"<@{x['by']}>" if x.get("by") else "自動"
+        lines.append(f"**#{(x.get('n') or 0):04d}** <@{x['owner']}>{claim} / {x.get('subject', '')[:40]}\n　<t:{x['closed']}:f> クローズ {by}"
+                     + (f" / {x['why'][:50]}" if x.get("why") else ""))
+    await interaction.response.send_message(embed=_lines_embed("🎫 チケット対応履歴", lines), ephemeral=True, allowed_mentions=NONE)
+
+
+@srvadm_group.command(name="log", description="保存されている管理ログ(処罰・認証・参加退出など)を表示します")
+@app_commands.describe(count="表示件数(1〜30)", keyword="この文字を含むものだけ(例: Ban / Timeout / 参加)", export="全件(最大2000件)をテキストで出力")
+@perm_check("audit_view")
+async def lg_log(interaction: discord.Interaction, count: app_commands.Range[int, 1, 30] = 15,
+                 keyword: Optional[str] = None, export: bool = False):
+    h = lg.get(interaction.guild.id)["audit"]
+    if keyword:
+        k = keyword.lower()
+        h = [x for x in h if k in x["title"].lower() or k in x["text"].lower()]
+    if export:
+        txt = "\n".join(f"[{jst(x['t'], '%Y-%m-%d %H:%M:%S')} JST] {x['title']} {x['text']}" for x in h) or "(記録なし)"
+        return await interaction.response.send_message(file=discord.File(io.BytesIO(txt.encode("utf-8")), filename="admin_log.txt"),
+                                                       ephemeral=True)
+    lines = [f"<t:{x['t']}:f> **{x['title']}** {x['text'][:160]}" for x in reversed(h[-count:])]
+    await interaction.response.send_message(embed=_lines_embed("📜 管理ログ", lines, GRAY), ephemeral=True, allowed_mentions=NONE)
+
+
+# ───────────────────────── 申請・応募(共通) ─────────────────────────
+
+def _find_pending(sec: dict, uid: int) -> bool:
+    return any(a["u"] == uid and a["st"] in ("pending", "processing") for a in sec["apps"].values())
+
+
+def _cooldown_left(sec: dict, uid: int) -> float:
+    last = max((a.get("rt") or 0 for a in sec["apps"].values() if a["u"] == uid and a["st"] == "rejected"), default=0)
+    return last + sec["cooldown_hours"] * 3600 - time.time() if last else 0
+
+
+def _trim_apps(sec: dict) -> None:
+    apps = sec["apps"]
+    if len(apps) > 5000:
+        for k in list(apps)[:len(apps) - 5000]:
+            if apps[k]["st"] not in ("pending", "processing"):
+                apps.pop(k, None)
+
+
+def review_need(gid: int, kind: str, rec: dict) -> int:
+    base = need(gid, "apply_review" if kind == "j" else "staff_review")
+    if kind == "s":
+        pos = lg.get(gid)["staff"]["positions"].get(rec.get("pos") or "")
+        base = max(base, min(5, (pos["rank"] if pos else 1) + 1))
+    return base
+
+
+def review_embed(g: discord.Guild, kind: str, rec: dict) -> discord.Embed:
+    st = rec["st"]
+    color = {"pending": BLUE, "processing": YELLOW, "approved": GREEN, "rejected": RED}.get(st, GRAY)
+    e = make_embed(f"📝 {LABEL[kind]} #{rec['id']:04d}", color=color)
+    e.add_field(name="申請者", value=f"<@{rec['u']}> (`{rec['u']}`)")
+    if kind == "s":
+        pos = lg.get(g.id)["staff"]["positions"].get(rec.get("pos") or "")
+        e.add_field(name="志望役職", value=pos["label"] if pos else str(rec.get("pos")))
+    mem = g.get_member(rec["u"])
+    if mem:
+        e.add_field(name="アカウント作成", value=discord.utils.format_dt(mem.created_at, "R"))
+        if mem.joined_at:
+            e.add_field(name="サーバー参加", value=discord.utils.format_dt(mem.joined_at, "R"))
+    for q, a in rec["ans"]:
+        e.add_field(name=q[:250], value=(a or "(未入力)")[:700], inline=False)
+    if st == "approved":
+        s = f"✅ 承認 by <@{rec['by']}> <t:{rec['rt']}:R>"
+    elif st == "rejected":
+        s = f"❌ 却下 by <@{rec['by']}> <t:{rec['rt']}:R>\n理由: {rec.get('why') or 'なし'}"
+    elif st == "processing":
+        s = "⌛ 処理中…"
+    else:
+        s = f"⏳ 審査待ち(審査できる役職: {rname(review_need(g.id, kind, rec))}以上)"
+    e.add_field(name="状態", value=s, inline=False)
+    return e
+
+
+class ReviewButton(discord.ui.DynamicItem[discord.ui.Button],
+                   template=r"azq:lg:rv:(?P<kind>[js]):(?P<act>ok|ng):(?P<id>[0-9]+)"):
+    def __init__(self, kind: str, act: str, aid: int):
+        super().__init__(discord.ui.Button(
+            label="承認" if act == "ok" else "却下", emoji="✅" if act == "ok" else "❌",
+            style=discord.ButtonStyle.success if act == "ok" else discord.ButtonStyle.danger,
+            custom_id=f"azq:lg:rv:{kind}:{act}:{aid}"))
+        self.kind, self.act, self.aid = kind, act, aid
+
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button, match, /):
+        return cls(match["kind"], match["act"], int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        await review_click(interaction, self.kind, self.act, self.aid)
+
+
+def review_view(kind: str, aid: int) -> discord.ui.View:
+    v = discord.ui.View(timeout=None)
+    v.add_item(ReviewButton(kind, "ok", aid))
+    v.add_item(ReviewButton(kind, "ng", aid))
+    return v
+
+
+def review_perm_error(g: discord.Guild, kind: str, rec: dict, m) -> Optional[str]:
+    n = review_need(g.id, kind, rec)
+    if rank_of(m) < n:
+        return f"この審査には「{rname(n)}」以上の役職が必要です。(あなた: {rname(rank_of(m))})"
+    if rec["u"] == m.id:
+        return "自分自身の申請は審査できません。"
+    return None
+
+
+async def review_click(interaction: discord.Interaction, kind: str, act: str, aid: int) -> None:
+    g, m = interaction.guild, interaction.user
+    if g is None or not isinstance(m, discord.Member):
+        return await eph(interaction, "❌ サーバー内で使ってください。")
+    rec = lg.get(g.id)[SEC[kind]]["apps"].get(str(aid))
+    if not rec:
+        return await eph(interaction, "❌ 申請の記録が見つかりません。")
+    if rec["st"] != "pending":
+        return await eph(interaction, "⚠️ この申請はすでに処理されています。")
+    if err := review_perm_error(g, kind, rec, m):
+        return await eph(interaction, f"❌ {err}")
+    if act == "ng":
+        return await interaction.response.send_modal(RejectModal(kind, aid))
+    await finish_app(interaction, kind, aid, True, "")
+
+
+class RejectModal(discord.ui.Modal, title="却下の理由"):
+    def __init__(self, kind: str, aid: int):
+        super().__init__(timeout=600)
+        self.kind, self.aid = kind, aid
+        self.reason = discord.ui.TextInput(label="理由(申請者にDMで伝わります・空でも可)", style=discord.TextStyle.paragraph,
+                                           required=False, max_length=300)
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await finish_app(interaction, self.kind, self.aid, False, self.reason.value.strip())
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("却下モーダルでエラー", exc_info=error)
+        await eph(interaction, "⚠️ エラーが発生しました。もう一度お試しください。")
+
+
+def roles_for(g: discord.Guild, kind: str, rec: dict) -> tuple:
+    """承認時に付与するロールの一覧 (roles, エラー文)"""
+    c = lg.get(g.id)
+    if kind == "j":
+        r = g.get_role(c["apply"]["role"]) if c["apply"]["role"] else None
+        return ([r], None) if r else ([], "承認時に付与するロールが見つかりません。`/apply setup` で設定してください。")
+    pos = c["staff"]["positions"].get(rec.get("pos") or "")
+    if not pos:
+        return [], "その役職は存在しません。"
+    roles = []
+    for rid in (pos["role"], c["ranks"].get(str(pos["rank"]))):
+        r = g.get_role(rid) if rid else None
+        if r and r not in roles:
+            roles.append(r)
+    return (roles, None) if roles else ([], "この役職に付与するロールが未設定です。`/staffapp position` か `/manage rank_set` で設定してください。")
+
+
+async def process_app(g: discord.Guild, m: discord.Member, kind: str, aid: int, approve: bool, reason: str) -> str:
+    """申請・応募を承認/却下する(ボタンとWebの共通処理)。失敗したら SrvAdmError"""
+    sec = lg.get(g.id)[SEC[kind]]
+    rec = sec["apps"].get(str(aid))
+    if not rec:
+        raise SrvAdmError("申請の記録が見つかりません。")
+    if rec["st"] != "pending":
+        raise SrvAdmError("この申請はすでに処理されています。")
+    if err := review_perm_error(g, kind, rec, m):
+        raise SrvAdmError(err)
+    member = g.get_member(rec["u"])
+    roles: list = []
+    if approve:
+        if member is None:
+            raise SrvAdmError("申請者がサーバーにいません。却下して整理してください。")
+        roles, err = roles_for(g, kind, rec)
+        if err:
+            raise SrvAdmError(err)
+        bad = [r.name for r in roles if not bot_can_grant(g, r)]
+        if bad:
+            raise SrvAdmError("BOTが次のロールを付与できません(ロール順位・「ロールの管理」権限を確認): " + ", ".join(bad))
+    rec["st"] = "processing"
+    note = ""
+    if approve:
+        try:
+            await member.add_roles(*roles, reason=f"AZQ BOT {LABEL[kind]}承認 #{aid} by {m}")
+        except discord.HTTPException:
+            rec["st"] = "pending"
+            log.warning("申請承認のロール付与に失敗 guild=%s app=%s", g.id, aid, exc_info=True)
+            raise SrvAdmError("ロールの付与に失敗しました。BOTの権限を確認してください。")
+        if kind == "j":
+            try:
+                for q, a in rec["ans"]:
+                    pref = match_pref(a) if "都道府県" in q else None
+                    if pref and await assign_region(g, member, pref):
+                        note = f"\n📍 地域ロール({pref})も付与しました。"
+                        break
+            except Exception:
+                log.exception("地域ロールの自動付与で想定外のエラー guild=%s app=%s", g.id, aid)
+    rec.update(st="approved" if approve else "rejected", by=m.id, rt=int(time.time()), why=reason)
+    lg.save()
+    ch = g.get_channel(rec.get("ch") or 0)
+    if ch and rec.get("msg"):
+        try:
+            await ch.get_partial_message(rec["msg"]).edit(embed=review_embed(g, kind, rec), view=None)
+        except discord.HTTPException:
+            pass
+    pos = lg.get(g.id)["staff"]["positions"].get(rec.get("pos") or "") if kind == "s" else None
+    what = f"{LABEL[kind]}" + (f"({pos['label']})" if pos else "")
+    if member:
+        if approve:
+            await try_dm(member, f"🎉 **{g.name}** への{what}が **承認** されました。\n付与されたロール: " + " / ".join(r.name for r in roles))
+        else:
+            await try_dm(member, f"**{g.name}** への{what}は、残念ながら **却下** となりました。\n理由: {reason or '特になし'}\n"
+                         + (f"{sec['cooldown_hours']}時間後に再度申請できます。" if sec["cooldown_hours"] else ""))
+    await send_log(g, make_embed(f"{'✅' if approve else '❌'} {what} {'承認' if approve else '却下'} #{aid:04d}",
+                                 f"申請者: <@{rec['u']}> (`{rec['u']}`)\n審査: {m} (`{m.id}`)"
+                                 + (f"\n付与: {' / '.join(r.name for r in roles)}" if approve else f"\n理由: {reason or 'なし'}"),
+                                 GREEN if approve else RED))
+    return f"{'✅ 承認' if approve else '❌ 却下'}しました。{note}"
+
+
+async def finish_app(interaction: discord.Interaction, kind: str, aid: int, approve: bool, reason: str) -> None:
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+    try:
+        msg = await process_app(interaction.guild, interaction.user, kind, aid, approve, reason)
+    except SrvAdmError as e:
+        return await interaction.followup.send(f"❌ {e}", ephemeral=True)
+    await interaction.followup.send(msg, ephemeral=True)
+
+
+class ApplyModal(discord.ui.Modal):
+    def __init__(self, kind: str, questions: list, pos: Optional[str] = None, title: str = "参加申請"):
+        super().__init__(title=title[:45], timeout=900)
+        self.kind, self.pos, self.questions, self.inputs = kind, pos, questions[:5], []
+        for q in self.questions:
+            short = "都道府県" in q
+            ti = discord.ui.TextInput(label=q[:45], style=discord.TextStyle.short if short else discord.TextStyle.paragraph,
+                                      max_length=20 if short else 500, required=True)
+            self.add_item(ti)
+            self.inputs.append(ti)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await submit_app(interaction, self.kind, self.pos, [(q, i.value.strip()) for q, i in zip(self.questions, self.inputs)])
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("申請モーダルでエラー", exc_info=error)
+        await eph(interaction, "⚠️ エラーが発生しました。もう一度お試しください。")
+
+
+async def submit_app(interaction: discord.Interaction, kind: str, pos: Optional[str], answers: list) -> None:
+    await interaction.response.defer(ephemeral=True)
+    g, m = interaction.guild, interaction.user
+    sec = lg.get(g.id)[SEC[kind]]
+    rch = g.get_channel(sec["review_channel"]) if sec["review_channel"] else None
+    if not sec["enabled"] or rch is None:
+        return await interaction.followup.send("⚠️ 現在は受け付けていません。", ephemeral=True)
+    if _find_pending(sec, m.id):
+        return await interaction.followup.send("❌ すでに審査待ちの申請があります。結果をお待ちください。", ephemeral=True)
+    sec["counter"] += 1
+    aid = sec["counter"]
+    rec = {"id": aid, "u": m.id, "ans": answers, "st": "pending", "t": int(time.time()), "by": None, "rt": None,
+           "why": "", "msg": None, "ch": rch.id, "pos": pos}
+    sec["apps"][str(aid)] = rec
+    try:
+        msg = await rch.send(embed=review_embed(g, kind, rec), view=review_view(kind, aid), allowed_mentions=NONE)
+    except discord.HTTPException:
+        sec["apps"].pop(str(aid), None)
+        log.warning("審査チャンネルへの送信に失敗 guild=%s", g.id, exc_info=True)
+        return await interaction.followup.send("⚠️ 申請を送信できませんでした。管理者に連絡してください。", ephemeral=True)
+    rec["msg"] = msg.id
+    _trim_apps(sec)
+    lg.save()
+    await send_log(g, make_embed(f"📝 {LABEL[kind]}を受付 #{aid:04d}", f"{m.mention} (`{m.id}`)", BLUE))
+    await interaction.followup.send("✅ 送信しました。結果はDMでお知らせします。(DMを受け取れる設定にしてください)", ephemeral=True)
+
+
+def _verify_pending(g: discord.Guild, uid: int) -> bool:
+    cfg = store.get(g.id)
+    return bool(cfg["verify"]["enabled"] and cfg["verify"]["role"] and str(uid) in cfg["verify"]["pending"])
+
+
+def _gate(interaction: discord.Interaction, kind: str) -> Optional[str]:
+    """申請ボタンを押せる状態か。押せないなら理由を返す"""
+    g, m = interaction.guild, interaction.user
+    if g is None or not isinstance(m, discord.Member):
+        return "❌ サーバー内で使ってください。"
+    sec = lg.get(g.id)[SEC[kind]]
+    if not sec["enabled"] or not sec["review_channel"] or not g.get_channel(sec["review_channel"]):
+        return "⚠️ 現在は受け付けていません。"
+    if _verify_pending(g, m.id):
+        return "🔐 先にメンバー認証を完了してください。"
+    if _find_pending(sec, m.id):
+        return "❌ すでに審査待ちの申請があります。結果をお待ちください。"
+    left = _cooldown_left(sec, m.id)
+    if left > 0:
+        return f"⏳ 却下後の再申請は <t:{int(time.time() + left)}:R> 以降にできます。"
+    return None
+
+
+class ApplyPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="参加を申請する", emoji="📝", style=discord.ButtonStyle.primary, custom_id="azq:lg:apply")
+    async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if err := _gate(interaction, "j"):
+            return await eph(interaction, err)
+        sec = lg.get(interaction.guild.id)["apply"]
+        role = interaction.guild.get_role(sec["role"]) if sec["role"] else None
+        if role and role in interaction.user.roles:
+            return await eph(interaction, "✅ すでに参加が承認されています。")
+        await interaction.response.send_modal(ApplyModal("j", sec["questions"], title="参加申請"))
+
+
+def staff_panel_view(g: Optional[discord.Guild] = None) -> discord.ui.View:
+    pos = lg.get(g.id)["staff"]["positions"] if g else {}
+    opts = [discord.SelectOption(label=p["label"][:100], value=k, description=f"審査: {rname(min(5, max(3, p['rank'] + 1)))}以上"[:100])
+            for k, p in pos.items() if p["enabled"]]
+    return StaffPanelView(opts or [discord.SelectOption(label="募集中の役職はありません", value="_none")])
+
+
+class StaffPanelView(discord.ui.View):
+    def __init__(self, options: Optional[list] = None):
+        super().__init__(timeout=None)
+        sel = discord.ui.Select(custom_id="azq:lg:staff", placeholder="応募する役職を選んでください",
+                                options=options or [discord.SelectOption(label="役職", value="_none")])
+        sel.callback = self._cb
+        self.add_item(sel)
+
+    async def _cb(self, interaction: discord.Interaction):
+        await staff_click(interaction, interaction.data["values"][0])
+
+
+async def staff_click(interaction: discord.Interaction, key: str) -> None:
+    if err := _gate(interaction, "s"):
+        return await eph(interaction, err)
+    g, m = interaction.guild, interaction.user
+    c = lg.get(g.id)
+    pos = c["staff"]["positions"].get(key)
+    if not pos or not pos["enabled"]:
+        return await eph(interaction, "⚠️ その役職は現在募集していません。")
+    held = {pos["role"], c["ranks"].get(str(pos["rank"])) if pos["rank"] >= 2 else None} - {None}
+    if held & {r.id for r in m.roles}:
+        return await eph(interaction, "✅ すでにその役職(または同等のロール)を持っています。")
+    if rank_of(m) > pos["rank"]:
+        return await eph(interaction, "✅ すでにそれ以上の役職です。")
+    await interaction.response.send_modal(ApplyModal("s", c["staff"]["questions"], key, title=f"応募: {pos['label']}"))
+
+
+# ── パネル設置 ──
+
+async def lg_delete_panel(g: discord.Guild, kind: str) -> None:
+    sec = lg.get(g.id)[SEC[kind]] if kind in SEC else lg.get(g.id)["region"]
+    ch = g.get_channel(sec["panel_channel"]) if sec["panel_channel"] else None
+    if ch and sec["panel_message"]:
+        try:
+            await ch.get_partial_message(sec["panel_message"]).delete()
+        except discord.HTTPException:
+            pass
+    sec["panel_channel"] = sec["panel_message"] = None
+
+
+async def lg_post_panel(g: discord.Guild, kind: str, channel: discord.TextChannel) -> None:
+    await lg_delete_panel(g, kind)
+    sec = lg.get(g.id)[SEC[kind]]
+    e = make_embed(sec["title"], sec["text"], BLUE if kind == "j" else GREEN)
+    msg = await channel.send(embed=e, view=ApplyPanelView() if kind == "j" else staff_panel_view(g))
+    sec["panel_channel"], sec["panel_message"] = channel.id, msg.id
+    lg.save()
+
+
+async def refresh_staff_panel(g: discord.Guild) -> None:
+    sec = lg.get(g.id)["staff"]
+    ch = g.get_channel(sec["panel_channel"]) if sec["panel_channel"] else None
+    if ch and sec["panel_message"]:
+        try:
+            await ch.get_partial_message(sec["panel_message"]).edit(view=staff_panel_view(g))
+        except discord.HTTPException:
+            pass
+
+
+def _setup_common(g: discord.Guild, panel: discord.TextChannel, review: discord.TextChannel) -> Optional[str]:
+    me = g.me
+    if not can_post(panel, me):
+        return f"BOTが #{panel.name} に送信できません。"
+    if not can_post(review, me):
+        return f"BOTが #{review.name} に送信できません。"
+    return None
+
+
+def _privacy_note(g: discord.Guild, review: discord.TextChannel) -> str:
+    return (f"\n⚠️ {review.mention} は @everyone から見えます。申請内容が全員に見えてしまうため、スタッフ専用にしてください。"
+            if review.permissions_for(g.default_role).view_channel else "")
+
+
+@apply_group.command(name="setup", description="参加申請パネルを設置して有効化します")
+@app_commands.describe(panel_channel="申請ボタンを置くチャンネル", review_channel="申請が届く審査チャンネル(スタッフ専用に)",
+                       role="承認時に付与するロール", cooldown_hours="却下後に再申請できるまでの時間(0〜720)")
+@perm_check("rank_manage")
+@lg_guard
+async def ap_setup(interaction: discord.Interaction, panel_channel: discord.TextChannel, review_channel: discord.TextChannel,
+                   role: discord.Role, cooldown_hours: Optional[app_commands.Range[int, 0, 720]] = None):
+    await interaction.response.defer(ephemeral=True)
+    msg = await core_apply_setup(interaction.guild, interaction.user, panel_channel, review_channel, role, cooldown_hours)
+    await interaction.followup.send(msg, ephemeral=True, allowed_mentions=NONE)
+
+
+@apply_group.command(name="disable", description="参加申請を無効化し、パネルを削除します")
+@perm_check("rank_manage")
+@lg_guard
+async def ap_disable(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await interaction.followup.send(await core_apply_disable(interaction.guild), ephemeral=True)
+
+
+class QuestionsModal(discord.ui.Modal, title="質問の編集"):
+    def __init__(self, kind: str, current: list):
+        super().__init__(timeout=600)
+        self.kind = kind
+        self.t = discord.ui.TextInput(label="質問(1行に1つ・最大5つ・各45文字まで)", style=discord.TextStyle.paragraph,
+                                      default="\n".join(current)[:1000], max_length=1000)
+        self.add_item(self.t)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        qs = [x.strip() for x in self.t.value.splitlines() if x.strip()]
+        if not 1 <= len(qs) <= 5 or any(len(x) > 45 for x in qs):
+            return await interaction.response.send_message("❌ 質問は1〜5個、各45文字以内にしてください。", ephemeral=True)
+        lg.get(interaction.guild.id)[SEC[self.kind]]["questions"] = qs
+        lg.save()
+        await interaction.response.send_message("✅ 質問を更新しました。(「都道府県」を含む質問の回答は、地域ロールの自動付与に使われます)", ephemeral=True)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("質問編集でエラー", exc_info=error)
+        await eph(interaction, "⚠️ エラーが発生しました。")
+
+
+@apply_group.command(name="questions", description="申請フォームの質問を編集します")
+@perm_check("rank_manage")
+async def ap_questions(interaction: discord.Interaction):
+    await interaction.response.send_modal(QuestionsModal("j", lg.get(interaction.guild.id)["apply"]["questions"]))
+
+
+def history_embed(g: discord.Guild, kind: str, member, status: Optional[str], count: int) -> discord.Embed:
+    apps = [a for a in lg.get(g.id)[SEC[kind]]["apps"].values()
+            if (not member or a["u"] == member.id) and (not status or a["st"] == status)]
+    icon = {"pending": "⏳", "processing": "⌛", "approved": "✅", "rejected": "❌"}
+    pos = lg.get(g.id)["staff"]["positions"]
+    lines = []
+    for a in reversed(apps[-count:]):
+        extra = f" [{pos.get(a.get('pos'), {}).get('label', a.get('pos'))}]" if kind == "s" else ""
+        who = f" by <@{a['by']}>" if a.get("by") else ""
+        why = f" 理由: {a['why'][:40]}" if a.get("why") else ""
+        lines.append(f"{icon.get(a['st'], '・')} **#{a['id']:04d}** <@{a['u']}>{extra}{who} <t:{a['t']}:d>{why}")
+    return _lines_embed(f"📚 {LABEL[kind]}の履歴", lines)
+
+
+STATUS_CHOICES = [app_commands.Choice(name=n, value=v) for v, n in (("pending", "審査待ち"), ("approved", "承認"), ("rejected", "却下"))]
+
+
+@apply_group.command(name="history", description="参加申請の履歴を表示します")
+@app_commands.describe(member="このメンバーのみ", status="状態で絞り込み", count="表示件数(1〜30)")
+@app_commands.choices(status=STATUS_CHOICES)
+@perm_check("audit_view")
+async def ap_history(interaction: discord.Interaction, member: Optional[discord.User] = None,
+                     status: Optional[app_commands.Choice[str]] = None, count: app_commands.Range[int, 1, 30] = 15):
+    await interaction.response.send_message(embed=history_embed(interaction.guild, "j", member, status.value if status else None, count),
+                                            ephemeral=True, allowed_mentions=NONE)
+
+
+@staff_group.command(name="setup", description="スタッフ応募パネルを設置して有効化します")
+@app_commands.describe(panel_channel="応募メニューを置くチャンネル", review_channel="応募が届く審査チャンネル(幹部以上専用に)",
+                       cooldown_hours="不合格後に再応募できるまでの時間(0〜720)")
+@perm_check("rank_manage")
+@lg_guard
+async def sf_setup(interaction: discord.Interaction, panel_channel: discord.TextChannel, review_channel: discord.TextChannel,
+                   cooldown_hours: Optional[app_commands.Range[int, 0, 720]] = None):
+    await interaction.response.defer(ephemeral=True)
+    msg = await core_staff_setup(interaction.guild, panel_channel, review_channel, cooldown_hours)
+    await interaction.followup.send(msg, ephemeral=True, allowed_mentions=NONE)
+
+
+@staff_group.command(name="position", description="応募できる役職のロール・表示名・受付を設定します")
+@app_commands.describe(key="役職", role="合格時に付与するロール", label="表示名(40文字まで)", enabled="この役職の募集を受け付ける",
+                       clear_role="付与ロールの設定を解除する")
+@perm_check("rank_manage")
+@lg_guard
+async def sf_position(interaction: discord.Interaction, key: str, role: Optional[discord.Role] = None,
+                      label: Optional[app_commands.Range[str, 1, 40]] = None, enabled: Optional[bool] = None, clear_role: bool = False):
+    await eph(interaction, await core_staff_position(interaction.guild, interaction.user, key, role, label, enabled, clear_role))
+
+
+@sf_position.autocomplete("key")
+async def _pos_ac(interaction: discord.Interaction, current: str):
+    return [app_commands.Choice(name=f"{p['label']} ({k})"[:100], value=k)
+            for k, p in lg.get(interaction.guild.id)["staff"]["positions"].items() if current.lower() in k or current in p["label"]][:25]
+
+
+@staff_group.command(name="questions", description="応募フォームの質問を編集します")
+@perm_check("rank_manage")
+async def sf_questions(interaction: discord.Interaction):
+    await interaction.response.send_modal(QuestionsModal("s", lg.get(interaction.guild.id)["staff"]["questions"]))
+
+
+@staff_group.command(name="history", description="スタッフ応募の履歴を表示します")
+@app_commands.describe(member="このメンバーのみ", status="状態で絞り込み", count="表示件数(1〜30)")
+@app_commands.choices(status=STATUS_CHOICES)
+@perm_check("audit_view")
+async def sf_history(interaction: discord.Interaction, member: Optional[discord.User] = None,
+                     status: Optional[app_commands.Choice[str]] = None, count: app_commands.Range[int, 1, 30] = 15):
+    await interaction.response.send_message(embed=history_embed(interaction.guild, "s", member, status.value if status else None, count),
+                                            ephemeral=True, allowed_mentions=NONE)
+
+
+@staff_group.command(name="disable", description="スタッフ応募を無効化し、パネルを削除します")
+@perm_check("rank_manage")
+@lg_guard
+async def sf_disable(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await interaction.followup.send(await core_staff_disable(interaction.guild), ephemeral=True)
+
+
+# ───────────────────────── 地域(都道府県)ロール ─────────────────────────
+
+async def assign_region(g: discord.Guild, member: discord.Member, pref: str) -> bool:
+    reg = lg.get(g.id)["region"]
+    role = g.get_role(reg["pref"].get(pref) or 0)
+    rrole = g.get_role(reg["region"].get(PREF_TO_REGION.get(pref, "")) or 0)
+    want = [r for r in (role, rrole) if r and bot_can_grant(g, r)]
+    if not want:
+        return False
+    mapped = {g.get_role(i) for i in list(reg["pref"].values()) + list(reg["region"].values())} - {None}
+    remove = [r for r in member.roles if r in mapped and r not in want and bot_can_grant(g, r)]
+    add = [r for r in want if r not in member.roles]
+    try:
+        if remove:
+            await member.remove_roles(*remove, reason="AZQ BOT 地域ロールの変更")
+        if add:
+            await member.add_roles(*add, reason="AZQ BOT 地域ロール")
+    except discord.HTTPException:
+        log.warning("地域ロールの付与に失敗 guild=%s", g.id, exc_info=True)
+        return False
+    return True
+
+
+_region_last: dict = {}
+
+
+async def region_pick(interaction: discord.Interaction, value: str) -> None:
+    g, m = interaction.guild, interaction.user
+    if g is None or not isinstance(m, discord.Member):
+        return
+    await interaction.response.defer()
+    now = time.time()
+    if now - _region_last.get((g.id, m.id), 0) < 5:
+        return await interaction.edit_original_response(content="⏳ 少し待ってからもう一度選んでください。", view=None)
+    _region_last[(g.id, m.id)] = now
+    reg = lg.get(g.id)["region"]
+    if value == "__clear":
+        mapped = {g.get_role(i) for i in list(reg["pref"].values()) + list(reg["region"].values())} - {None}
+        rm = [r for r in m.roles if r in mapped and bot_can_grant(g, r)]
+        try:
+            if rm:
+                await m.remove_roles(*rm, reason="AZQ BOT 地域ロールの解除")
+        except discord.HTTPException:
+            return await interaction.edit_original_response(content="⚠️ 解除に失敗しました。", view=None)
+        return await interaction.edit_original_response(content="✅ 地域ロールを外しました。", view=None)
+    ok = value in PREF_TO_REGION and await assign_region(g, m, value)
+    await interaction.edit_original_response(
+        content=f"✅ **{value}** に設定しました。" if ok else "⚠️ ロールを付与できませんでした。管理者に連絡してください。", view=None)
+
+
+class PrefPickView(discord.ui.View):
+    def __init__(self, region: str):
+        super().__init__(timeout=120)
+        opts = [discord.SelectOption(label=p, value=p) for p in REGIONS[region]]
+        opts.append(discord.SelectOption(label="地域ロールを外す", value="__clear", emoji="🧹"))
+        sel = discord.ui.Select(placeholder="都道府県を選んでください", options=opts)
+        sel.callback = lambda i: region_pick(i, i.data["values"][0])
+        self.add_item(sel)
+
+
+class RegionPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        sel = discord.ui.Select(custom_id="azq:lg:region", placeholder="お住まいの地方を選んでください",
+                                options=[discord.SelectOption(label=n, value=n) for n in REGIONS])
+        sel.callback = self._cb
+        self.add_item(sel)
+
+    async def _cb(self, interaction: discord.Interaction):
+        name = interaction.data["values"][0]
+        if name not in REGIONS:
+            return
+        await interaction.response.send_message(f"**{name}** の都道府県を選んでください。", view=PrefPickView(name), ephemeral=True)
+
+
+@region_group.command(name="create", description="地方・都道府県のロールを作成(同名の既存ロールは再利用)して登録します")
+@app_commands.describe(include_prefectures="Falseにすると地方(8個)だけ作成")
+@perm_check("rank_manage")
+@lg_guard
+async def rg_create(interaction: discord.Interaction, include_prefectures: bool = True):
+    await interaction.response.defer(ephemeral=True)
+    await interaction.followup.send(await core_region_create(interaction.guild, include_prefectures), ephemeral=True)
+
+
+@region_group.command(name="panel", description="地域ロールの選択パネルを設置します")
+@perm_check("rank_manage")
+@lg_guard
+async def rg_panel(interaction: discord.Interaction, channel: discord.TextChannel):
+    await interaction.response.defer(ephemeral=True)
+    await interaction.followup.send(await core_region_panel(interaction.guild, channel), ephemeral=True)
+
+
+@region_group.command(name="set_role", description="既存のロールを地方・都道府県として登録します")
+@app_commands.describe(name="地方または都道府県の名前", role="登録するロール")
+@perm_check("rank_manage")
+@lg_guard
+async def rg_set_role(interaction: discord.Interaction, name: str, role: discord.Role):
+    await eph(interaction, core_region_set_role(interaction.guild, interaction.user, name, role))
+
+
+@rg_set_role.autocomplete("name")
+async def _region_ac(interaction: discord.Interaction, current: str):
+    return [app_commands.Choice(name=n, value=n) for n in list(REGIONS) + list(PREF_TO_REGION) if current in n][:25]
+
+
+@region_group.command(name="status", description="地域ロールの登録状況を表示します")
+@perm_check("audit_view")
+async def rg_status(interaction: discord.Interaction):
+    reg = lg.get(interaction.guild.id)["region"]
+    miss = [p for p in PREF_TO_REGION if p not in reg["pref"]]
+    await interaction.response.send_message(
+        f"地方ロール {len(reg['region'])}/8 / 都道府県ロール {len(reg['pref'])}/47\nパネル: "
+        + (f"<#{reg['panel_channel']}>" if reg["panel_channel"] else "未設置")
+        + (f"\n未登録: {', '.join(miss[:47])}" if miss and reg["pref"] else ""), ephemeral=True)
+
+
+# ───────────────────────── ポイント・ランキング ─────────────────────────
+
+def _today() -> str:
+    return datetime.now(JST).strftime("%Y-%m-%d")
+
+
+def _used(p: dict) -> dict:
+    d = _today()
+    if p["used"].get("date") != d:
+        p["used"] = {"date": d, "give": {}, "get": {}, "auto": {}}
+    return p["used"]
+
+
+def apply_points(gid: int, uid: int, delta: int, why: str, by: int, cat: str) -> Optional[dict]:
+    """残高を増減して履歴に残す。残高は0未満にならない。実際に変わった量が0なら None"""
+    p = lg.get(gid)["points"]
+    k = str(uid)
+    cur = p["balance"].get(k, 0)
+    new = max(0, cur + delta)
+    applied = new - cur
+    if applied == 0:
+        return None
+    p["balance"][k] = new
+    day = p["daily"].setdefault(_today(), {})
+    day[k] = day.get(k, 0) + applied
+    if len(p["daily"]) > 400:
+        for old in sorted(p["daily"])[:len(p["daily"]) - 400]:
+            p["daily"].pop(old, None)
+    p["counter"] += 1
+    ent = {"id": p["counter"], "t": int(time.time()), "u": uid, "d": applied, "why": why[:100], "by": by, "cat": cat}
+    p["log"].append(ent)
+    cap(p["log"], 5000)
+    lg.save()
+    return ent
+
+
+def award_error(g: discord.Guild, actor: discord.Member, target: discord.Member, amount: int, reason: str) -> Optional[str]:
+    p = lg.get(g.id)["points"]
+    ar = rank_of(actor)
+    if target.bot:
+        return "BOTにはポイントを付与できません。"
+    if target.id == actor.id:
+        return "自分自身にはポイントを付与できません。"
+    used, now, k = _used(p), time.time(), str(actor.id)
+    if ar < 5:
+        if amount > p["max_award"]:
+            return f"1回に付与できるのは {p['max_award']}pt までです。"
+        left = p["staff_daily_budget"] - used["give"].get(k, 0)
+        if amount > left:
+            return f"あなたの本日の付与上限に達しています。(残り {max(0, left)}pt)"
+        room = p["user_daily_cap"] - used["get"].get(str(target.id), 0)
+        if amount > room:
+            return f"このメンバーが本日スタッフから受け取れる上限に達しています。(残り {max(0, room)}pt)"
+    for e in reversed(p["log"][-200:]):
+        if e.get("x") or e["d"] <= 0 or e["cat"] in ("auto", "undo"):
+            continue
+        if now - e["t"] < 600 and e["by"] == actor.id and e["u"] == target.id and e["why"] == reason[:100]:
+            return "同じ内容の付与を短時間に繰り返せません。(二重付与の防止)"
+        if now - e["t"] < 86400 and e["by"] == target.id and e["u"] == actor.id:
+            asyncio.create_task(send_log(g, make_embed(
+                "🚨 ポイントの相互付与を拒否", f"{actor.mention} ⇄ {target.mention}\n24時間以内にお互いへ付与しようとしました。(不正の疑い)", RED)))
+            return "24時間以内に、そのメンバーから付与を受けているため付与できません。(相互付与の防止)"
+    return None
+
+
+@points_group.command(name="add", description="メンバーにポイントを付与します")
+@app_commands.describe(member="付与するメンバー", amount="ポイント数", reason="理由(必須)", category="カテゴリ")
+@app_commands.choices(category=CAT_CHOICES)
+@perm_check("points_add")
+@app_commands.checks.cooldown(1, 3, key=lambda i: i.user.id)
+@lg_guard
+async def pt_add(interaction: discord.Interaction, member: discord.Member, amount: app_commands.Range[int, 1, 100000],
+                 reason: app_commands.Range[str, 1, 100], category: Optional[app_commands.Choice[str]] = None):
+    ent, bal = await core_points_add(interaction.guild, interaction.user, member, amount, reason, category.value if category else "other")
+    await interaction.response.send_message(f"💰 {member.mention} に **+{amount}pt** を付与しました。(合計 {bal:,}pt)\n理由: {reason}",
+                                            allowed_mentions=NONE)
+
+
+@points_group.command(name="remove", description="メンバーのポイントを減らします")
+@app_commands.describe(member="対象メンバー", amount="減らすポイント数", reason="理由(必須)")
+@perm_check("points_remove")
+@app_commands.checks.cooldown(1, 3, key=lambda i: i.user.id)
+@lg_guard
+async def pt_remove(interaction: discord.Interaction, member: discord.Member, amount: app_commands.Range[int, 1, 100000],
+                    reason: app_commands.Range[str, 1, 100]):
+    ent, bal = await core_points_remove(interaction.guild, interaction.user, member, amount, reason)
+    await interaction.response.send_message(f"➖ {member.mention} から **{-ent['d']}pt** を減らしました。(合計 {bal:,}pt)\n理由: {reason}",
+                                            allowed_mentions=NONE)
+
+
+@points_group.command(name="undo", description="ポイント履歴を1件取り消します(履歴番号は /points history で確認)")
+@app_commands.describe(entry_id="履歴番号")
+@perm_check("points_undo")
+@lg_guard
+async def pt_undo(interaction: discord.Interaction, entry_id: app_commands.Range[int, 1, 10_000_000]):
+    await eph(interaction, await core_points_undo(interaction.guild, interaction.user, entry_id))
+
+
+def _period_start(period: str) -> str:
+    now = datetime.now(JST)
+    return (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d") if period == "week" else now.strftime("%Y-%m-01")
+
+
+def period_totals(gid: int, period: str) -> dict:
+    p = lg.get(gid)["points"]
+    if period == "total":
+        return dict(p["balance"])
+    start, out = _period_start(period), {}
+    for d, m in p["daily"].items():
+        if d >= start:
+            for u, n in m.items():
+                out[u] = out.get(u, 0) + n
+    return out
+
+
+def month_totals(gid: int, ym: str) -> dict:
+    out = {}
+    for d, m in lg.get(gid)["points"]["daily"].items():
+        if d.startswith(ym):
+            for u, n in m.items():
+                out[u] = out.get(u, 0) + n
+    return out
+
+
+def ranked(g: discord.Guild, totals: dict) -> list:
+    rows = sorted(((int(u), n) for u, n in totals.items() if n > 0), key=lambda x: (-x[1], x[0]))
+    out = []
+    for u, n in rows:
+        m = g.get_member(u)
+        if m and not m.bot:
+            out.append((m, n))
+    return out
+
+
+MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+
+@app_commands.command(name="ranking", description="ポイントランキングを表示します")
+@app_commands.describe(period="期間")
+@app_commands.choices(period=[app_commands.Choice(name="週間(月曜〜)", value="week"), app_commands.Choice(name="月間", value="month"),
+                              app_commands.Choice(name="累計(貢献度)", value="total")])
+@app_commands.guild_only()
+@app_commands.checks.cooldown(1, 10, key=lambda i: i.user.id)
+async def ranking_cmd(interaction: discord.Interaction, period: Optional[app_commands.Choice[str]] = None):
+    g, per = interaction.guild, (period.value if period else "week")
+    rows = ranked(g, period_totals(g.id, per))
+    name = {"week": "週間", "month": "月間", "total": "累計(貢献度)"}[per]
+    lines = [f"{MEDALS.get(i, f'`{i}.`')} {m.mention} — **{n:,}** pt" for i, (m, n) in enumerate(rows[:10], 1)]
+    e = make_embed(f"🏆 {name}ランキング", "\n".join(lines) or "まだポイントがありません。", BLUE)
+    mine = next(((i, n) for i, (m, n) in enumerate(rows, 1) if m.id == interaction.user.id), None)
+    if mine:
+        e.set_footer(text=f"あなたの順位: {mine[0]}位 ({mine[1]:,}pt)")
+    await interaction.response.send_message(embed=e, allowed_mentions=NONE)
+
+
+@points_group.command(name="show", description="ポイントと順位を表示します")
+async def pt_show(interaction: discord.Interaction, member: Optional[discord.Member] = None):
+    g, m = interaction.guild, member or interaction.user
+    e = make_embed(f"💰 {m.display_name} のポイント", color=BLUE)
+    for key, name in (("total", "累計"), ("month", "今月"), ("week", "今週")):
+        tot = period_totals(g.id, key)
+        rows = ranked(g, tot)
+        pos = next((i for i, (x, _) in enumerate(rows, 1) if x.id == m.id), None)
+        e.add_field(name=name, value=f"**{tot.get(str(m.id), 0):,}** pt" + (f" ({pos}位)" if pos else ""))
+    await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+@points_group.command(name="history", description="ポイントの履歴を表示します(他人の履歴はスタッフのみ)")
+@app_commands.describe(member="省略すると自分", count="表示件数(1〜20)")
+async def pt_history(interaction: discord.Interaction, member: Optional[discord.Member] = None, count: app_commands.Range[int, 1, 20] = 10):
+    g, m = interaction.guild, member or interaction.user
+    if m.id != interaction.user.id and rank_of(interaction.user) < need(g.id, "points_peek"):
+        return await eph(interaction, f"❌ 他の人の履歴は「{rname(need(g.id, 'points_peek'))}」以上のみ見られます。")
+    ents = [e for e in lg.get(g.id)["points"]["log"] if e["u"] == m.id][-count:]
+    lines = [f"`#{e['id']}` <t:{e['t']}:d> **{e['d']:+d}pt** [{CAT_NAMES.get(e['cat'], e['cat'])}] {e['why']}"
+             + (f" (by <@{e['by']}>)" if e["by"] else "") + (" ~~取消済~~" if e.get("x") else "") for e in reversed(ents)]
+    await interaction.response.send_message(embed=_lines_embed(f"📜 {m.display_name} のポイント履歴", lines), ephemeral=True, allowed_mentions=NONE)
+
+
+@points_group.command(name="config", description="ポイントの上限・自動付与・MVPの設定(指定した項目のみ変更)")
+@app_commands.describe(
+    max_award="スタッフ1回あたりの付与上限", staff_daily_budget="スタッフ1人の1日の付与上限", user_daily_cap="1人が1日にスタッフから受け取れる上限",
+    alert_threshold="この値以上の付与はログで警告", auto_channel_add="自動付与の対象に追加するチャンネル", auto_channel_remove="自動付与の対象から外すチャンネル",
+    auto_points="自動付与:1回あたり(0で停止)", auto_min_len="自動付与:最低文字数", auto_cooldown="自動付与:同じ人の間隔(秒)",
+    auto_daily_cap="自動付与:1人の1日の上限", min_member_days="自動付与:参加から何日以上の人だけ",
+    mvp_channel="MVP発表のチャンネル", mvp_role="MVPに付与するロール", mvp_auto="毎月1日に自動発表する")
+@perm_check("rank_manage")
+@lg_guard
+async def pt_config(interaction: discord.Interaction,
+                    max_award: Optional[app_commands.Range[int, 1, 100000]] = None, staff_daily_budget: Optional[app_commands.Range[int, 1, 1000000]] = None,
+                    user_daily_cap: Optional[app_commands.Range[int, 1, 1000000]] = None, alert_threshold: Optional[app_commands.Range[int, 1, 1000000]] = None,
+                    auto_channel_add: Optional[discord.TextChannel] = None, auto_channel_remove: Optional[discord.TextChannel] = None,
+                    auto_points: Optional[app_commands.Range[int, 0, 100]] = None, auto_min_len: Optional[app_commands.Range[int, 1, 500]] = None,
+                    auto_cooldown: Optional[app_commands.Range[int, 10, 86400]] = None, auto_daily_cap: Optional[app_commands.Range[int, 1, 10000]] = None,
+                    min_member_days: Optional[app_commands.Range[int, 0, 365]] = None, mvp_channel: Optional[discord.TextChannel] = None,
+                    mvp_role: Optional[discord.Role] = None, mvp_auto: Optional[bool] = None):
+    vals = dict(max_award=max_award, staff_daily_budget=staff_daily_budget, user_daily_cap=user_daily_cap, alert_threshold=alert_threshold,
+                auto_points=auto_points, auto_min_len=auto_min_len, auto_cooldown=auto_cooldown, auto_daily_cap=auto_daily_cap,
+                min_member_days=min_member_days, mvp_auto=mvp_auto)
+    await eph(interaction, await core_points_config(interaction.guild, interaction.user, vals, mvp_channel, mvp_role,
+                                                    auto_channel_add, auto_channel_remove))
+
+
+async def announce_mvp(g: discord.Guild, ym: str, channel=None) -> tuple:
+    p = lg.get(g.id)["points"]
+    ch = channel or (g.get_channel(p["mvp_channel"]) if p["mvp_channel"] else None)
+    if not ch or not can_post(ch, g.me):
+        return False, "発表先チャンネルが未設定、またはBOTが送信できません。(`/points config mvp_channel`)"
+    p["mvp_last"] = ym
+    lg.save()
+    rows = ranked(g, month_totals(g.id, ym))
+    label = f"{ym[:4]}年{int(ym[5:])}月"
+    if not rows:
+        return False, f"{label}のポイントがありません。"
+    win, pts = rows[0]
+    e = make_embed(f"👑 {label} 月間MVP", f"{win.mention} さんが **{pts:,}pt** で月間MVPです!おめでとうございます🎉", YELLOW)
+    e.set_thumbnail(url=win.display_avatar.url)
+    e.add_field(name="トップ5", value="\n".join(f"{MEDALS.get(i, f'{i}.')} {m.mention} — {n:,}pt" for i, (m, n) in enumerate(rows[:5], 1)), inline=False)
+    try:
+        await ch.send(embed=e, allowed_mentions=discord.AllowedMentions(users=[win]))
+    except discord.HTTPException:
+        return False, "発表の送信に失敗しました。"
+    note = ""
+    role = g.get_role(p["mvp_role"]) if p["mvp_role"] else None
+    if role and bot_can_grant(g, role):
+        try:
+            for m in list(role.members):
+                if m.id != win.id:
+                    await m.remove_roles(role, reason="AZQ BOT MVP交代")
+            if role not in win.roles:
+                await win.add_roles(role, reason=f"AZQ BOT {label} MVP")
+            note = f" MVPロール({role.name})を付与しました。"
+        except discord.HTTPException:
+            note = " ⚠️ MVPロールの付与に失敗しました。"
+    p["mvp_hist"].append({"ym": ym, "u": win.id, "pts": pts, "t": int(time.time())})
+    cap(p["mvp_hist"], 120)
+    lg.save()
+    await send_log(g, make_embed("👑 月間MVP発表", f"{label}: {win} (`{win.id}`) {pts:,}pt", GREEN))
+    return True, f"{label}のMVP: {win.mention} ({pts:,}pt)を発表しました。" + note
+
+
+@points_group.command(name="mvp", description="月間MVPを発表します(省略すると先月分)")
+@app_commands.describe(month="対象月(例: 2026-09)", channel="発表先(省略すると設定済みのチャンネル)")
+@perm_check("mvp")
+@lg_guard
+async def pt_mvp(interaction: discord.Interaction, month: Optional[str] = None, channel: Optional[discord.TextChannel] = None):
+    await interaction.response.defer(ephemeral=True)
+    await interaction.followup.send(await core_mvp(interaction.guild, month, channel), ephemeral=True, allowed_mentions=NONE)
+
+
+# ───────────────────────── イベント・定期処理 ─────────────────────────
+
+_auto_last: dict = {}
+
+
+async def on_message_points(message: discord.Message) -> None:
+    g, m = message.guild, message.author
+    if g is None or m.bot or not isinstance(m, discord.Member) or lg is None:
+        return
+    cfg = lg.data.get(str(g.id))
+    if not cfg or message.channel.id not in cfg["points"]["auto_channels"]:
+        return
+    p = cfg["points"]
+    text = message.content.strip()
+    if p["auto_points"] <= 0 or len(text) < p["auto_min_len"]:
+        return
+    if m.joined_at and (discord.utils.utcnow() - m.joined_at).days < p["min_member_days"]:
+        return
+    key, now, h = (g.id, m.id), time.time(), hash(text)
+    last = _auto_last.get(key)
+    if last and (now - last[0] < p["auto_cooldown"] or last[1] == h):
+        return
+    used = _used(p)
+    got = used["auto"].get(str(m.id), 0)
+    if got + p["auto_points"] > p["auto_daily_cap"]:
+        return
+    _auto_last[key] = (now, h)
+    used["auto"][str(m.id)] = got + p["auto_points"]
+    apply_points(g.id, m.id, p["auto_points"], "情報共有(自動)", 0, "auto")
+
+
+async def on_member_update_roles(before: discord.Member, after: discord.Member) -> None:
+    if lg is None or before.roles == after.roles:
+        return
+    b, a = {r.id for r in before.roles}, {r.id for r in after.roles}
+    add, rem = a - b, b - a
+    if not add and not rem:
+        return
+    g = after.guild
+    by, why = None, ""
+    await asyncio.sleep(1.5)
+    try:
+        if g.me.guild_permissions.view_audit_log:
+            async for en in g.audit_logs(limit=8, action=discord.AuditLogAction.member_role_update):
+                if en.target and en.target.id == after.id and (discord.utils.utcnow() - en.created_at).total_seconds() < 20:
+                    by, why = en.user.id if en.user else None, en.reason or ""
+                    break
+    except discord.HTTPException:
+        pass
+    c = lg.get(g.id)
+    c["role_hist"].append({"t": int(time.time()), "u": after.id, "add": sorted(add), "rem": sorted(rem), "by": by, "why": why[:100]})
+    cap(c["role_hist"], 3000)
+    lg.save()
+    # 役職ロールが、権限のない人によって付与された(BOTを通さずに直接付けられた)ときは警告する
+    if by and by != g.me.id and add:
+        actor = g.get_member(by)
+        for k, rid in c["ranks"].items():
+            if rid in add and actor and actor.id != g.owner_id and rank_of(actor) <= int(k):
+                await send_log(g, make_embed("🚨 役職ロールの不審な付与",
+                                                 f"{after.mention} に「{rname(int(k))}」のロールが、**{rname(rank_of(actor))}** の {actor.mention} によって直接付与されました。\n"
+                                                 "BOTの審査を通っていない可能性があります。確認してください。", RED))
+                break
+
+
+async def on_raw_delete(payload: discord.RawMessageDeleteEvent) -> None:
+    if lg is None or not payload.guild_id:
+        return
+    cfg = lg.data.get(str(payload.guild_id))
+    if not cfg:
+        return
+    changed = False
+    for sec in (cfg["apply"], cfg["staff"], cfg["region"]):
+        if sec["panel_message"] == payload.message_id:
+            sec["panel_message"] = None
+            changed = True
+    if changed:
+        lg.save()
+
+
+@tasks.loop(minutes=1)
+async def temp_role_watch():
+    now = time.time()
+    for g in list(bot.guilds):
+        c = lg.data.get(str(g.id))
+        if not c or not c["temp_roles"]:
+            continue
+        keep, changed = [], False
+        for t in c["temp_roles"]:
+            if t["exp"] > now:
+                keep.append(t)
+                continue
+            changed = True
+            m, role = g.get_member(t["u"]), g.get_role(t["r"])
+            if m and role and role in m.roles:
+                try:
+                    await m.remove_roles(role, reason="AZQ BOT 期限切れ")
+                except discord.HTTPException:
+                    log.warning("期限切れロールの剥奪に失敗 guild=%s", g.id)
+        if changed:
+            c["temp_roles"] = keep
+            lg.save()
+    for k in [k for k, (t, _) in _auto_last.items() if now - t > 3600]:
+        _auto_last.pop(k, None)
+    for k in [k for k, dq in _heavy.items() if not dq or now - dq[-1] > HEAVY_WINDOW]:
+        _heavy.pop(k, None)
+
+
+@tasks.loop(minutes=30)
+async def mvp_watch():
+    first = datetime.now(JST).replace(day=1)
+    ym = (first - timedelta(days=1)).strftime("%Y-%m")
+    for g in list(bot.guilds):
+        c = lg.data.get(str(g.id))
+        if not c:
+            continue
+        p = c["points"]
+        if not p["mvp_auto"] or not p["mvp_channel"] or p["mvp_last"] == ym:
+            continue
+        try:
+            await announce_mvp(g, ym)
+        except Exception:
+            log.exception("月間MVPの自動発表に失敗 guild=%s", g.id)
+
+
+@temp_role_watch.before_loop
+async def _b1():
+    await bot.wait_until_ready()
+
+
+@mvp_watch.before_loop
+async def _b2():
+    await bot.wait_until_ready()
+    await asyncio.sleep(90)
+
+
+def srvadm_install() -> None:
+    for cmd in (srvadm_group, apply_group, staff_group, points_group, region_group, ranking_cmd):
+        bot.tree.add_command(cmd)
+    bot.add_view(ApplyPanelView())
+    bot.add_view(StaffPanelView())
+    bot.add_view(RegionPanelView())
+    bot.add_dynamic_items(ReviewButton)
+    bot.add_listener(on_message_points, "on_message")
+    bot.add_listener(on_member_update_roles, "on_member_update")
+    bot.add_listener(on_raw_delete, "on_raw_message_delete")
+    temp_role_watch.start()
+    mvp_watch.start()
+
+
 @bot.tree.command(name="kick", description="メンバーをキックします")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("kick")
 @app_commands.checks.bot_has_permissions(kick_members=True)
 @app_commands.guild_only()
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None):
@@ -1732,9 +3648,8 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 
 
 @bot.tree.command(name="ban", description="メンバーをBANします")
+@perm_check("ban")
 @app_commands.describe(delete_days="過去何日分のメッセージを削除するか(0〜7)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
 @app_commands.checks.bot_has_permissions(ban_members=True)
 @app_commands.guild_only()
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: Optional[str] = None,
@@ -1748,8 +3663,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 
 
 @bot.tree.command(name="unban", description="ユーザーIDでBANを解除します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("unban")
 @app_commands.checks.bot_has_permissions(ban_members=True)
 @app_commands.guild_only()
 async def unban(interaction: discord.Interaction, user_id: str):
@@ -1763,9 +3677,8 @@ async def unban(interaction: discord.Interaction, user_id: str):
 
 
 @bot.tree.command(name="timeout", description="メンバーをタイムアウト(発言禁止)します")
+@perm_check("timeout")
 @app_commands.describe(minutes="分(1〜40320 = 28日)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
 @app_commands.checks.bot_has_permissions(moderate_members=True)
 @app_commands.guild_only()
 async def timeout_cmd(interaction: discord.Interaction, member: discord.Member,
@@ -1778,8 +3691,7 @@ async def timeout_cmd(interaction: discord.Interaction, member: discord.Member,
 
 
 @bot.tree.command(name="untimeout", description="タイムアウトを解除します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("untimeout")
 @app_commands.checks.bot_has_permissions(moderate_members=True)
 @app_commands.guild_only()
 async def untimeout(interaction: discord.Interaction, member: discord.Member):
@@ -1788,8 +3700,7 @@ async def untimeout(interaction: discord.Interaction, member: discord.Member):
 
 
 @bot.tree.command(name="warn", description="メンバーに警告を与えます(規定回数で自動タイムアウト)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("warn")
 @app_commands.guild_only()
 async def warn(interaction: discord.Interaction, member: discord.Member, reason: str):
     if err := hierarchy_error(interaction, member):
@@ -1811,21 +3722,19 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
 
 
 @bot.tree.command(name="warnings", description="メンバーの警告履歴を表示します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("warnings")
 @app_commands.guild_only()
 async def warnings(interaction: discord.Interaction, member: discord.Member):
     lst = store.get(interaction.guild.id)["warns"].get(str(member.id), [])
     if not lst:
         return await interaction.response.send_message(f"{member} に警告はありません。", ephemeral=True)
-    start = max(0, len(lst) - 15)  # 番号は /unwarn で使う実際の通し番号
+    start = max(0, len(lst) - 15)
     lines = [f"`{i}.` <t:{w['time']}:d> {w['reason']} (by <@{w['mod']}>)" for i, w in enumerate(lst[start:], start + 1)]
     await interaction.response.send_message(embed=make_embed(f"⚠️ {member} の警告 ({len(lst)}件)", "\n".join(lines), YELLOW), ephemeral=True)
 
 
 @bot.tree.command(name="clearwarns", description="メンバーの警告をすべて消去します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("clearwarns")
 @app_commands.guild_only()
 async def clearwarns(interaction: discord.Interaction, member: discord.Member):
     store.get(interaction.guild.id)["warns"].pop(str(member.id), None)
@@ -1834,8 +3743,7 @@ async def clearwarns(interaction: discord.Interaction, member: discord.Member):
 
 
 @bot.tree.command(name="unwarn", description="警告を1件取り消します(番号は /warnings で確認)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("unwarn")
 @app_commands.guild_only()
 async def unwarn(interaction: discord.Interaction, member: discord.Member, number: app_commands.Range[int, 1, 10000]):
     lst = store.get(interaction.guild.id)["warns"].get(str(member.id), [])
@@ -1851,9 +3759,8 @@ async def unwarn(interaction: discord.Interaction, member: discord.Member, numbe
 
 
 @bot.tree.command(name="purge", description="メッセージを一括削除します")
+@perm_check("purge")
 @app_commands.describe(amount="削除件数(1〜100)", member="このメンバーのメッセージのみ削除")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
 @app_commands.checks.bot_has_permissions(manage_messages=True, read_message_history=True)
 @app_commands.guild_only()
 async def purge(interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100], member: Optional[discord.Member] = None):
@@ -1865,8 +3772,7 @@ async def purge(interaction: discord.Interaction, amount: app_commands.Range[int
 
 
 @bot.tree.command(name="slowmode", description="チャンネルの低速モードを設定します(0で解除)")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("slowmode")
 @app_commands.checks.bot_has_permissions(manage_channels=True)
 @app_commands.guild_only()
 async def slowmode(interaction: discord.Interaction, seconds: app_commands.Range[int, 0, 21600]):
@@ -1875,8 +3781,7 @@ async def slowmode(interaction: discord.Interaction, seconds: app_commands.Range
 
 
 @bot.tree.command(name="lock", description="このチャンネルを@everyoneの発言禁止にします")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("lock")
 @app_commands.checks.bot_has_permissions(manage_roles=True, manage_channels=True)
 @app_commands.guild_only()
 async def lock(interaction: discord.Interaction):
@@ -1888,8 +3793,7 @@ async def lock(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="unlock", description="チャンネルのロックを解除します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("lock")
 @app_commands.checks.bot_has_permissions(manage_roles=True, manage_channels=True)
 @app_commands.guild_only()
 async def unlock(interaction: discord.Interaction):
@@ -1915,8 +3819,7 @@ async def _role_change(interaction: discord.Interaction, member: discord.Member,
 
 
 @bot.tree.command(name="role_add", description="メンバーにロールを付与します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("role_add")
 @app_commands.checks.bot_has_permissions(manage_roles=True)
 @app_commands.guild_only()
 async def role_add(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
@@ -1924,8 +3827,7 @@ async def role_add(interaction: discord.Interaction, member: discord.Member, rol
 
 
 @bot.tree.command(name="role_remove", description="メンバーからロールを剥奪します")
-@app_commands.default_permissions(administrator=True)
-@app_commands.checks.has_permissions(administrator=True)
+@perm_check("role_remove")
 @app_commands.checks.bot_has_permissions(manage_roles=True)
 @app_commands.guild_only()
 async def role_remove(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
@@ -1966,7 +3868,6 @@ async def serverinfo(interaction: discord.Interaction):
 
 @bot.tree.command(name="bot_users", description="BOT全体の利用ユーザー数を集計します（指定ユーザー専用）")
 async def bot_users(interaction: discord.Interaction):
-    # このコマンドを実行できるのは指定されたDiscordユーザーIDのみ
     if interaction.user.id != 1453953586626166899:
         await interaction.response.send_message(
             "❌ このコマンドを利用できるのは指定されたユーザーのみです。",
@@ -1980,8 +3881,6 @@ async def bot_users(interaction: discord.Interaction):
     total_memberships = 0
     incomplete_guilds = 0
 
-    # BOTが参加している全サーバーのメンバーを集計し、同じユーザーは重複カウントしない。
-    # メンバーキャッシュが未完成のサーバーは、可能ならメンバー一覧を取得してから集計する。
     for guild in bot.guilds:
         try:
             members = guild.members if guild.chunked else await guild.chunk(cache=True)
@@ -2015,15 +3914,9 @@ async def avatar(interaction: discord.Interaction, user: Optional[discord.User] 
     await interaction.response.send_message(embed=e)
 
 
-# =====================================================================
-# 王様ゲーム(/ousama)
-#   - 参加者を募集 → 開始すると、王様1人と番号(1〜人数-1)が自動で決まる
-#   - チャンネルには「王様」と「参加者」を表示、各自の番号(王様はその旨)はDMで1回だけ送る
-#   - 命令は各自が自由にチャンネルで出す(BOTは関与しない)
-# =====================================================================
 KING_MIN, KING_MAX = 3, 20
-KING_LOBBY_SEC = 900           # 募集の有効時間
-KING_GAMES: dict = {}          # channel_id -> KingGame(募集中のみ)
+KING_LOBBY_SEC = 900
+KING_GAMES: dict = {}
 _king_rng = random.SystemRandom()
 
 
@@ -2093,7 +3986,6 @@ class KingLobbyView(discord.ui.View):
         _king_release(g)
         self.stop()
 
-        # 王様1人を決め、残りに 1〜N-1 の番号をランダムに配る
         order = g.players[:]
         _king_rng.shuffle(order)
         king = order[0]
@@ -2108,7 +4000,6 @@ class KingLobbyView(discord.ui.View):
         await interaction.response.edit_message(
             embed=e, view=None, allowed_mentions=discord.AllowedMentions.none())
 
-        # DMで役を1回だけ送る
         failed = []
         for uid in g.players:
             if uid == king:
@@ -2166,19 +4057,12 @@ async def ousama(interaction: discord.Interaction, max_players: app_commands.Ran
         pass
 
 
-# =====================================================================
-# 認証(Verify)機能
-#   - 方式: ボタン / 計算 / 画像CAPTCHA
-#   - 未認証ロール(任意)・アカウント年齢制限・試行回数制限とロックアウト
-#   - 時間内に認証しなかった人の自動キック・レイド検知時の自動強化
-# =====================================================================
 VERIFY_MODES = {"button": "ボタン認証", "math": "計算認証", "image": "画像認証(CAPTCHA)", "web": "Web認証(ブラウザで確認)"}
 VIOLATION_MODES = {"deny": "拒否のみ(一時ロック)", "kick": "キック"}
-CAPTCHA_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # 0/O, 1/I/L などの紛らわしい文字を除外
-CHALLENGE_TTL = 180            # 問題の有効秒数
-RAID_VERIFY_SECONDS = 600      # レイド検知時に認証を強化する秒数
-RAID_MIN_ACCOUNT_DAYS = 7      # レイド警戒中の最低アカウント年齢(日)
-# 認証ロールに付けてはいけない権限(設定ミスによる権限昇格の防止)
+CAPTCHA_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+CHALLENGE_TTL = 180
+RAID_VERIFY_SECONDS = 600
+RAID_MIN_ACCOUNT_DAYS = 7
 DANGEROUS_PERMS = (
     "administrator", "manage_guild", "manage_roles", "manage_channels", "manage_messages",
     "manage_webhooks", "kick_members", "ban_members", "moderate_members", "mention_everyone",
@@ -2187,23 +4071,19 @@ DANGEROUS_PERMS = (
 MODE_CHOICES = [app_commands.Choice(name=n, value=k) for k, n in VERIFY_MODES.items()]
 VIOLATION_CHOICES = [app_commands.Choice(name=n, value=k) for k, n in VIOLATION_MODES.items()]
 
-verify_challenges: dict = {}   # (guild,user) -> (正解, 期限)
-verify_fails: dict = {}        # (guild,user) -> [失敗回数, 最初の失敗時刻]
-verify_lock: dict = {}         # (guild,user) -> ロック解除時刻
-verify_last: dict = {}         # (guild,user) -> 最後にボタンを押した時刻
-raid_until: dict = {}          # guild -> レイド警戒の終了時刻
-verify_issued: dict = {}        # (guild,user) -> 問題を出した時刻(早すぎる回答の検出用)
-recent_joins: dict = defaultdict(lambda: deque(maxlen=50))   # guild -> (user_id, アカウント作成時刻, 参加時刻)
-suspect_notified: set = set()   # 同じ人についてログを連投しないための記録
-SOLVE_MIN_SECONDS = {"math": 2.0, "image": 3.0}   # これより早い回答は人間には難しい(ロボット確認の強化時のみ判定)
+verify_challenges: dict = {}
+verify_fails: dict = {}
+verify_lock: dict = {}
+verify_last: dict = {}
+raid_until: dict = {}
+verify_issued: dict = {}
+recent_joins: dict = defaultdict(lambda: deque(maxlen=50))
+suspect_notified: set = set()
+SOLVE_MIN_SECONDS = {"math": 2.0, "image": 3.0}
 SUSPECT_CHOICES = [app_commands.Choice(name="管理者の承認待ちにする(/verify approve で承認)", value="hold"),
                    app_commands.Choice(name="キックする", value="kick")]
 
 
-# ---- Web認証: BOT自身が配信する認証ページ(外部サービス不使用) ----------------------------
-#   - 認証ボタンを押すと、あなた専用・10分間・1回限りのリンクが出る。ページで「認証する」を押すと完了。
-#   - 接続元IPはBOTが直接見られる(プロキシ等を挟まない前提)。生のIPは保存しない。
-#   - block_vpn: 公開IPレンジのリストと照合 / block_alt_ip: 同じ回線から別アカウントが認証済みなら承認待ち
 class IPRanges:
     """IPv4のCIDR一覧を、結合・ソートして保持する(array なので省メモリ)。判定は二分探索。"""
 
@@ -2271,7 +4151,7 @@ async def vpn_list_loop() -> None:
                         else:
                             log.warning("VPNリストの取得に失敗 HTTP %s: %s", r.status, url)
                 text = "\n".join(parts)
-                if text.count("\n") > 1000:  # 極端に小さい(壊れた)リストで上書きしない
+                if text.count("\n") > 1000:
                     tmp = VPN_LIST_FILE + ".part"
                     with open(tmp, "w", encoding="utf-8") as f:
                         f.write(text)
@@ -2302,8 +4182,8 @@ def ip_hash(ip: str) -> str:
 
 
 WEB_TTL = 600
-web_nonces: dict = {}                      # nonce -> {g, u, cookie, exp}
-web_rate: dict = defaultdict(deque)        # ip -> アクセス時刻(過剰なアクセスの制限用)
+web_nonces: dict = {}
+web_rate: dict = defaultdict(deque)
 
 
 def make_web_link(guild_id: int, user_id: int, interaction: Optional[discord.Interaction] = None) -> str:
@@ -2312,7 +4192,7 @@ def make_web_link(guild_id: int, user_id: int, interaction: Optional[discord.Int
         web_nonces.pop(k, None)
     n = secrets.token_urlsafe(18)
     web_nonces[n] = {"g": guild_id, "u": user_id, "cookie": secrets.token_urlsafe(16), "exp": now + WEB_TTL,
-                     "i": interaction}   # 認証完了後に、Discordの元のメッセージを書き換えるために保持する
+                     "i": interaction}
     return f"{WEB_URL}/v?t={n}"
 
 
@@ -2336,7 +4216,7 @@ def _rate_ok(ip: str) -> bool:
     now, q = time.time(), web_rate[ip]
     while q and now - q[0] > 60:
         q.popleft()
-    if len(web_rate) > 5000:  # 記録が増えすぎないよう掃除
+    if len(web_rate) > 5000:
         for k in [k for k, d in web_rate.items() if not d]:
             web_rate.pop(k, None)
     q.append(now)
@@ -2385,7 +4265,6 @@ def web_verify_form(guild: discord.Guild, v: dict, t: str, notice: str = "", sta
     """認証ページ(「認証する」ボタン + reCAPTCHA)を作る。notice があればエラー表示を付ける"""
     widget, btn_attr, hint = "", "", ""
     if RECAPTCHA_READY:
-        # チェックが終わるまで「認証する」を押せない(グレー)にする。期限切れ・エラー時は再びグレーに戻す。サーバー側でも必ず検証する
         widget = ("<script>function azqBtn(on){var b=document.getElementById('azqBtn');if(b)b.disabled=!on;}</script>"
                   f'<div class="g-recaptcha" data-sitekey="{_esc(RECAPTCHA_SITE_KEY)}" data-callback="azqOk" '
                   'data-expired-callback="azqNg" data-error-callback="azqNg"></div>'
@@ -2419,7 +4298,7 @@ async def verify_recaptcha(token: str) -> tuple:
         log.info("reCAPTCHA検証に失敗: %s", codes)
         return False, "確認に失敗しました(期限切れの可能性があります)。もう一度チェックを入れてください。"
     host, got = (urlparse(WEB_URL).hostname or "").lower(), str(j.get("hostname") or "").lower()
-    if host and got and got != host:  # 別のサイトで取られたトークンの使い回しを防ぐ
+    if host and got and got != host:
         log.warning("reCAPTCHAのホスト名が一致しません: %s != %s", got, host)
         return False, "確認に失敗しました。もう一度お試しください。"
     return True, ""
@@ -2438,7 +4317,7 @@ async def web_verify_get(request):
     v = store.get(guild.id)["verify"]
     resp = web_verify_form(guild, v, t)
     resp.set_cookie("azq_v", rec["cookie"], max_age=WEB_TTL, httponly=True, samesite="Lax",
-                    secure=WEB_URL.startswith("https"))  # 別の人のリンクの使い回し・CSRF対策
+                    secure=WEB_URL.startswith("https"))
     return resp
 
 
@@ -2450,18 +4329,18 @@ async def web_verify_post(request):
     t = str(form.get("t", ""))
     rec = web_nonces.get(t)
     if not rec or rec["exp"] < time.time() or request.cookies.get("azq_v") != rec["cookie"]:
-        web_nonces.pop(t, None)  # 1回限り(不正なアクセスでも使い切る)
+        web_nonces.pop(t, None)
         return _web_expired()
     if RECAPTCHA_READY:
         ok, why = await verify_recaptcha(str(form.get("g-recaptcha-response", "")))
-        if not ok:  # チェック忘れなどは同じリンクでやり直せる(5回失敗したらリンクを使い切る)
+        if not ok:
             rec["tries"] = rec.get("tries", 0) + 1
             g = bot.get_guild(rec["g"])
             if rec["tries"] >= 5 or not g:
                 web_nonces.pop(t, None)
                 return _web_expired()
             return web_verify_form(g, store.get(g.id)["verify"], t, why, 400)
-    rec = web_nonces.pop(t, None)  # 1回限り(二重送信で2回通らないよう、ここで確実に使い切る)
+    rec = web_nonces.pop(t, None)
     if not rec:
         return _web_expired()
     guild = bot.get_guild(rec["g"])
@@ -2473,7 +4352,7 @@ async def web_verify_post(request):
     if not verify_active(cfg):
         return web_page("<h1>認証は現在利用できません</h1>", 400)
     vrole = guild.get_role(v["role"]) if v["role"] else None
-    if vrole and vrole in member.roles:  # pending の有無ではなく、実際にロールを持っているかで判定する
+    if vrole and vrole in member.roles:
         return web_page("<h1>✅ すでに認証済みです</h1><p>Discordに戻ってください。</p>")
 
     if v["block_vpn"] or v["block_alt_ip"]:
@@ -2481,7 +4360,7 @@ async def web_verify_post(request):
             ip = ipaddress.ip_address(ip_s)
         except ValueError:
             ip = None
-        if ip is None or ip.is_private or ip.is_loopback or ip.is_link_local:  # プロキシ経由などで、接続元IPを確認できない
+        if ip is None or ip.is_private or ip.is_loopback or ip.is_link_local:
             log.warning("Web認証: 接続元IPを確認できません(%s)。リバースプロキシ等を挟んでいないか確認してください", ip_s)
             return web_page("<h1>設定エラー</h1><p>接続元を確認できませんでした。管理者に連絡してください。</p>", 500)
         if v["block_vpn"] and vpn_ranges.contains(ip_s):
@@ -2495,7 +4374,7 @@ async def web_verify_post(request):
             others = [u for u in users if u != uid]
             log.info("Web認証(同一回線チェック): guild=%s user=%s 同じ回線の別アカウント=%d件 / 記録済みの回線=%d件",
                      guild.id, uid, len(others), len(v["ip_hashes"]))
-            if others:  # 同じ回線から別アカウントが認証済み: 認証を拒否する(設定がキックの場合はキック)
+            if others:
                 reason = "同じ回線から別のアカウントが認証済み(サブ垢の疑い)"
                 v["stats"]["denied"] += 1
                 store.save()
@@ -2510,7 +4389,6 @@ async def web_verify_post(request):
                                           "🚫 認証を拒否しました。同じ回線から別のアカウントがすでに認証しています。")
                 return web_page("<h1>🚫 認証を拒否しました</h1><p>同じ回線から別のアカウントがすでに認証しているため、認証できません。<br>"
                                 "心当たりがない場合は、サーバー管理者に連絡してください。</p>", 403)
-            # 拒否されなかった人だけを回線の記録に残す
             if uid not in users:
                 v["ip_hashes"].setdefault(h, []).append(uid)
             _cap(v["ip_hashes"], 5000)
@@ -2519,7 +4397,7 @@ async def web_verify_post(request):
     err = await grant_verification(guild, member, "Web認証")
     if err:
         return web_page(f"<h1>認証できませんでした</h1><p>{_esc(err)}</p>", 500)
-    await notify_web_verified(rec.get("i"), member)  # Discord側にも「認証が完了しました」を表示する
+    await notify_web_verified(rec.get("i"), member)
     return web_page("<h1>✅ 認証が完了しました</h1><p>Discordに戻ってください。</p>")
 
 
@@ -2558,7 +4436,7 @@ def detect_join_suspects(member: discord.Member, v: dict) -> list:
         near = [u for (u, c, j) in rj if now - j < 3600 and abs(c - created) < 600 and u != member.id]
         if len(near) >= 2:
             reasons.append(f"作成時刻が近いアカウントが1時間以内に{len(near) + 1}件参加(サブ垢の疑い)")
-            for u in near:  # 先に参加していた人(まだ未認証なら)にも同じ疑いを付ける
+            for u in near:
                 v["suspects"].setdefault(str(u), "作成時刻が近いアカウントの集団参加(サブ垢の疑い)")
     rj.append((member.id, created, now))
     if reasons:
@@ -2578,10 +4456,9 @@ def verify_active(cfg: dict) -> bool:
 
 
 def verify_effective(guild_id: int):
-    # 現在有効な (方式, 最低アカウント年齢日数, レイド警戒中か) を返す
     v = store.get(guild_id)["verify"]
     raid = raid_until.get(guild_id, 0) > time.time()
-    if raid:  # レイド中は画像認証に強化(Web認証はもともと強いので、そのまま維持する)
+    if raid:
         return ("web" if v["mode"] == "web" else "image"), max(v["min_account_days"], RAID_MIN_ACCOUNT_DAYS), True
     return v["mode"], v["min_account_days"], False
 
@@ -2638,13 +4515,13 @@ def render_captcha(code: str, font_path: Optional[str]) -> io.BytesIO:
 
     noise_lines(5)
     step = (W - 40) / len(code)
-    for i, ch in enumerate(code):  # 1文字ずつ回転・ずらして貼る
+    for i, ch in enumerate(code):
         layer = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
         d = ImageDraw.Draw(layer)
         color = (rnd.randint(0, 110), rnd.randint(0, 110), rnd.randint(0, 110), 255)
         try:
             d.text((48, 48), ch, font=font, fill=color, anchor="mm")
-        except ValueError:  # ビットマップフォント(anchor非対応)
+        except ValueError:
             d.text((24, 24), ch, font=font, fill=color)
         layer = layer.rotate(rnd.uniform(-30, 30), resample=Image.Resampling.BICUBIC)
         x = int(20 + step * i + step / 2 - 48 + rnd.randint(-4, 4))
@@ -2687,7 +4564,6 @@ async def kick_for_verify(member: discord.Member, reason: str) -> bool:
 
 
 async def grant_verification(guild: discord.Guild, member: discord.Member, method: str) -> Optional[str]:
-    # 認証ロールを付与する。失敗時はユーザー向けのエラー文を返す
     v = store.get(guild.id)["verify"]
     role = guild.get_role(v["role"]) if v["role"] else None
     if not role:
@@ -2710,7 +4586,7 @@ async def grant_verification(guild: discord.Guild, member: discord.Member, metho
     v["pending"].pop(str(member.id), None)
     v["stats"]["verified"] += 1
     store.save()
-    await apply_autorole(member)  # ウェルカムメッセージは認証のたびには送らない
+    await apply_autorole(member)
     await send_log(guild, make_embed("✅ 認証完了", f"{member.mention} (`{member.id}`)\n方式: {method}", GREEN))
     return None
 
@@ -2729,7 +4605,7 @@ async def check_answer(interaction: discord.Interaction, given: str) -> None:
     key, now = (guild.id, member.id), time.time()
     if verify_lock.get(key, 0) > now:
         return await interaction.followup.send(f"🚫 制限中です。<t:{int(verify_lock[key])}:R> に再試行できます。", ephemeral=True)
-    chall = verify_challenges.pop(key, None)  # 1回限り(使い回し・総当たり対策)
+    chall = verify_challenges.pop(key, None)
     if not chall or chall[1] < now:
         return await interaction.followup.send("⌛ 問題の有効期限が切れました。パネルのボタンをもう一度押してください。", ephemeral=True)
     answer = re.sub(r"\s+", "", given).upper()
@@ -2815,7 +4691,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
         return
 
     reasons = suspect_reasons(member, v)
-    if reasons:  # サブ垢・再参加などの疑いがある人は、設定に従って保留またはキック
+    if reasons:
         v["stats"]["denied"] += 1
         store.save()
         txt, kick = " / ".join(reasons), v["suspect_action"] == "kick"
@@ -2831,7 +4707,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
             await _eph(interaction, "🛡️ アカウントの確認が必要なため、サーバー管理者の承認待ちです。しばらくお待ちください。")
         return
 
-    if mode == "web":  # Web認証: あなた専用リンクを案内する(認証はブラウザで完了する)
+    if mode == "web":
         if not WEB_READY:
             return await _eph(interaction, "⚠️ Web認証の準備ができていません。管理者に連絡してください。")
         try:
@@ -2846,7 +4722,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
             return await _eph(interaction, "⚠️ 認証リンクを作れませんでした。管理者に連絡してください。")
 
     note = ""
-    if v["bot_check"] and mode != "image":  # ロボット確認の強化: ボタンだけの認証は計算に、疑わしい新規アカウントは画像認証に
+    if v["bot_check"] and mode != "image":
         if age_days < 7 or is_default_avatar(member):
             mode, note = "image", "\n🛡️ アカウントの確認のため、画像認証になりました。"
         elif mode == "button":
@@ -2862,7 +4738,7 @@ async def verify_click(interaction: discord.Interaction) -> None:
         verify_issued[key] = now
         return await interaction.response.send_modal(AnswerModal(question))
 
-    await interaction.response.defer(ephemeral=True)  # 画像CAPTCHA
+    await interaction.response.defer(ephemeral=True)
     code = "".join(secrets.choice(CAPTCHA_CHARS) for _ in range(5))
     try:
         font_path = await ensure_font()
@@ -2877,7 +4753,6 @@ async def verify_click(interaction: discord.Interaction) -> None:
 
 
 class VerifyPanelView(discord.ui.View):
-    # 再起動後も動く永続ビュー(custom_id固定)
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -2905,7 +4780,7 @@ async def delete_panel(guild: discord.Guild) -> None:
 
 def verify_view(v: dict) -> "VerifyPanelView":
     view = VerifyPanelView()
-    view.start.label = (v.get("panel_button") or "認証する")[:80]  # ボタンの名前は設定で変更できる
+    view.start.label = (v.get("panel_button") or "認証する")[:80]
     return view
 
 
@@ -2956,9 +4831,8 @@ class VerifyTextModal(discord.ui.Modal, title="認証パネルの文面を編集
 
 @tasks.loop(minutes=1)
 async def verify_watch():
-    # 時間内に認証しなかったメンバーのキック / 不要になった待機リストの掃除
     now = time.time()
-    for k in [k for k, t in verify_issued.items() if now - t > CHALLENGE_TTL * 2]:  # 回答されなかった問題の記録を掃除
+    for k in [k for k, t in verify_issued.items() if now - t > CHALLENGE_TTL * 2]:
         verify_issued.pop(k, None)
     for guild in list(bot.guilds):
         if guild.unavailable:
@@ -3262,17 +5136,9 @@ async def verify_disable(interaction: discord.Interaction):
     await interaction.followup.send("✅ 認証を無効化しました。\n※未認証ロールを使っていた場合、付与済みの人のロールは手動で外してください。", ephemeral=True)
 
 
-# =====================================================================
-# チケット機能
-#   - パネルのボタン → 件名/内容を入力 → 専用の非公開チャンネルを自動作成
-#   - スタッフロール / 担当者(claim) / 作成数の上限 / ブロックリスト
-#   - クローズ(作成者/スタッフ/管理者): 記録(.txt)を保存・DM送信し、チャンネルを閲覧のみにロック
-#   - 削除(管理者のみ): クローズ済みチケットのチャンネルを削除
-#   - 無操作での自動クローズ、認証機能との連携(未認証者は作成不可)
-# =====================================================================
 JST = timezone(timedelta(hours=9))
-TICKET_COOLDOWN = 30   # 同一ユーザーの連続作成を防ぐ秒数
-ticket_last: dict = {}  # (guild,user) -> 最後に作成した時刻
+TICKET_COOLDOWN = 30
+ticket_last: dict = {}
 
 ticket_group = app_commands.Group(
     name="ticket", description="チケットの操作(チケットチャンネル内で使います)", guild_only=True,
@@ -3291,13 +5157,12 @@ def ticket_is_staff(member: discord.Member, tc: dict) -> bool:
 
 
 def ticket_open_of(guild: discord.Guild, tc: dict, uid: int) -> list:
-    # そのユーザーが開いているチケットch。手動で消されたチャンネルは台帳から掃除する
     res = []
     for cid, info in list(tc["open"].items()):
         ch = guild.get_channel(int(cid))
         if ch is None:
             tc["open"].pop(cid, None)
-        elif info["owner"] == uid and not info.get("closed"):  # クローズ済みは上限に数えない
+        elif info["owner"] == uid and not info.get("closed"):
             res.append(ch)
     return res
 
@@ -3323,7 +5188,6 @@ async def build_transcript(channel: discord.TextChannel, info: dict) -> bytes:
 
 
 async def lock_ticket_channel(channel: discord.TextChannel) -> None:
-    # 作成者・スタッフなど個別に許可していた対象を「閲覧のみ」にする(管理者とBOTは影響を受けない)
     guild = channel.guild
     for target, ow in list(channel.overwrites.items()):
         if target.id in (guild.id, guild.me.id):
@@ -3337,18 +5201,18 @@ async def lock_ticket_channel(channel: discord.TextChannel) -> None:
 
 
 async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Member], reason: Optional[str]) -> bool:
-    # クローズ: 記録を保存してチャンネルをロックする。削除はしない(削除は管理者のみ → delete_ticket)
     guild = channel.guild
     cfg = store.get(guild.id)
     tc = cfg["ticket"]
     info = tc["open"].get(str(channel.id))
-    if not info or info.get("closed"):  # 先にフラグを立てて二重クローズを防ぐ
+    if not info or info.get("closed"):
         return False
     info["closed"] = True
     info["closed_by"] = closer.id if closer else None
     info["closed_at"] = int(time.time())
     tc["stats"]["closed"] += 1
     store.save()
+    record_ticket_close(guild.id, info, closer, reason)
     await lock_ticket_channel(channel)
     data = None
     try:
@@ -3390,7 +5254,6 @@ async def close_ticket(channel: discord.TextChannel, closer: Optional[discord.Me
 
 
 async def delete_ticket(channel: discord.TextChannel, deleter: discord.Member) -> bool:
-    # 削除: 管理者のみ・クローズ済みのチケットのみ(呼び出し側で権限を確認済みであること)
     guild = channel.guild
     tc = store.get(guild.id)["ticket"]
     info = tc["open"].pop(str(channel.id), None)
@@ -3403,7 +5266,7 @@ async def delete_ticket(channel: discord.TextChannel, deleter: discord.Member) -
         await channel.delete(reason=f"チケット削除: {deleter}")
     except discord.HTTPException:
         log.warning("チケットチャンネルの削除に失敗 guild=%s channel=%s", guild.id, channel.id)
-        tc["open"][str(channel.id)] = info  # 失敗したので台帳に戻す
+        tc["open"][str(channel.id)] = info
         store.save()
         return False
     return True
@@ -3488,7 +5351,7 @@ async def ticket_click(interaction: discord.Interaction) -> None:
         return await _eph(interaction, "⚠️ チケットは現在利用できません。管理者に連絡してください。")
     if member.id in tc["blocked"]:
         return await _eph(interaction, "🚫 あなたはチケットを作成できません。")
-    if verify_active(cfg):  # 認証機能との連携: 未認証者は作成不可
+    if verify_active(cfg):
         vrole = guild.get_role(cfg["verify"]["role"])
         if vrole and vrole not in member.roles:
             return await _eph(interaction, "🔐 先にメンバー認証を完了してください。")
@@ -3546,7 +5409,6 @@ class ConfirmDeleteView(discord.ui.View):
 
 
 class TicketClosedView(discord.ui.View):
-    # クローズ済みチケットに付く「削除」ボタン。押せるのは管理者のみ
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -3628,7 +5490,6 @@ async def post_ticket_panel(guild: discord.Guild, channel: discord.TextChannel) 
 
 @tasks.loop(minutes=15)
 async def ticket_watch():
-    # 無操作チケットの自動クローズ(auto_close_hours > 0 のサーバーのみ)
     now = discord.utils.utcnow()
     for guild in list(bot.guilds):
         if guild.unavailable:
@@ -3642,7 +5503,7 @@ async def ticket_watch():
                 tc["open"].pop(cid, None)
                 store.save()
                 continue
-            if info.get("closed"):  # クローズ済みは削除待ち(自動削除はしない)
+            if info.get("closed"):
                 continue
             last = (discord.utils.snowflake_time(ch.last_message_id) if ch.last_message_id
                     else datetime.fromtimestamp(info["created"], timezone.utc))
@@ -3659,11 +5520,10 @@ async def _before_ticket_watch():
 @bot.event
 async def on_guild_channel_delete(channel):
     tc = store.get(channel.guild.id)["ticket"]
-    if tc["open"].pop(str(channel.id), None) is not None:  # 手動削除されたチケットを台帳から外す
+    if tc["open"].pop(str(channel.id), None) is not None:
         store.save()
 
 
-# ---- チケット内で使うコマンド ---------------------------------------------
 def _ticket_here(interaction: discord.Interaction):
     tc = store.get(interaction.guild.id)["ticket"]
     return tc, tc["open"].get(str(interaction.channel_id))
@@ -3731,14 +5591,13 @@ async def ticket_rename(interaction: discord.Interaction, name: app_commands.Ran
     if not ticket_is_staff(interaction.user, tc):
         return await interaction.response.send_message("❌ スタッフのみ実行できます。", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
-    try:  # 名前変更は10分に2回までのレート制限があるため待たされすぎないようにする
+    try:
         await asyncio.wait_for(interaction.channel.edit(name=name, reason=f"ticket rename by {interaction.user}"), timeout=8)
     except asyncio.TimeoutError:
         return await interaction.followup.send("⏳ 名前変更の回数制限中です。しばらくしてからお試しください。", ephemeral=True)
     await interaction.followup.send("✅ 名前を変更しました。", ephemeral=True)
 
 
-# ---- 管理者用の設定コマンド -----------------------------------------------
 def _can_post(ch: discord.abc.GuildChannel, me: discord.Member, files: bool = False) -> bool:
     p = ch.permissions_for(me)
     return p.view_channel and p.send_messages and p.embed_links and (p.attach_files if files else True)
@@ -3941,11 +5800,6 @@ async def tcfg_disable(interaction: discord.Interaction):
     await interaction.followup.send("✅ チケット機能を無効化しました。\n※ すでに開いているチケットは、クローズするまでそのまま残ります。", ephemeral=True)
 
 
-# =====================================================================
-# ロールパネル
-#   - ボタンを押すとロールを付与、もう一度押すと解除(1パネル最大25ロール)
-#   - 「1つだけ選択」モード、認証前のメンバーは利用不可、危険な権限のロールは設定不可
-# =====================================================================
 RP_MAX_ROLES = 25
 rolepanel_group = app_commands.Group(
     name="rolepanel", description="ロールパネル(ボタンでロールを付与/解除)の管理",
@@ -3997,7 +5851,7 @@ async def role_panel_click(interaction: discord.Interaction, rid: int) -> None:
     p = cfg["rolepanel"]["panels"].get(str(interaction.message.id))
     if not p or not any(r["id"] == rid for r in p["roles"]):
         return await _eph(interaction, "⚠️ このロールパネルは無効です。管理者に連絡してください。")
-    if verify_active(cfg) and str(member.id) in cfg["verify"]["pending"]:  # 認証前はロールを取れない
+    if verify_active(cfg) and str(member.id) in cfg["verify"]["pending"]:
         return await _eph(interaction, "🔐 先にメンバー認証を完了してください。")
     role = guild.get_role(rid)
     me = guild.me
@@ -4202,7 +6056,7 @@ async def rp_panel_choices(interaction: discord.Interaction, current: str):
     return out[:25]
 
 
-for _cmd in (rp_add, rp_remove, rp_delete, rp_text):  # message_id は一覧から選べるようにする
+for _cmd in (rp_add, rp_remove, rp_delete, rp_text):
     _cmd.autocomplete("message_id")(rp_panel_choices)
 
 
@@ -4221,12 +6075,7 @@ async def rp_list(interaction: discord.Interaction):
     await interaction.response.send_message(embed=e, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
-# =====================================================================
-# Webダッシュボード(Discordログイン・管理者のみ)
-#   - /web でURLを案内。設定系スラッシュコマンドの初回実行時に、Webでも操作できることを一度だけ案内
-#   - 対応: /config(基本・荒らし対策・過疎アラート・警告・名言画像) /verify(認証) /ticketconfig(チケット) /rolepanel(ロールパネル) の設定すべて
-# =====================================================================
-DASH_TTL = 30 * 24 * 3600   # ログインを保つ期間(使うたびに延長される)
+DASH_TTL = 30 * 24 * 3600
 WEB_HINT_ROOTS = {"config", "verify", "ticketconfig", "rolepanel"}
 
 
@@ -4283,7 +6132,7 @@ class DashSessions:
         rec = self.get(sid)
         if rec:
             rec["exp"] = time.time() + DASH_TTL
-            if time.time() - self._saved > 3600:  # 書き込みは1時間に1回まで
+            if time.time() - self._saved > 3600:
                 self._write()
 
     def delete(self, sid: str) -> None:
@@ -4292,7 +6141,7 @@ class DashSessions:
 
 
 dash_sessions = DashSessions(DATA_DIR)
-dash_states: dict = {}     # OAuth state -> {"exp", "g"(最初に開くサーバー), "none"(prompt=none を使ったか)}
+dash_states: dict = {}
 
 
 def _dash_sid(request) -> str:
@@ -4362,13 +6211,18 @@ def _oauth_setup_page() -> web.Response:
 async def dash_index(request):
     if not OAUTH_READY:
         return _oauth_setup_page()
-    if not _dash_session(request):  # ログインしていなければ、Discordのログインへ自動で移動する(ログイン後は元のサーバーの画面へ)
+    if not _dash_session(request):
         gid = _valid_gid(request.query.get("g"))
         raise web.HTTPFound("/login" + (f"?g={gid}" if gid else ""))
     try:
         with open(os.path.join(BASE_DIR, "dashboard.html"), encoding="utf-8") as f:
-            return web.Response(text=f.read(), content_type="text/html",
-                                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
+            page = f.read()
+        if 'href="/web/manage"' not in page:
+            link = ('<a href="/web/manage" style="position:fixed;right:14px;top:14px;z-index:9999;padding:7px 16px;border-radius:99px;'
+                    'background:#5865f2;color:#fff;text-decoration:none;font:600 13px system-ui,sans-serif">サーバー管理</a>')
+            page = page.replace("</body>", link + "</body>", 1) if "</body>" in page else page + link
+        return web.Response(text=page, content_type="text/html",
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
     except OSError:
         return web.Response(text="dashboard.html が bot.py と同じフォルダにありません。", status=404)
 
@@ -4379,9 +6233,9 @@ async def dash_login(request):
     if not _rate_ok(client_ip(request)):
         return web_page("<h1>アクセスが多すぎます</h1><p>しばらく待ってからやり直してください。</p>", 429)
     gid = _valid_gid(request.query.get("g"))
-    if _dash_session(request):  # すでにログイン済みなら、そのまま画面へ
+    if _dash_session(request):
         raise web.HTTPFound("/" + (f"?g={gid}" if gid else ""))
-    none = not request.query.get("consent")  # 2回目以降は、Discordの確認画面を飛ばして自動でログインする
+    none = not request.query.get("consent")
     now = time.time()
     for k in [k for k, v in dash_states.items() if v["exp"] < now]:
         dash_states.pop(k, None)
@@ -4390,7 +6244,7 @@ async def dash_login(request):
     q = (f"client_id={bot.application_id}&response_type=code&scope=identify&state={state}&prompt={'none' if none else 'consent'}"
          f"&redirect_uri={quote(DASH_BASE + '/callback', safe='')}")
     resp = web.HTTPFound("https://discord.com/oauth2/authorize?" + q)
-    resp.set_cookie("azq_state", state, max_age=600, httponly=True, samesite="Lax", secure=_is_https(), path="/")  # 別の人のログイン処理を横取りされない対策
+    resp.set_cookie("azq_state", state, max_age=600, httponly=True, samesite="Lax", secure=_is_https(), path="/")
     raise resp
 
 
@@ -4403,7 +6257,7 @@ async def dash_callback(request):
         return web_page("<h1>ログインの有効期限が切れました</h1><p><a href=\"/login\">もう一度ログインする</a></p>", 400)
     gq = f"&g={rec['g']}" if rec["g"] else ""
     if request.query.get("error"):
-        if rec["none"]:  # 初回など、確認画面が必要な場合は、確認画面つきでやり直す
+        if rec["none"]:
             raise web.HTTPFound("/login?consent=1" + gq)
         return web_page("<h1>ログインが取り消されました</h1><p><a href=\"/login?consent=1\">もう一度ログインする</a></p>", 400)
     code = request.query.get("code", "")
@@ -4453,13 +6307,13 @@ async def dash_me(request):
     dash_sessions.touch(sid)
     uid = int(sess["user"]["id"])
     gs = []
-    for g in bot.guilds:  # 管理できるサーバーだけを、Discordの今の権限で判定して並べる
+    for g in bot.guilds:
         m = g.get_member(uid)
         if m and _can_manage(m):
             gs.append({"id": str(g.id), "name": g.name, "icon": g.icon.url if g.icon else None})
     gs.sort(key=lambda x: x["name"].lower())
     resp = web.json_response({"user": sess["user"], "guilds": gs}, headers={"Cache-Control": "no-store"})
-    _set_sid_cookie(resp, sid)  # 使うたびにログインの有効期間を延ばす
+    _set_sid_cookie(resp, sid)
     return resp
 
 
@@ -4628,7 +6482,7 @@ async def dash_get(request):
 
 async def dash_save(request):
     g = await _dash_guild(request)
-    if request.headers.get("X-Requested-With") != "azq-dashboard":  # CSRF対策
+    if request.headers.get("X-Requested-With") != "azq-dashboard":
         raise web.HTTPForbidden()
     try:
         apply_settings(g, await request.json())
@@ -4641,7 +6495,6 @@ def _is_dash_admin(member) -> bool:
     return isinstance(member, discord.Member) and (member.guild_permissions.administrator or member.guild_permissions.manage_guild)
 
 
-# ---- ダッシュボードの操作(認証・チケット・ロールパネル): スラッシュコマンドと同じ検証を行う。サーバー管理者のみ ----
 def _dash_admin_member(request, g: discord.Guild) -> discord.Member:
     m = request.get("dash_member")
     if not m or not m.guild_permissions.administrator:
@@ -4650,7 +6503,7 @@ def _dash_admin_member(request, g: discord.Guild) -> discord.Member:
 
 
 def _shim(g, m):
-    return SimpleNamespace(guild=g, user=m)   # role_problem() が使う interaction の代わり
+    return SimpleNamespace(guild=g, user=m)
 
 
 def _text(d: dict, key: str, label: str, lo: int, hi: int) -> str:
@@ -5017,11 +6870,11 @@ async def act_welcome_test(g, m, d):
 
 async def dash_welcome_bg(request):
     g = await _dash_guild(request)
-    if request.headers.get("X-Requested-With") != "azq-dashboard":  # CSRF対策
+    if request.headers.get("X-Requested-With") != "azq-dashboard":
         raise web.HTTPForbidden()
     try:
         _dash_admin_member(request, g)
-        data = await request.read()   # 上限(6MB)を超えると自動で 413
+        data = await request.read()
         if not data:
             raise SettingsError("画像が空です。")
         await run_heavy(save_welcome_bg, g.id, data)
@@ -5040,7 +6893,7 @@ DASH_ACTIONS = {"welcome_test": act_welcome_test, "welcome_bg_delete": act_welco
 
 async def dash_do(request):
     g = await _dash_guild(request)
-    if request.headers.get("X-Requested-With") != "azq-dashboard":  # CSRF対策
+    if request.headers.get("X-Requested-With") != "azq-dashboard":
         raise web.HTTPForbidden()
     d = None
     try:
@@ -5061,8 +6914,689 @@ async def dash_do(request):
     return web.json_response({"ok": True, "msg": msg, "snap": dash_snapshot(g), "data": data})
 
 
+# ───────────────────────── /web:サーバー管理ページ(/web/manage) ─────────────────────────
+# ログインは既存のダッシュボードと共通(Discordでログイン)。操作できる範囲は、Discordの管理権限ではなく
+# スラッシュコマンドと同じ「役職」で毎回判定する。(サーバーの管理者でなくても、役職があれば自分の権限の範囲で使える)
+
+SRVADM_HTML = r'''<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark light">
+<title>サーバー管理 | AZQ BOT</title>
+<style>
+:root{color-scheme:dark light;--bg:#0b0c11;--surface:#13151d;--surface2:#1a1d28;--line:#252a38;--line2:#343b4f;--text:#eceef6;--mute:#8e95aa;--accent:#5865f2;--accent2:#7783ff;--soft:rgba(88,101,242,.16);--ok:#34d399;--danger:#ff5c6c;--warn:#f5c451;--shadow:0 10px 34px rgba(0,0,0,.45);--r:14px;--font:"Inter","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5fa;--surface:#fff;--surface2:#f0f2f8;--line:#e3e6ef;--line2:#cfd5e3;--text:#151823;--mute:#626a80;--accent:#4a56e2;--accent2:#3a46cc;--soft:rgba(74,86,226,.1);--ok:#0c9467;--danger:#d62c3f;--warn:#9a6f00;--shadow:0 10px 34px rgba(24,30,56,.10)}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:15px/1.7 var(--font);color:var(--text);background:radial-gradient(900px 420px at 8% -8%,var(--soft),transparent 62%),var(--bg);background-attachment:fixed;-webkit-font-smoothing:antialiased;padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+a{color:var(--accent2);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;border-radius:8px}
+::selection{background:var(--soft)}
+h1{font-size:26px;line-height:1.3;letter-spacing:-.01em;margin:4px 0 22px;font-weight:800}
+/* 上部バー */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.bar{max-width:1080px;margin:0 auto;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}
+.brand{display:flex;align-items:baseline;gap:10px;white-space:nowrap}
+.bn{font-weight:800;letter-spacing:.04em;font-size:16px}
+.bs{color:var(--mute);font-size:13px;font-weight:500}
+.who{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:13px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.who>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;padding:4px 12px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);color:var(--text);font-weight:600}
+.who>span:empty{display:none}
+/* レイアウト:左にナビ、右に内容 */
+.shell{max-width:1080px;margin:0 auto;padding:26px 20px;display:grid;grid-template-columns:196px minmax(0,1fr);gap:32px;align-items:start}
+.shell:has(#tabs.hidden){grid-template-columns:minmax(0,780px);justify-content:start}
+.side{position:sticky;top:78px}
+.side:has(#tabs.hidden){display:none}
+.tabs{display:flex;flex-direction:column;gap:3px}
+.tabs button{position:relative;display:block;width:100%;text-align:left;background:none;border:0;border-radius:10px;color:var(--mute);font:600 14px var(--font);padding:9px 14px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.tabs button:hover{color:var(--text);background:var(--surface2)}
+.tabs button[aria-selected=true],.tabs button.on{color:var(--text);background:var(--soft)}
+.tabs button[aria-selected=true]::before,.tabs button.on::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--accent2)}
+main{min-width:0;max-width:780px}
+/* カード */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px 24px;margin:0 0 16px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+.card h2{font-size:15px;font-weight:700;letter-spacing:.01em;margin:0 0 4px}
+.desc{color:var(--mute);font-size:13px;margin:0 0 14px;line-height:1.65}
+/* 入力 */
+select,input:not([type]),input[type=number],input[type=text],textarea{width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 13px;font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s,background .15s}
+select{appearance:none;-webkit-appearance:none;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238e95aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;cursor:pointer}
+select:hover,input:hover,textarea:hover{border-color:var(--line2)}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
+textarea{resize:vertical;min-height:88px;line-height:1.6}
+::placeholder{color:var(--mute);opacity:.7}
+input[type=file]{color:var(--mute);font-size:13px;max-width:100%}
+input[type=file]::file-selector-button{margin-right:10px;padding:7px 14px;border-radius:9px;border:1px solid var(--line2);background:var(--surface2);color:var(--text);font:600 13px var(--font);cursor:pointer}
+/* ボタン */
+.btn,.b{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--accent);color:#fff;border:1px solid transparent;border-radius:10px;padding:8px 18px;font:700 14px var(--font);cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .05s,box-shadow .15s}
+.btn:hover{background:var(--accent2)}
+.btn:active,.b:active{transform:translateY(1px)}
+.btn:disabled,.b:disabled{opacity:.5;cursor:not-allowed}
+.btn.sub,.b{background:var(--surface2);border-color:var(--line);color:var(--text);padding:7px 14px;font-size:13px}
+.btn.sub:hover,.b:hover{border-color:var(--line2);background:var(--line)}
+.b.pri{background:var(--accent);border-color:transparent;color:#fff;padding:8px 18px;font-size:14px}
+.b.pri:hover{background:var(--accent2)}
+.btn.red,.b.ng{background:var(--danger);border-color:transparent;color:#fff}
+.btn.red:hover,.b.ng:hover{filter:brightness(1.1);background:var(--danger)}
+.b.ok{background:var(--ok);border-color:transparent;color:#06281c}
+.b.ok:hover{filter:brightness(1.08);background:var(--ok)}
+/* 切り替えスイッチ */
+.check{display:flex;gap:12px;align-items:flex-start;padding:9px 0;cursor:pointer}
+.check input{appearance:none;-webkit-appearance:none;flex:none;width:40px;height:23px;margin:1px 0 0;border-radius:99px;background:var(--line2);position:relative;cursor:pointer;transition:background .2s}
+.check input::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
+.check input:checked{background:var(--accent)}
+.check input:checked::after{transform:translateX(17px)}
+.check small{display:block;color:var(--mute);font-size:12px;line-height:1.55;margin-top:1px}
+/* チップ */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.chip{background:var(--soft);border:1px solid transparent;color:var(--text);border-radius:99px;padding:2px 12px;font:600 13px var(--font);cursor:pointer;transition:background .15s,border-color .15s}
+.chip:hover{border-color:var(--danger);background:transparent}
+/* 通知・保存バー */
+.msg{border-radius:12px;padding:11px 16px;margin:0 0 16px;border:1px solid var(--line);background:var(--surface2);font-size:14px}
+.msg.err{border-color:var(--danger);color:var(--danger)}
+.savebar{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 16px calc(16px + env(safe-area-inset-bottom,0px));pointer-events:none}
+.savebar .bar2{pointer-events:auto;max-width:780px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px 10px 20px;border-radius:16px;background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line2);box-shadow:var(--shadow)}
+/* 保存ボタンが無い画面で、メッセージも無いときは、バーごと隠す */
+.savebar:has(#saveBtn.hidden):has(#status:empty){display:none}
+#status{font-size:13px;color:var(--mute);min-width:0}
+#status.err{color:var(--danger)}#status.ok{color:var(--ok)}#status.dirty{color:var(--warn)}
+#status a{color:var(--accent2);margin:0 4px}
+.hidden{display:none!important}
+footer{color:var(--mute);font-size:12px;margin:28px 0 8px}
+@media(max-width:860px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:14px;padding:16px 14px}
+  .side{position:sticky;top:57px;z-index:15;margin:0 -14px;padding:8px 14px;background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .tabs{flex-direction:row;overflow-x:auto;gap:4px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{width:auto;flex:0 0 auto;padding:8px 14px}
+  .tabs button[aria-selected=true]::before,.tabs button.on::before{left:12px;right:12px;top:auto;bottom:2px;width:auto;height:2px}
+  .bar{padding:10px 14px}.bs{display:none}
+  .who{flex-wrap:nowrap;gap:6px}.who>span{display:none}.who .btn,.who select{padding:6px 11px;font-size:12px}.who select{padding-right:30px}
+  .card{padding:16px 16px}
+  h1{font-size:22px;margin-bottom:16px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+/* サーバー管理ページ固有 */
+.card h3{font-size:12px;font-weight:700;letter-spacing:.04em;margin:18px 0 8px;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.mut{color:var(--mute);font-size:13px}
+.tag{display:inline-flex;align-items:center;padding:1px 10px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);font-size:12px;font-weight:600}
+.tag.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.tag.ng{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,transparent);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.tag.wa{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;align-items:end}
+form label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
+form .wide{grid-column:1/-1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{color:var(--mute);font-weight:600;font-size:12px;letter-spacing:.03em}
+td b{font-variant-numeric:tabular-nums}
+.qa{margin:10px 0}.qa .q{font-size:12px;color:var(--mute);margin-bottom:3px}
+.qa .a{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px}
+.mp{position:relative;display:flex;gap:8px;flex-wrap:wrap}.mp .mq{flex:1 1 150px;width:auto}
+.mr{flex:1 0 100%;display:flex;flex-wrap:wrap;gap:6px}
+.mr button{border:1px solid var(--line);background:var(--surface2);color:var(--text);border-radius:99px;padding:3px 13px;cursor:pointer;font:600 13px var(--font);transition:border-color .15s}
+.mr button:hover{border-color:var(--accent)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:92vw;padding:11px 20px;border-radius:12px;background:var(--text);color:var(--bg);font-weight:600;font-size:14px;white-space:pre-wrap;display:none;z-index:50;box-shadow:var(--shadow)}
+#toast.err{background:var(--danger);color:#fff}
+.empty{color:var(--mute);padding:6px 0;font-size:14px}
+.log{font-size:13px;border-bottom:1px solid var(--line);padding:8px 0;word-break:break-word;line-height:1.6}
+.log:last-child{border-bottom:0}
+.rank-n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--surface2);font-weight:800;font-size:13px;font-variant-numeric:tabular-nums}
+.rank-n.t1{background:var(--accent);color:#fff}.rank-n.t2{background:var(--soft);color:var(--accent2)}.rank-n.t3{background:var(--soft);color:var(--accent2)}
+.plus{color:var(--ok);font-weight:700}.minus{color:var(--danger);font-weight:700}
+.lock{display:flex;gap:8px;align-items:center;color:var(--mute);font-size:13px;padding:2px 0}
+.lock::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+main{max-width:none}
+</style>
+</head>
+<body>
+<header class="top"><div class="bar"><div class="brand"><span class="bn">AZQ BOT</span><span class="bs">サーバー管理</span></div>
+<div class="who"><select id="gsel" aria-label="サーバー" style="width:auto;max-width:46vw"></select><span id="who"></span><a class="btn sub" href="/">設定ダッシュボード</a><a href="#" id="logout" class="btn sub">ログアウト</a></div></div></header>
+<div class="shell">
+<aside class="side"><nav class="tabs" id="tabs" aria-label="項目"></nav></aside>
+<main id="main"><div class="empty">読み込み中…</div></main>
+</div>
+<div id="toast"></div>
+<script>
+const H = {'Content-Type': 'application/json', 'X-Requested-With': 'azq-dashboard'};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const fmt = t => t ? new Date(t * 1000).toLocaleString('ja-JP', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+let S = null, GID = null, TAB = 'home', PER = 'week', busy = false;
+const TABS = [['home', '概要'], ['apply', '参加申請'], ['staff', 'スタッフ応募'], ['roles', 'ロール'], ['points', 'ポイント'], ['logs', '履歴・ログ'], ['admin', '役職・権限']];
+
+function toast(msg, err) {
+  const t = $('#toast');
+  t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', err ? 7000 : 4000);
+}
+async function api(url, opt) {
+  const r = await fetch(url, opt);
+  if (r.status === 401) { location.href = '/login' + (GID ? '?g=' + GID : ''); throw new Error('ログインが必要です'); }
+  if (!r.ok) throw new Error((await r.text()) || (r.status === 403 ? 'この操作の権限がありません。' : 'エラーが発生しました (' + r.status + ')'));
+  return r.json();
+}
+async function load() {
+  S = await api(`/api/guild/${GID}/manage`);
+  render();
+}
+async function act(action, data) {
+  if (busy) return;
+  busy = true; document.body.style.cursor = 'wait';
+  try {
+    const r = await api(`/api/guild/${GID}/manage`, {method: 'POST', headers: H, body: JSON.stringify({action, ...data})});
+    S = r.snap; render(); toast(r.msg);
+  } catch (e) { toast(e.message, true); }
+  finally { busy = false; document.body.style.cursor = ''; }
+}
+
+const sel = (name, list, cur, blank) => `<select name="${name}">${blank !== undefined ? `<option value="">${esc(blank)}</option>` : ''}${list.map(x => `<option value="${esc(x.id)}"${String(x.id) === String(cur) ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`;
+const field = (label, inner, cls) => `<label class="${cls || ''}">${esc(label)}${inner}</label>`;
+const num = (name, v, ph) => `<input type="number" name="${name}" value="${esc(v ?? '')}" placeholder="${esc(ph || '')}">`;
+const mp = (name = 'member') => `<div class="mp"><input type="hidden" name="${name}"><input class="mq" placeholder="名前またはIDで検索"><button type="button" class="b" data-search>検索</button><div class="mr"></div></div>`;
+const form = (act, body, btn, cls) => `<form data-act="${act}" class="${cls || ''}">${body}<div class="wide"><button class="b pri">${esc(btn || '実行')}</button></div></form>`;
+const rankOpts = (blank) => Object.entries(S.rank_names).sort((a, b) => b[0] - a[0]).map(([k, v]) => ({id: k, name: v + '以上'}));
+const empty = t => `<div class="empty">${esc(t)}</div>`;
+const lock = (k, inner) => S.can[k] ? inner : `<div class="lock">この操作は「${esc(S.rank_names[S.perms.find(p => p.key === k).need])}」以上の役職が必要です。</div>`;
+
+function appCard(kind, a) {
+  const btn = a.can
+    ? `<button class="b ok" data-do="review" data-args='${esc(JSON.stringify({kind, id: a.id, approve: true}))}' data-confirm="承認して、ロールを付与します。よろしいですか?">承認</button>
+       <button class="b ng" data-do="review" data-prompt="却下の理由(申請者にDMで伝わります・空でも可)" data-args='${esc(JSON.stringify({kind, id: a.id, approve: false}))}'>却下</button>`
+    : `<span class="mut">審査には「${esc(a.need)}」以上の役職が必要です(自分の申請は審査できません)</span>`;
+  return `<div class="card"><div class="row"><b>#${a.id}</b><span>${esc(a.name)}</span>${a.pos ? `<span class="tag">${esc(a.pos)}</span>` : ''}<span class="mut">${fmt(a.t)}</span></div>
+    ${a.ans.map(([q, x]) => `<div class="qa"><div class="q">${esc(q)}</div><div class="a">${esc(x || '(未入力)')}</div></div>`).join('')}
+    <div class="row" style="margin-top:8px">${btn}</div></div>`;
+}
+function histTable(list) {
+  if (!list.length) return empty('履歴はありません。');
+  return `<table><tr><th>#</th><th>申請者</th><th>結果</th><th>審査</th><th>日時</th></tr>${list.map(a =>
+    `<tr><td>${a.id}</td><td>${esc(a.name)}${a.pos ? ` <span class="tag">${esc(a.pos)}</span>` : ''}</td><td><span class="tag ${a.st === 'approved' ? 'ok' : 'ng'}">${a.st === 'approved' ? '承認' : '却下'}</span>${a.why ? `<div class="mut">${esc(a.why)}</div>` : ''}</td><td>${esc(a.by || '')}</td><td>${fmt(a.rt || a.t)}</td></tr>`).join('')}</table>`;
+}
+const qForm = (kind, qs) => lock('rank_manage', `<form data-act="questions"><input type="hidden" name="kind" value="${kind}"><label class="wide">質問(1行に1つ・最大5つ・各45文字まで)<textarea name="questions">${esc(qs.join('\n'))}</textarea></label><div class="wide"><button class="b">質問を保存</button></div></form>`);
+
+const VIEWS = {
+  home() {
+    const pj = S.apply.pending.filter(a => a.can).length, ps = S.staff.pending.filter(a => a.can).length;
+    return `<div class="card"><h2>${esc(S.gname)}</h2><div class="row"><span>あなた: <b>${esc(S.me.name)}</b></span><span class="tag">${esc(S.me.rank_name)}</span></div>
+      <div class="row" style="margin-top:8px"><span>審査待ちの参加申請: <b>${pj}</b>件</span><span>スタッフ応募: <b>${ps}</b>件</span></div></div>
+      <div class="card"><h2>あなたができる操作</h2><table>${S.perms.map(p => `<tr><td>${esc(p.desc)}</td><td>${S.can[p.key] ? '<span class="tag ok">できる</span>' : `<span class="tag">${esc(S.rank_names[p.need])}以上</span>`}</td></tr>`).join('')}</table></div>`;
+  },
+  apply() {
+    const a = S.apply;
+    return `<div class="card"><h2>審査待ち (${a.pending.length})</h2>${a.pending.length ? '' : empty('審査待ちの申請はありません。')}</div>${a.pending.map(x => appCard('j', x)).join('')}
+      <div class="card"><h2>設定 ${a.enabled ? '<span class="tag ok">受付中</span>' : '<span class="tag">停止中</span>'}</h2>${lock('rank_manage', `
+        ${form('apply_setup', field('申請ボタンを置くチャンネル', sel('panel_channel', S.channels, a.panel_channel, '選択')) + field('審査チャンネル(スタッフ専用に)', sel('review_channel', S.channels, a.review_channel, '選択')) + field('承認時に付与するロール', sel('role', S.roles, a.role, '選択')) + field('却下後の再申請まで(時間)', num('cooldown_hours', a.cooldown)), a.enabled ? 'パネルを再設置して更新' : '有効化してパネルを設置')}
+        ${a.enabled ? `<div class="row" style="margin-top:10px"><button class="b ng" data-do="apply_disable" data-confirm="参加申請を停止し、パネルを削除します。">受付を停止</button></div>` : ''}
+        <h3>質問</h3>${qForm('j', a.questions)}`)}</div>
+      <div class="card"><h2>履歴</h2>${histTable(a.history)}</div>`;
+  },
+  staff() {
+    const a = S.staff;
+    return `<div class="card"><h2>審査待ち (${a.pending.length})</h2>${a.pending.length ? '' : empty('審査待ちの応募はありません。')}</div>${a.pending.map(x => appCard('s', x)).join('')}
+      <div class="card"><h2>設定 ${a.enabled ? '<span class="tag ok">募集中</span>' : '<span class="tag">停止中</span>'}</h2>${lock('rank_manage', `
+        ${form('staff_setup', field('応募メニューを置くチャンネル', sel('panel_channel', S.channels, a.panel_channel, '選択')) + field('審査チャンネル(幹部以上専用に)', sel('review_channel', S.channels, a.review_channel, '選択')) + field('不合格後の再応募まで(時間)', num('cooldown_hours', a.cooldown)), a.enabled ? 'パネルを再設置して更新' : '有効化してパネルを設置')}
+        ${a.enabled ? `<div class="row" style="margin-top:10px"><button class="b ng" data-do="staff_disable" data-confirm="スタッフ応募を停止し、パネルを削除します。">募集を停止</button></div>` : ''}
+        <h3>募集する役職と、合格時に付与するロール</h3>
+        ${a.positions.map(p => `<form data-act="staff_position" style="margin-bottom:6px"><input type="hidden" name="key" value="${esc(p.key)}">
+          ${field('表示名', `<input name="label" value="${esc(p.label)}" maxlength="40">`)}${field('付与ロール', sel('role', S.roles, p.role, p.role ? '(変更しない)' : '未設定'))}
+          ${field('受付', `<select name="enabled"><option value="1"${p.enabled ? ' selected' : ''}>受付する</option><option value="0"${p.enabled ? '' : ' selected'}>停止</option></select>`)}
+          <div><button class="b">保存</button> <span class="mut">役職ランク: ${esc(p.rank_name)}</span></div></form>`).join('')}
+        <h3>質問</h3>${qForm('s', a.questions)}`)}</div>
+      <div class="card"><h2>履歴</h2>${histTable(a.history)}</div>`;
+  },
+  roles() {
+    const slotOpts = S.slots.map(s => ({id: s.name, name: s.name}));
+    return `<div class="card"><h2>登録ロール</h2>${S.slots.length ? `<table>${S.slots.map(s => `<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.role_name)}</td><td>${S.can.rank_manage ? `<button class="b" data-do="role_unset" data-args='${esc(JSON.stringify({name: s.name}))}' data-confirm="登録から外します。(Discord上のロールは消えません)">外す</button>` : ''}</td></tr>`).join('')}</table>` : empty('登録されたロールはありません。')}
+      ${lock('rank_manage', form('role_set', field('登録名(メンバー・情報提供者 など)', '<input name="name" maxlength="20">') + field('ロール', sel('role', S.roles, '', '選択')), '登録'))}</div>
+      <div class="card"><h2>ロールの付与・剥奪</h2>${lock('role_grant', S.slots.length ? `<form data-act="role_grant">${field('メンバー', mp())}${field('ロール', sel('name', slotOpts))}${field('自動で外すまでの日数(空=外さない)', num('days', ''))}
+        <div class="wide row"><button class="b pri">付与</button><button class="b ng" type="button" data-form-act="role_revoke">剥奪</button></div></form>` : empty('先にロールを登録してください。'))}
+        ${S.temp_roles && S.temp_roles.length ? `<h3>期限つきの付与</h3><table>${S.temp_roles.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(t.role)}</td><td>${fmt(t.exp)} まで</td></tr>`).join('')}</table>` : ''}</div>
+      <div class="card"><h2>地域(都道府県)ロール</h2><div class="mut">地方 ${S.region.regions}/8・都道府県 ${S.region.prefs}/47 を登録済み ${S.region.panel ? '/ パネル設置済み' : '/ パネル未設置'}</div>
+        ${lock('rank_manage', `<div class="row" style="margin:8px 0"><button class="b" data-do="region_create" data-args='{"include_prefectures":true}' data-confirm="地方8個・都道府県47個のロールを作成します(同名があれば再利用)。数十秒かかります。">ロールを作成</button></div>
+        ${form('region_panel', field('選択パネルを置くチャンネル', sel('channel', S.channels, S.region.panel, '選択')), 'パネルを設置')}
+        ${form('region_set_role', field('地方・都道府県', sel('name', S.region.names.map(n => ({id: n, name: n})))) + field('ロール', sel('role', S.roles, '', '選択')), '既存のロールを登録')}`)}</div>
+      ${S.role_hist ? `<div class="card"><h2>ロール変更履歴</h2>${S.role_hist.length ? S.role_hist.map(h => `<div class="log"><span class="mut">${fmt(h.t)}</span> <b>${esc(h.name)}</b> ${h.add.map(x => `<span class="plus">+ ${esc(x)}</span>`).join(' ')} ${h.rem.map(x => `<span class="minus">− ${esc(x)}</span>`).join(' ')} <span class="mut">実行: ${esc(h.by)}${h.why ? ' / ' + esc(h.why) : ''}</span></div>`).join('') : empty('履歴はありません。')}</div>` : ''}`;
+  },
+  points() {
+    const p = S.points, c = p.cfg;
+    const per = [['week', '週間'], ['month', '月間'], ['total', '累計(貢献度)']];
+    const rows = p.top[PER];
+    return `<div class="card"><h2>ランキング</h2><div class="row">${per.map(([k, n]) => `<button class="b${PER === k ? ' pri' : ''}" data-per="${k}">${n}</button>`).join('')}
+        <span class="mut">あなた: 今週 ${p.mine.week}pt / 今月 ${p.mine.month}pt / 累計 ${p.mine.total}pt</span></div>
+      ${rows.length ? `<table>${rows.map((r, i) => `<tr><td><span class="rank-n${i < 3 ? ' t' + (i + 1) : ''}">${i + 1}</span></td><td>${esc(r.name)}</td><td><b>${r.pts.toLocaleString()}</b> pt</td></tr>`).join('')}</table>` : empty('まだポイントがありません。')}</div>
+      <div class="card"><h2>ポイントの付与</h2>${lock('points_add', form('points_add', field('メンバー', mp()) + field('ポイント', num('amount', '', '1〜' + c.max_award)) + field('カテゴリ', sel('cat', p.cats)) + field('理由(必須)', '<input name="reason" maxlength="100">'), '付与'))}</div>
+      <div class="card"><h2>ポイントの減算</h2>${lock('points_remove', form('points_remove', field('メンバー', mp()) + field('ポイント', num('amount', '')) + field('理由(必須)', '<input name="reason" maxlength="100">'), '減算'))}</div>
+      <div class="card"><h2>履歴</h2>${p.log.length ? `<table><tr><th>#</th><th>日時</th><th>対象</th><th>増減</th><th>内容</th><th></th></tr>${p.log.map(e => `<tr><td>${e.id}</td><td>${fmt(e.t)}</td><td>${esc(e.name)}</td><td><b class="${e.d > 0 ? 'plus' : 'minus'}">${e.d > 0 ? '+' : ''}${e.d}</b></td><td>${esc(e.cat)} ${esc(e.why)}<div class="mut">${esc(e.by)}</div></td><td>${e.x ? '<span class="tag">取消済</span>' : (S.can.points_undo && e.cat !== '取消' ? `<button class="b" data-do="points_undo" data-args='${esc(JSON.stringify({id: e.id}))}' data-confirm="この履歴を取り消します。">取消</button>` : '')}</td></tr>`).join('')}</table>` : empty('履歴はありません。')}</div>
+      <div class="card"><h2>月間MVP</h2>${p.mvp_hist.length ? p.mvp_hist.map(h => `<div class="log">${esc(h.ym)}: <b>${esc(h.name)}</b> ${h.pts.toLocaleString()}pt</div>`).join('') : empty('まだ発表されていません。')}
+        ${lock('mvp', form('mvp', field('対象月(空=先月・例 2026-09)', '<input name="month" placeholder="2026-09">') + field('発表先(空=設定済み)', sel('channel', S.channels, '', '設定済みのチャンネル')), '発表する'))}</div>
+      ${lock('rank_manage', `<div class="card"><h2>ポイントの設定</h2><form data-act="points_config">
+        ${field('1回の付与上限', num('max_award', c.max_award))}${field('スタッフ1人の1日の付与上限', num('staff_daily_budget', c.staff_daily_budget))}${field('1人が1日に受け取れる上限', num('user_daily_cap', c.user_daily_cap))}${field('高額アラートのしきい値', num('alert_threshold', c.alert_threshold))}
+        ${field('自動付与:1回(0で停止)', num('auto_points', c.auto_points))}${field('自動付与:最低文字数', num('auto_min_len', c.auto_min_len))}${field('自動付与:間隔(秒)', num('auto_cooldown', c.auto_cooldown))}${field('自動付与:1日の上限', num('auto_daily_cap', c.auto_daily_cap))}${field('自動付与:参加から(日)', num('min_member_days', c.min_member_days))}
+        ${field('自動付与の対象に追加', sel('auto_channel_add', S.channels, '', '(なし)'))}${field('自動付与の対象から外す', sel('auto_channel_remove', S.channels.filter(x => p.auto_channels.includes(x.id)), '', '(なし)'))}
+        ${field('MVP発表チャンネル', sel('mvp_channel', S.channels, p.mvp_channel, '(変更しない)'))}${field('MVPロール', sel('mvp_role', S.roles, p.mvp_role, '(変更しない)'))}
+        ${field('毎月1日に自動発表', `<select name="mvp_auto"><option value="1"${c.mvp_auto ? ' selected' : ''}>ON</option><option value="0"${c.mvp_auto ? '' : ' selected'}>OFF</option></select>`)}
+        <div class="wide"><button class="b pri">保存</button></div></form></div>`)}`;
+  },
+  logs() {
+    if (!S.audit) return `<div class="card">${empty('履歴・ログの閲覧には「' + S.rank_names[S.perms.find(p => p.key === 'audit_view').need] + '」以上の役職が必要です。')}</div>`;
+    return `<div class="card"><h2>管理ログ(直近100件)</h2>${S.audit.length ? S.audit.map(x => `<div class="log"><span class="mut">${fmt(x.t)}</span> <b>${esc(x.title)}</b> ${esc(x.text)}</div>`).join('') : empty('ログはありません。')}</div>
+      <div class="card"><h2>チケット対応履歴</h2>${S.tickets.length ? S.tickets.map(x => `<div class="log"><b>#${String(x.n).padStart(4, '0')}</b> ${esc(x.owner)}${x.claimed ? ' / 担当 ' + esc(x.claimed) : ''} — ${esc(x.subject)} <span class="mut">${fmt(x.closed)} クローズ(${esc(x.by)})${x.why ? ' ' + esc(x.why) : ''}</span></div>`).join('') : empty('履歴はありません。')}</div>`;
+  },
+  admin() {
+    const ranks = [5, 4, 3, 2, 1];
+    return `<div class="card"><h2>役職とDiscordロールの対応</h2><div class="mut" style="margin-bottom:8px">サーバーオーナーとDiscordの管理者権限を持つ人は、常に管理者として扱われます。</div>
+      ${lock('rank_manage', ranks.map(r => form('rank_set', `<input type="hidden" name="rank" value="${r}">` + field(S.rank_names[r], sel('role', S.roles, S.ranks[r], '未設定')), '保存')).join(''))}</div>
+      <div class="card"><h2>機能ごとの必要役職</h2><table>${S.perms.map(p => `<tr><td>${esc(p.desc)}${p.changed ? ' <span class="tag wa">変更済み</span>' : ''}</td><td>${p.fixed || !S.can.rank_manage ? `<span class="tag">${esc(S.rank_names[p.need])}以上</span>` : `<form data-act="perm_set" style="display:flex;gap:6px"><input type="hidden" name="key" value="${esc(p.key)}">${sel('rank', rankOpts(), p.need)}<button class="b">変更</button></form>`}</td></tr>`).join('')}</table></div>`;
+  },
+};
+
+function render() {
+  if (!S) return;
+  $('#who').textContent = `${S.me.name}(${S.me.rank_name})`;
+  $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === TAB ? 'on' : ''}">${n}</button>`).join('');
+  $('#main').innerHTML = VIEWS[TAB]();
+}
+
+function collect(f) {
+  const o = {};
+  for (const [k, v] of new FormData(f)) o[k] = v;
+  return o;
+}
+document.addEventListener('submit', e => {
+  const f = e.target.closest('form[data-act]');
+  if (!f) return;
+  e.preventDefault();
+  act(f.dataset.act, collect(f));
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest('button,a');
+  if (!t) return;
+  if (t.dataset.tab) { TAB = t.dataset.tab; render(); window.scrollTo(0, 0); }
+  else if (t.dataset.per) { PER = t.dataset.per; render(); }
+  else if (t.dataset.do) {
+    if (t.dataset.confirm && !confirm(t.dataset.confirm)) return;
+    const data = t.dataset.args ? JSON.parse(t.dataset.args) : {};
+    if (t.dataset.prompt) { const r = prompt(t.dataset.prompt, ''); if (r === null) return; data.reason = r; }
+    act(t.dataset.do, data);
+  }
+  else if (t.dataset.formAct) { const f = t.closest('form'); if (confirm('剥奪します。よろしいですか?')) act(t.dataset.formAct, collect(f)); }
+  else if ('search' in t.dataset) {
+    const box = t.closest('.mp'), q = box.querySelector('.mq').value.trim();
+    if (!q) return;
+    try {
+      const list = await api(`/api/guild/${GID}/manage/members?q=${encodeURIComponent(q)}`);
+      box.querySelector('.mr').innerHTML = list.length ? list.map(x => `<button type="button" data-pick="${esc(x.id)}" data-label="${esc(x.name)}">${esc(x.name)} · ${esc(x.rank)}</button>`).join('') : '<span class="mut">見つかりません</span>';
+    } catch (err) { toast(err.message, true); }
+  }
+  else if (t.dataset.pick) {
+    const box = t.closest('.mp');
+    box.querySelector('input[type=hidden]').value = t.dataset.pick;
+    box.querySelector('.mq').value = t.dataset.label;
+    box.querySelector('.mr').innerHTML = `<span class="tag ok">選択: ${esc(t.dataset.label)}</span>`;
+  }
+  else if (t.id === 'logout') {
+    e.preventDefault();
+    try { await fetch('/api/logout', {method: 'POST', headers: H}); } catch (_) {}
+    location.href = '/bye';
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.classList.contains('mq')) { e.preventDefault(); e.target.closest('.mp').querySelector('[data-search]').click(); }
+});
+$('#gsel').addEventListener('change', async e => { GID = e.target.value; history.replaceState(null, '', '?g=' + GID); try { await load(); } catch (err) { toast(err.message, true); } });
+
+(async () => {
+  try {
+    const me = await api('/api/manage/guilds');
+    if (!me.user) { location.href = '/login'; return; }
+    if (!me.guilds.length) { $('#main').innerHTML = '<div class="card">役職を持っているサーバーがありません。管理者に、役職ロールの付与を依頼してください。</div>'; return; }
+    const want = new URLSearchParams(location.search).get('g');
+    GID = (me.guilds.find(g => g.id === want) || me.guilds[0]).id;
+    $('#gsel').innerHTML = me.guilds.map(g => `<option value="${esc(g.id)}"${g.id === GID ? ' selected' : ''}>${esc(g.name)}</option>`).join('');
+    await load();
+  } catch (err) { $('#main').innerHTML = `<div class="card">${esc(err.message)}</div>`; }
+})();
+</script>
+</body>
+</html>'''
+
+
+async def _srvadm_guild(request):
+    """ログイン中のユーザーが、このサーバーで役職(一般スタッフ以上)を持っているかを毎回確認する"""
+    sess = _dash_session(request)
+    if not sess:
+        raise web.HTTPUnauthorized()
+    try:
+        gid = int(request.match_info["gid"])
+        uid = int(sess["user"]["id"])
+    except (ValueError, KeyError):
+        raise web.HTTPNotFound()
+    guild = bot.get_guild(gid)
+    m = await _dash_member(guild, uid) if guild else None
+    if not m or rank_of(m) < 1:
+        raise web.HTTPForbidden()
+    return guild, m
+
+
+def _wid(v) -> Optional[int]:
+    v = str(v or "").strip()
+    return int(v) if v.isdigit() and len(v) <= 20 else None
+
+
+def _wint(d: dict, key: str, lo: int, hi: int, label: str, optional: bool = False) -> Optional[int]:
+    v = d.get(key)
+    if v is None or str(v).strip() == "":
+        if optional:
+            return None
+        raise SrvAdmError(f"{label}を入力してください。")
+    try:
+        n = int(str(v).strip())
+    except ValueError:
+        raise SrvAdmError(f"{label}は数字で入力してください。")
+    if not lo <= n <= hi:
+        raise SrvAdmError(f"{label}は {lo}〜{hi} の範囲で入力してください。")
+    return n
+
+
+def _wbool(d: dict, key: str) -> Optional[bool]:
+    v = d.get(key)
+    if v in (None, ""):
+        return None
+    return v in (True, 1, "1", "true", "on")
+
+
+def _wchannel(g: discord.Guild, d: dict, key: str, required: bool = True):
+    ch = g.get_channel(_wid(d.get(key)) or 0)
+    if not isinstance(ch, discord.TextChannel):
+        if required:
+            raise SrvAdmError("チャンネルを選んでください。")
+        return None
+    return ch
+
+
+def _wrole(g: discord.Guild, d: dict, key: str, required: bool = True):
+    r = g.get_role(_wid(d.get(key)) or 0)
+    if r is None and required:
+        raise SrvAdmError("ロールを選んでください。")
+    return r
+
+
+async def _wmember(g: discord.Guild, d: dict, key: str = "member") -> discord.Member:
+    uid = _wid(d.get(key))
+    m = (g.get_member(uid) or await _dash_member(g, uid)) if uid else None
+    if not m:
+        raise SrvAdmError("メンバーが見つかりません。検索して候補から選んでください。")
+    return m
+
+
+async def wa_review(g, m, d):
+    kind = d.get("kind")
+    if kind not in SEC:
+        raise SrvAdmError("種類が正しくありません。")
+    return await process_app(g, m, kind, _wint(d, "id", 1, 10 ** 9, "申請番号"), bool(d.get("approve")),
+                             str(d.get("reason") or "").strip()[:300])
+
+
+async def wa_rank_set(g, m, d):
+    return core_rank_set(g, _wint(d, "rank", 1, 5, "役職"), _wrole(g, d, "role", False))
+
+
+async def wa_perm_set(g, m, d):
+    return await core_perm_set(g, m, str(d.get("key") or ""), _wint(d, "rank", 1, 5, "役職", optional=True))
+
+
+async def wa_role_set(g, m, d):
+    return core_role_set(g, m, str(d.get("name") or ""), _wrole(g, d, "role"))
+
+
+async def wa_role_unset(g, m, d):
+    return core_role_unset(g, str(d.get("name") or ""))
+
+
+async def wa_role_grant(g, m, d):
+    return await core_role_grant(g, m, await _wmember(g, d), str(d.get("name") or ""), _wint(d, "days", 1, 365, "日数", optional=True))
+
+
+async def wa_role_revoke(g, m, d):
+    return await core_role_revoke(g, m, await _wmember(g, d), str(d.get("name") or ""))
+
+
+async def wa_points_add(g, m, d):
+    member = await _wmember(g, d)
+    ent, bal = await core_points_add(g, m, member, _wint(d, "amount", 1, 100000, "ポイント"), str(d.get("reason") or ""), str(d.get("cat") or "other"))
+    return f"💰 {member.display_name} に +{ent['d']}pt を付与しました。(合計 {bal:,}pt)"
+
+
+async def wa_points_remove(g, m, d):
+    member = await _wmember(g, d)
+    ent, bal = await core_points_remove(g, m, member, _wint(d, "amount", 1, 100000, "ポイント"), str(d.get("reason") or ""))
+    return f"➖ {member.display_name} から {-ent['d']}pt を減らしました。(合計 {bal:,}pt)"
+
+
+async def wa_points_undo(g, m, d):
+    return await core_points_undo(g, m, _wint(d, "id", 1, 10_000_000, "履歴番号"))
+
+
+async def wa_points_config(g, m, d):
+    vals = {k: _wint(d, k, lo, hi, k, optional=True) for k, (lo, hi) in POINT_RANGES.items()}
+    vals["mvp_auto"] = _wbool(d, "mvp_auto")
+    return await core_points_config(g, m, vals, _wchannel(g, d, "mvp_channel", False), _wrole(g, d, "mvp_role", False),
+                                    _wchannel(g, d, "auto_channel_add", False), _wchannel(g, d, "auto_channel_remove", False))
+
+
+async def wa_mvp(g, m, d):
+    return await core_mvp(g, str(d.get("month") or "").strip() or None, _wchannel(g, d, "channel", False))
+
+
+async def wa_apply_setup(g, m, d):
+    return await core_apply_setup(g, m, _wchannel(g, d, "panel_channel"), _wchannel(g, d, "review_channel"), _wrole(g, d, "role"),
+                                  _wint(d, "cooldown_hours", 0, 720, "再申請までの時間", optional=True))
+
+
+async def wa_apply_disable(g, m, d):
+    return await core_apply_disable(g)
+
+
+async def wa_staff_setup(g, m, d):
+    return await core_staff_setup(g, _wchannel(g, d, "panel_channel"), _wchannel(g, d, "review_channel"),
+                                  _wint(d, "cooldown_hours", 0, 720, "再応募までの時間", optional=True))
+
+
+async def wa_staff_disable(g, m, d):
+    return await core_staff_disable(g)
+
+
+async def wa_staff_position(g, m, d):
+    label = str(d.get("label") or "").strip()
+    return await core_staff_position(g, m, str(d.get("key") or ""), _wrole(g, d, "role", False), label or None,
+                                     _wbool(d, "enabled"), bool(d.get("clear_role")))
+
+
+async def wa_questions(g, m, d):
+    kind = d.get("kind")
+    qs = d.get("questions")
+    if not isinstance(qs, list):
+        qs = str(qs or "").splitlines()
+    return core_set_questions(g, kind, qs)
+
+
+async def wa_region_create(g, m, d):
+    return await core_region_create(g, bool(d.get("include_prefectures", True)))
+
+
+async def wa_region_panel(g, m, d):
+    return await core_region_panel(g, _wchannel(g, d, "channel"))
+
+
+async def wa_region_set_role(g, m, d):
+    return core_region_set_role(g, m, str(d.get("name") or ""), _wrole(g, d, "role"))
+
+
+# 操作 → (処理, 必要な権限キー)。review は申請ごとに必要な役職が違うので、処理の中で確認する。
+SRVADM_ACTIONS = {
+    "review": (wa_review, None),
+    "rank_set": (wa_rank_set, "rank_manage"), "perm_set": (wa_perm_set, "rank_manage"),
+    "role_set": (wa_role_set, "rank_manage"), "role_unset": (wa_role_unset, "rank_manage"),
+    "role_grant": (wa_role_grant, "role_grant"), "role_revoke": (wa_role_revoke, "role_grant"),
+    "points_add": (wa_points_add, "points_add"), "points_remove": (wa_points_remove, "points_remove"),
+    "points_undo": (wa_points_undo, "points_undo"), "points_config": (wa_points_config, "rank_manage"),
+    "mvp": (wa_mvp, "mvp"),
+    "apply_setup": (wa_apply_setup, "rank_manage"), "apply_disable": (wa_apply_disable, "rank_manage"),
+    "staff_setup": (wa_staff_setup, "rank_manage"), "staff_disable": (wa_staff_disable, "rank_manage"),
+    "staff_position": (wa_staff_position, "rank_manage"), "questions": (wa_questions, "rank_manage"),
+    "region_create": (wa_region_create, "rank_manage"), "region_panel": (wa_region_panel, "rank_manage"),
+    "region_set_role": (wa_region_set_role, "rank_manage"),
+}
+
+
+def srvadm_snapshot(g: discord.Guild, m: discord.Member) -> dict:
+    c = lg.get(g.id)
+    r = rank_of(m)
+    can = {k: r >= need(g.id, k) for k in PERMS}
+    pos_all = c["staff"]["positions"]
+
+    def app_row(kind: str, a: dict, pending: bool) -> dict:
+        row = {"id": a["id"], "u": str(a["u"]), "name": _who(g, a["u"]), "t": a["t"], "st": a["st"],
+               "pos": pos_all.get(a.get("pos") or "", {}).get("label") if kind == "s" else None}
+        if pending:
+            n = review_need(g.id, kind, a)
+            row.update(ans=a["ans"], need=rname(n), can=bool(r >= n and a["u"] != m.id))
+        else:
+            row.update(by=_who(g, a["by"]) if a.get("by") else None, rt=a.get("rt"), why=a.get("why") or "")
+        return row
+
+    def sec_snap(kind: str) -> dict:
+        sec = c[SEC[kind]]
+        apps = list(sec["apps"].values())
+        out = {"enabled": sec["enabled"], "panel_channel": _s(sec["panel_channel"]), "review_channel": _s(sec["review_channel"]),
+               "cooldown": sec["cooldown_hours"], "questions": sec["questions"],
+               "pending": [app_row(kind, a, True) for a in apps if a["st"] == "pending"][:50],
+               "history": [app_row(kind, a, False) for a in reversed(apps) if a["st"] in ("approved", "rejected")][:40]}
+        if kind == "j":
+            out["role"] = _s(sec["role"])
+        else:
+            out["positions"] = [{"key": k, "label": p["label"], "rank": p["rank"], "rank_name": rname(p["rank"]),
+                                 "role": _s(p["role"]), "enabled": p["enabled"]} for k, p in sec["positions"].items()]
+        return out
+
+    p = c["points"]
+
+    def top(per: str) -> list:
+        return [{"id": str(x.id), "name": x.display_name, "pts": n} for x, n in ranked(g, period_totals(g.id, per))[:10]]
+
+    mine = {per: period_totals(g.id, per).get(str(m.id), 0) for per in ("week", "month", "total")}
+    entries = [e for e in p["log"] if can["points_peek"] or e["u"] == m.id][-40:]
+    snap = {
+        "gid": str(g.id), "gname": g.name,
+        "me": {"name": m.display_name, "rank": r, "rank_name": rname(r)},
+        "can": can,
+        "rank_names": {str(k): v for k, v in RANK_NAMES.items()},
+        "perms": [{"key": k, "desc": desc, "need": need(g.id, k), "changed": k in c["perm"], "fixed": k == "rank_manage"} for k, (_, desc) in PERMS.items()],
+        "channels": [{"id": str(x.id), "name": "#" + x.name} for x in g.text_channels],
+        "roles": [{"id": str(x.id), "name": x.name} for x in reversed(g.roles) if not x.is_default() and not x.managed],
+        "ranks": {k: _s(v) for k, v in c["ranks"].items()},
+        "slots": [{"name": n, "role": _s(rid), "role_name": (g.get_role(rid).name if g.get_role(rid) else "(削除済み)")} for n, rid in c["slots"].items()],
+        "apply": sec_snap("j"), "staff": sec_snap("s"),
+        "points": {"cfg": {k: p[k] for k in list(POINT_RANGES) + ["mvp_auto"]}, "mvp_channel": _s(p["mvp_channel"]), "mvp_role": _s(p["mvp_role"]),
+                   "auto_channels": [str(i) for i in p["auto_channels"]],
+                   "top": {per: top(per) for per in ("week", "month", "total")}, "mine": mine,
+                   "log": [{"id": e["id"], "t": e["t"], "name": _who(g, e["u"]), "d": e["d"], "why": e["why"], "cat": CAT_NAMES.get(e["cat"], e["cat"]),
+                            "by": _who(g, e["by"]) if e["by"] else "自動", "x": bool(e.get("x"))} for e in reversed(entries)],
+                   "mvp_hist": [{"ym": h["ym"], "name": _who(g, h["u"]), "pts": h["pts"]} for h in reversed(p["mvp_hist"][-12:])],
+                   "cats": [{"id": k, "name": n} for k, n in CAT_NAMES.items() if k not in ("auto", "undo")]},
+        "region": {"prefs": len(c["region"]["pref"]), "regions": len(c["region"]["region"]), "panel": _s(c["region"]["panel_channel"]),
+                   "names": list(REGIONS) + list(PREF_TO_REGION)},
+    }
+    if can["audit_view"]:
+        now = time.time()
+        snap["temp_roles"] = [{"name": _who(g, t["u"]), "role": (g.get_role(t["r"]).name if g.get_role(t["r"]) else "?"), "exp": int(t["exp"])}
+                              for t in sorted(c["temp_roles"], key=lambda t: t["exp"])[:30] if t["exp"] > now]
+        snap["role_hist"] = [{"t": x["t"], "name": _who(g, x["u"]), "by": _who(g, x["by"]) if x.get("by") else "不明", "why": x.get("why", ""),
+                              "add": [(g.get_role(i).name if g.get_role(i) else str(i)) for i in x["add"]],
+                              "rem": [(g.get_role(i).name if g.get_role(i) else str(i)) for i in x["rem"]]} for x in reversed(c["role_hist"][-60:])]
+        snap["audit"] = [{"t": x["t"], "title": x["title"], "text": x["text"][:300]} for x in reversed(c["audit"][-100:])]
+        snap["tickets"] = [{"n": x.get("n") or 0, "owner": _who(g, x["owner"]), "claimed": _who(g, x["claimed"]) if x.get("claimed") else None,
+                            "subject": x.get("subject", ""), "closed": x["closed"], "by": _who(g, x["by"]) if x.get("by") else "自動", "why": x.get("why", "")}
+                           for x in reversed(c["tickets"][-40:])]
+    return snap
+
+
+async def srvadm_index(request):
+    if not OAUTH_READY:
+        return _oauth_setup_page()
+    if not _dash_session(request):
+        gid = _valid_gid(request.query.get("g"))
+        raise web.HTTPFound("/login" + (f"?g={gid}" if gid else ""))
+    return web.Response(text=SRVADM_HTML, content_type="text/html",
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
+
+
+async def srvadm_guilds(request):
+    sess = _dash_session(request)
+    if not sess:
+        return web.json_response({"user": None}, headers={"Cache-Control": "no-store"})
+    uid = int(sess["user"]["id"])
+    gs = []
+    for g in bot.guilds:
+        m = g.get_member(uid)
+        if m and rank_of(m) >= 1:
+            gs.append({"id": str(g.id), "name": g.name, "rank": rname(rank_of(m))})
+    gs.sort(key=lambda x: x["name"].lower())
+    return web.json_response({"user": sess["user"], "guilds": gs}, headers={"Cache-Control": "no-store"})
+
+
+async def srvadm_get(request):
+    g, m = await _srvadm_guild(request)
+    return web.json_response(srvadm_snapshot(g, m), headers={"Cache-Control": "no-store"})
+
+
+async def srvadm_members(request):
+    g, m = await _srvadm_guild(request)
+    q = request.query.get("q", "").strip()[:100]
+    found = []
+    if q.isdigit():
+        x = g.get_member(int(q)) or await _dash_member(g, int(q))
+        found = [x] if x else []
+    elif q:
+        ql = q.lower()
+        found = [x for x in g.members if not x.bot and (ql in x.name.lower() or ql in x.display_name.lower()
+                                                         or (x.global_name and ql in x.global_name.lower()))][:15]
+    return web.json_response([{"id": str(x.id), "name": f"{x.display_name} ({x.name})", "rank": rname(rank_of(x))} for x in found],
+                             headers={"Cache-Control": "no-store"})
+
+
+async def srvadm_do(request):
+    g, m = await _srvadm_guild(request)
+    if request.headers.get("X-Requested-With") != "azq-dashboard":
+        raise web.HTTPForbidden()
+    d = None
+    try:
+        d = await request.json()
+        act = str(d.get("action"))
+        fn, key = SRVADM_ACTIONS.get(act, (None, None))
+        if not fn:
+            raise SrvAdmError("不明な操作です。")
+        if key:
+            need_rank(g, m, key)
+        msg = await fn(g, m, d)
+        if act != "review":
+            await send_log(g, make_embed("🌐 Webからの操作", f"{m} (`{m.id}`) が `{act}` を実行しました。", GRAY))
+    except SrvAdmError as e:
+        raise web.HTTPBadRequest(text=str(e))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        log.exception("サーバー管理ページの操作で想定外のエラー(入力が不正、または不具合): %s", (d.get("action") if isinstance(d, dict) else None))
+        raise web.HTTPBadRequest(text="入力が正しくありません。")
+    except discord.HTTPException:
+        log.exception("サーバー管理ページの操作でDiscordのエラー")
+        raise web.HTTPBadGateway(text="Discordとの通信に失敗しました。BOTの権限を確認してください。")
+    return web.json_response({"ok": True, "msg": msg, "snap": srvadm_snapshot(g, m)}, headers={"Cache-Control": "no-store"})
+
+
 def add_dashboard_routes(app: web.Application) -> None:
-    for path in ("/", "/web", "/dashboard"):  # どのURLを開いても、ログインしていなければDiscordのログインへ、していれば画面へ移動する
+    for path in ("/", "/web", "/dashboard"):
         app.router.add_get(path, dash_index)
     app.router.add_get("/login", dash_login)
     app.router.add_get("/callback", dash_callback)
@@ -5074,23 +7608,33 @@ def add_dashboard_routes(app: web.Application) -> None:
     app.router.add_post("/api/guild/{gid}", dash_save)
     app.router.add_post("/api/guild/{gid}/do", dash_do)
     app.router.add_post("/api/guild/{gid}/welcome_bg", dash_welcome_bg)
+    app.router.add_get("/web/manage", srvadm_index)
+    app.router.add_get("/api/manage/guilds", srvadm_guilds)
+    app.router.add_get("/api/guild/{gid}/manage", srvadm_get)
+    app.router.add_post("/api/guild/{gid}/manage", srvadm_do)
+    app.router.add_get("/api/guild/{gid}/manage/members", srvadm_members)
 
 
-@bot.tree.command(name="web", description="Webで設定を編集します(管理者のみ)")
+@bot.tree.command(name="web", description="Webで設定・サーバー管理を操作します")
 @app_commands.guild_only()
 async def web_cmd(interaction: discord.Interaction):
-    if not _is_dash_admin(interaction.user):
-        return await interaction.response.send_message("❌ サーバー管理者のみ使えます。", ephemeral=True)
+    rk = rank_of(interaction.user)
+    if not _is_dash_admin(interaction.user) and rk < 1:
+        return await interaction.response.send_message("❌ サーバー管理者、または役職(一般スタッフ以上)を持つ人のみ使えます。", ephemeral=True)
     if not OAUTH_READY:
         return await interaction.response.send_message(
             "⚠️ Webダッシュボードは、このBOTでは有効になっていません。\n"
             "BOTの管理者が `DISCORD_CLIENT_SECRET` と `WEB_URL` を設定し、Developer Portal の OAuth2 > Redirects に "
             f"`{DASH_BASE or 'https://(公開URL)'}/callback` を登録すると使えます。設定は `/config` などのスラッシュコマンドでも変更できます。", ephemeral=True)
     v = discord.ui.View()
-    v.add_item(discord.ui.Button(label="ダッシュボードを開く", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
+    if _is_dash_admin(interaction.user):
+        v.add_item(discord.ui.Button(label="設定ダッシュボードを開く", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
+    if rk >= 1:
+        v.add_item(discord.ui.Button(label="サーバー管理を開く", style=discord.ButtonStyle.link, url=f"{DASH_BASE}/web/manage?g={interaction.guild.id}"))
     await interaction.response.send_message(
-        "🌐 下のボタンから、このサーバーの設定をブラウザで編集できます。\n"
-        "Discordでログインし、サーバーの管理者であることを確認してから開きます。(一度ログインすると、ブラウザを閉じても30日間は保たれます)",
+        "🌐 下のボタンから、ブラウザで操作できます。\n"
+        "Discordでログインし、権限(管理者・役職)を確認してから開きます。(一度ログインすると、ブラウザを閉じても30日間は保たれます)\n"
+        "・設定ダッシュボード: サーバー管理者のみ\n・サーバー管理: 申請の審査・ロール・ポイントなど。操作できる範囲は役職ごとに決まります",
         view=v, ephemeral=True)
 
 
@@ -5110,7 +7654,7 @@ async def _web_hint_check(interaction: discord.Interaction) -> bool:
             user_prefs.save()
 
             async def hint():
-                await asyncio.sleep(2)  # コマンドの応答が済んでから表示する
+                await asyncio.sleep(2)
                 v = discord.ui.View()
                 v.add_item(discord.ui.Button(label="Webで操作する", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
                 try:
@@ -5142,6 +7686,11 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel text` 文面を編集 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
     e.add_field(name="🔨 モデレーション", value="`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove`", inline=False)
     e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config welcome_image`(Webで設定) `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
+    e.add_field(name="🎖️ 役職・権限", value="`/manage rank_set` 役職とロールを対応づけ / `/manage rank_show` / `/manage perm_list` `perm_set`\n管理者>副管理者>幹部>モデレーター>一般スタッフ。機能ごとの必要役職を変更できます(Discord管理者・オーナーは常に管理者扱い)", inline=False)
+    e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
+    e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
+    e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking` 週間・月間・累計\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
+    e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
 
@@ -5342,7 +7891,7 @@ def _describe_pid(pid: str) -> str:
     try:
         with open(f"/proc/{pid}/cgroup", encoding="utf-8") as f:
             cg = f.read().strip().splitlines()[-1]
-        info.append(f"起動元: {cg.split(':', 2)[-1]}")  # 例: /system.slice/xxx.service, /user.slice/.../session-3.scope
+        info.append(f"起動元: {cg.split(':', 2)[-1]}")
     except OSError:
         pass
     try:
@@ -5357,9 +7906,9 @@ def _single_instance_lock():
     """同じデータフォルダで BOT を2つ同時に起動しない(二重応答・設定の上書きを防ぐ)。Linux/Macのみ有効。"""
     try:
         import fcntl
-    except ImportError:  # Windows
+    except ImportError:
         return None
-    fh = open(os.path.join(DATA_DIR, "bot.lock"), "a+")  # a+ : 開いただけでは中身(PID)を消さない
+    fh = open(os.path.join(DATA_DIR, "bot.lock"), "a+")
     try:
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -5380,9 +7929,9 @@ def _single_instance_lock():
 if __name__ == "__main__":
     if not TOKEN or TOKEN == "YOUR-TOKEN":
         raise SystemExit("トークンが設定されていません。環境変数 DISCORD_TOKEN(または bot.py 上部の TOKEN)にBOTトークンを設定してください。")
-    _lock = _single_instance_lock()  # プロセスが終わるまで保持する
+    _lock = _single_instance_lock()
 
-    def _on_sigterm(signum, frame):  # systemctl stop / restart で通常終了させる(atexit で設定を保存する)
+    def _on_sigterm(signum, frame):
         raise SystemExit(0)
     try:
         signal.signal(signal.SIGTERM, _on_sigterm)
