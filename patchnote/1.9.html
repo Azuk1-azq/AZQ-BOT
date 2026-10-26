@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#12151c">
+<title>AZQ BOT パッチノート: サーバー管理機能を追加</title>
+<style>
+:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
+--fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>サーバー管理機能を追加</h1>
+<p class="meta">AZQ BOT v1.9 パッチノート / 2026年10月26日</p>
+<p class="lead">Discordサーバーの管理者向けに、役職の権限管理、参加申請・スタッフ応募、ロール管理、ポイント、管理ログをまとめて追加しました。コマンドのほか、<code>/web</code> から開くブラウザ画面でも操作できます。Webダッシュボードのデザインも新しくなりました。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>役職と権限 <code>/manage rank_set</code></h3>
+<p>管理者・副管理者・幹部・モデレーター・一般スタッフの5つの役職を、Discordのロールに対応づけられます。機能ごとに必要な役職は <code>/manage perm_set</code> で変更でき、<code>/manage perm_list</code> で一覧を確認できます。</p>
+<p>サーバーオーナーとDiscordの<b>管理者権限</b>を持つ人は、常に管理者として扱われます。</p>
+</article>
+<article class="new">
+<h3>参加申請とスタッフ応募 <code>/apply setup</code> <code>/staffapp setup</code></h3>
+<p>パネルから参加申請とスタッフ応募を受け付けます。承認と却下はボタンで行い、却下には理由を付けられます。結果は申請者にDMで届き、承認するとロールが自動で付与されます。</p>
+<p>履歴は <code>/apply history</code> と <code>/staffapp history</code> で確認できます。スタッフ応募の役職ごとのロールは <code>/staffapp position</code> で設定します。</p>
+</article>
+<article class="new">
+<h3>ロール管理 <code>/manage role_set</code></h3>
+<p>管理するロールに名前を付けて登録し、<code>role_grant</code> でメンバーに付与します。日数を指定すると、期限が来たときに自動で外れます。外すときは <code>role_revoke</code> を使います。</p>
+<p><code>role_list</code> で登録ロールと期限つきの付与を、<code>role_history</code> で変更履歴を確認できます。都道府県ロールは <code>/region create</code> と <code>/region panel</code> で作れます。</p>
+</article>
+<article class="new">
+<h3>ポイントとランキング <code>/points</code> <code>/ranking</code></h3>
+<p><code>/points add</code> <code>remove</code> <code>undo</code> <code>show</code> <code>history</code> <code>config</code> <code>mvp</code> でポイントを管理します。<code>/ranking</code> では週間・月間・累計の順位を見られます。</p>
+<p>付与の上限があり、二重付与と相互付与は防止されます。指定したチャンネルでの発言に、自動でポイントを付ける設定もあります。</p>
+</article>
+<article class="new">
+<h3>管理ログ <code>/manage log</code></h3>
+<p>処罰・認証・参加退出などの管理ログを表示できます。ログはBOTを再起動しても残ります。チケットの対応履歴は <code>/manage ticket_history</code> で確認できます。</p>
+</article>
+<article class="new">
+<h3>Webのサーバー管理ページ</h3>
+<p><code>/web</code> を実行すると表示される「サーバー管理を開く」ボタンから、上の機能をブラウザで操作できます。役職を持っている人だけが開けます。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3>Webダッシュボードのデザインを刷新</h3>
+<p>項目一覧と内容を並べる2カラムにし、スマホでは項目が横スクロールの切り替えに変わります。ブラウザの設定に合わせて、ダークとライトを自動で切り替えます。保存・変更検知・ロールパネルなどの機能は変わりません。</p>
+</article>
+<article class="chg">
+<h3><code>/help</code> の表記</h3>
+<p>役職・権限、申請・応募、ロール管理、ポイント、ログの説明を追加しました。</p>
+</article>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>BOTに「ロールの管理」権限が必要です。</b>付与するロールよりも、BOTのロールを上に置いてください。順位が下だと、ロールを付与できません。</li>
+<li><b>申請の結果はDMで届きます。</b>申請者がDMを受け取れない設定の場合は、承認や却下のあと、直接伝えてください。</li>
+<li><b>管理者権限を持つ人は、常に管理者の扱いです。</b>管理者の役職に割り当てたロールを持つ人は、BOTの全機能を操作できます。ロールの付与権限は慎重に管理してください。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b><code>bot.py</code> と <code>dashboard.html</code> を入れ替えてください。</b>入れ替えたあとは、BOTを再起動してください。</li>
+<li><b>データは <code>server_admin.json</code> に保存されます。</b>データの保存先(<code>DATA_DIR</code>)を消さないように注意してください。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+</ul>
+</main>
+</body>
+</html>
