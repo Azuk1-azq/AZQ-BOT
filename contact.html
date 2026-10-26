@@ -27,7 +27,7 @@
 {"@context":"https://schema.org","@type":"ProfilePage","name":"プロフィール・連絡先","url":"https://www.azuk1.com/contact.html","inLanguage":"ja","mainEntity":{"@type":"Person","@id":"https://www.azuk1.com/#person","name":"Azuk1","alternateName":["azuk1","あずき","Azq"],"url":"https://www.azuk1.com/","sameAs":["https://x.com/azky_yt","https://www.youtube.com/@azuki-shio","https://github.com/Azuk1-azq"]}}
 </script>
 <style>
-:root{--bg:#fff;--gray:#f4f4f4;--line:#dcdcdc;--text:#222;--sub:#666;--link:#0b5cad;--code:#262626;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif}
+:root{--bg:#fff;--gray:#f4f4f4;--line:#dcdcdc;--text:#222;--sub:#666;--link:#1b5fb0;--code:#262626;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.85}
@@ -262,6 +262,16 @@ footer.bt .copy small{color:#999}
 .phead h1{color:#fff}
 .phead p{color:#bbb}
 .bc,.bc a{color:#aaa}
+
+/* corporate light adjustments */
+:root{--navy:#0e2747}
+.mv,.contact-band,.phead{background:var(--navy)!important;background-image:none!important}
+.phead{padding:56px 0 40px}
+.mv{padding:96px 0 88px}
+.contact-band{padding:72px 0 76px}
+.contact-band .mail{border-bottom-width:2px}
+footer.bt .copy{background:var(--navy)}
+.wcard{border-radius:6px}
 </style>
 </head>
 <body>
@@ -312,7 +322,7 @@ footer.bt .copy small{color:#999}
     <div><b>外部リンク</b><a href="https://x.com/azky_yt" target="_blank" rel="noopener">X</a><a href="https://www.youtube.com/@azuki-shio" target="_blank" rel="noopener">YouTube</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a></div>
     <div><b>規約</b><a href="/privacy.html">プライバシーポリシー</a><a href="/terms.html">利用規約</a></div>
   </div>
-  <div class="copy">&copy; <span id="y"></span> Azuk1(azuk1) · azuk1.com<br><small>背景画像:Wavebreakmedia / iStock</small></div>
+  <div class="copy">&copy; <span id="y"></span> Azuk1(azuk1) · azuk1.com</div>
 </footer>
 <script>
 document.getElementById("y").textContent=new Date().getFullYear();
