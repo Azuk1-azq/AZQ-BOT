@@ -1,98 +1,516 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#12151c">
-<title>AZQ BOT パッチノート: サーバー管理機能を追加</title>
-<style>
-:root{color-scheme:dark;--bg:#12151c;--card:#1a1e28;--ink:#e6e9f0;--sub:#9aa3b5;--line:#2a303d;--code:#242a37;
---fix:#f0a36b;--chg:#8fa2ff;--new:#6fd0a1}
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AZQ BOT - サーバー管理Discord Bot</title>
+<meta name="description" content="荒らし検知・メンバー認証・チケット・過疎診断・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
+<meta name="theme-color" content="#06070d">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>:root{color-scheme:dark;
+--bg:#090a0f;--surf:#0f1118;--surf2:#151822;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.16);
+--text:#eceef6;--mute:#8d93aa;--dim:#5d6379;--acc:#8b7bff;--acc2:#3dd6ee;--green:#5ee59a;--amber:#f2c35b;
+--grad:linear-gradient(135deg,#7c5cff,#4f8cff);--ease:cubic-bezier(.2,.8,.2,1);
+--font:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;--disp:"Space Grotesk","Zen Kaku Gothic New",system-ui,sans-serif}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
-main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
-h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
-.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
-.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
-h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
-h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
-.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
-article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
-h3{font-size:16px;margin:0 0 6px}
-article p{margin:4px 0;color:var(--sub);font-size:15px}
-article p b{color:var(--ink);font-weight:600}
-code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
-.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
-.todo li{margin:10px 0;color:var(--sub);font-size:15px}
-.todo li b{color:var(--ink);font-weight:600}
-.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
-table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
-th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--sub);font-weight:600;font-size:13px}
-tr:last-child td{border-bottom:0}
-td:first-child{white-space:nowrap}
-:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
-</style>
-</head>
-<body>
-<main>
-<h1>サーバー管理機能を追加</h1>
-<p class="meta">AZQ BOT v1.9 パッチノート / 2026年10月26日</p>
-<p class="lead">Discordサーバーの管理者向けに、役職の権限管理、参加申請・スタッフ応募、ロール管理、ポイント、管理ログをまとめて追加しました。コマンドのほか、<code>/web</code> から開くブラウザ画面でも操作できます。Webダッシュボードのデザインも新しくなりました。</p>
+html{overflow-x:clip;scroll-behavior:smooth;scroll-padding-top:88px}
+body{margin:0;font:400 16px/1.8 var(--font);background:var(--bg);color:var(--text);overflow-x:clip;-webkit-font-smoothing:antialiased}
+a{color:#a99fff;text-underline-offset:3px}
+a:hover{color:#fff}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc2);outline-offset:3px;border-radius:6px}
+::selection{background:rgba(139,123,255,.4)}
+.skip{position:absolute;left:12px;top:-60px;background:#fff;color:#000;padding:8px 14px;border-radius:8px;z-index:100;font-weight:700}
+.skip:focus{top:12px}
+.wrap{max-width:1120px;margin:auto;padding:0 28px}
+.wrap.narrow{max-width:820px}
+/* nav */
+.top{position:sticky;top:0;z-index:40;background:rgba(9,10,15,.86);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0)}
+.nav{max-width:1120px;margin:auto;height:64px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.logo{display:inline-flex;align-items:center;gap:10px;font:700 19px/1 var(--disp);letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap}
+.logo .azq-mark{width:30px;height:30px;flex:none}
+.logo-b{font-weight:500;color:var(--acc2);margin-left:.25em}
+.links{display:flex;align-items:center;gap:4px}
+.links a{white-space:nowrap;color:var(--mute);text-decoration:none;font-size:14px;padding:6px 11px;border-radius:8px;transition:color .2s,background .2s}
+.links a:hover{color:var(--text);background:var(--surf2)}
+.links a.on{color:var(--text)}
+.links a.legal{font-size:13px;color:var(--dim)}
+.links a.legal:hover{color:var(--text)}
+.nav-cta{margin-left:10px;padding:8px 18px!important;font-size:14px!important;color:#fff!important}
+.burger{display:none;width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:transparent;cursor:pointer;position:relative}
+.burger i,.burger i::before,.burger i::after{position:absolute;left:11px;width:16px;height:2px;border-radius:2px;background:var(--text);transition:transform .25s var(--ease)}
+.burger i{top:19px}.burger i::before,.burger i::after{content:"";left:0}.burger i::before{top:-6px}.burger i::after{top:6px}
+.burger[aria-expanded=true] i{background:transparent}
+.burger[aria-expanded=true] i::before{transform:translateY(6px) rotate(45deg)}
+.burger[aria-expanded=true] i::after{transform:translateY(-6px) rotate(-45deg)}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--grad);color:#fff;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:700;border:0;cursor:pointer;transition:filter .2s,transform .2s var(--ease)}
+.btn:hover{filter:brightness(1.12);color:#fff;transform:translateY(-1px)}
+.btn.alt{background:transparent;border:1px solid var(--line2);color:var(--text)}
+.btn.alt:hover{background:var(--surf2);filter:none}
+.btns{display:flex;flex-wrap:wrap;gap:12px}
+.sub{display:block;margin-top:18px;color:var(--mute);font-size:13px}
+/* type */
+h1{font-size:clamp(38px,5.2vw,64px);line-height:1.12;margin:0 0 24px;font-weight:900;letter-spacing:-.025em}
+.grad{background:linear-gradient(100deg,#a99bff,#4f8cff 55%,#3dd6ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{color:var(--mute);font-size:17px;margin:0 0 32px;max-width:30em}
+.eyebrow{display:block;font:700 12px var(--disp);letter-spacing:.18em;text-transform:uppercase;color:var(--acc);margin-bottom:14px}
+h2{font-size:clamp(28px,3.6vw,40px);line-height:1.3;margin:0 0 12px;font-weight:900;letter-spacing:-.015em}
+.sec-lead{color:var(--mute);margin:0 0 36px;max-width:40em}
+section{padding:96px 0;border-top:1px solid var(--line)}
+code{background:var(--surf2);color:#cfc9ff;padding:1px 7px;border-radius:6px;font-size:.88em;border:1px solid var(--line)}
+/* hero */
+.hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:72px 0 56px;position:relative}
+.hero::before{content:"";position:absolute;left:50%;top:-64px;width:min(900px,100vw);height:420px;transform:translateX(-50%);background:radial-gradient(50% 60% at 50% 0%,rgba(124,92,255,.2),transparent 72%);z-index:-1;pointer-events:none}
+.hero .lead{margin:0 auto 32px}.hero .btns,.hero .badges{justify-content:center}
+.pill{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line2);border-radius:999px;padding:4px 14px 4px 4px;font-size:13.5px;color:var(--mute);text-decoration:none;margin-bottom:30px;transition:border-color .2s,color .2s}
+.pill b{background:var(--grad);color:#fff;border-radius:999px;padding:0 10px;font:700 12px/22px var(--disp)}
+.pill i{font-style:normal;color:var(--dim)}
+.pill:hover{color:var(--text);border-color:var(--acc)}
+.badges{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:32px;padding:0}
+.badges span{color:var(--mute);font-size:13.5px}
+.badges span::first-letter{color:var(--green)}
+.app{display:grid;grid-template-columns:210px 1fr;background:var(--surf);border:1px solid var(--line);border-radius:18px;overflow:hidden;font-size:14px;line-height:1.6;box-shadow:0 40px 80px -40px rgba(0,0,0,.9);margin-bottom:64px;max-width:900px;margin-inline:auto}
+.app-side{background:#0b0c12;border-right:1px solid var(--line);padding:16px 12px}
+.srv{font-weight:700;padding:4px 8px 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.ch-h{font:700 11px var(--disp);letter-spacing:.12em;color:var(--dim);padding:0 8px 6px}
+.ch{color:var(--mute);padding:4px 8px;border-radius:6px;font-size:14px}
+.ch.on{background:var(--surf2);color:var(--text)}
+.app-main{min-width:0;text-align:left}
+.chat-bar{display:flex;align-items:center;gap:7px;padding:13px 18px;border-bottom:1px solid var(--line);color:var(--mute);font-size:13px}
+.chat-bar i{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.chat-bar b{margin-left:8px;font-weight:500}
+.chat-body{padding:22px 20px}
+.msg{display:flex;gap:12px;margin-bottom:18px}.msg:last-child{margin:0}
+.av{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:14px;color:#fff}
+.who{font-weight:700}.who small{color:var(--dim);font-weight:400;margin-left:8px;font-size:12px}
+.gone{color:var(--dim);text-decoration:line-through;text-decoration-color:#ed4245}
+.bot .av{background:var(--bg);box-shadow:inset 0 0 0 1px var(--line2)}
+.av .azq-mark{width:26px;height:26px}
+.tag{background:#5865F2;color:#fff;font-size:10.5px;padding:1px 6px;border-radius:4px;margin-left:8px;vertical-align:1px;font-weight:500}
+.note{border-left:3px solid #ed4245;background:var(--surf2);border-radius:4px;padding:10px 14px;margin-top:6px}
+.note em{font-style:normal;color:var(--amber)}
+.cmd{background:var(--surf2);border-radius:6px;padding:8px 12px;color:var(--mute);margin-top:4px}
+.cmd b{color:var(--acc2)}
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stat{padding:36px 8px 36px 28px;border-left:1px solid var(--line)}
+.stat:first-child{border-left:0;padding-left:0}
+.stat b{display:block;font:700 clamp(32px,4.4vw,52px)/1 var(--disp);letter-spacing:-.02em}
+.stat span{display:block;margin-top:10px;color:var(--mute);font-size:13.5px}
+/* tabs */
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:24px}
+.tab{cursor:pointer;border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 16px;font-size:14px;color:var(--mute);transition:color .2s,border-color .2s,background .2s}
+.tab:hover{color:var(--text);border-color:var(--line2)}
+.tab[aria-selected=true]{background:var(--text);border-color:var(--text);color:var(--bg);font-weight:700}
+/* cards */
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;grid-auto-flow:dense}
+.tile{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:28px;transition:border-color .25s,background .25s}
+.tile:hover{border-color:var(--line2);background:var(--surf2)}
+.grid .tile{grid-column:span 2}
+.grid .tile.s3{grid-column:span 3}.grid .tile.s4{grid-column:span 4}.grid .tile.s6{grid-column:span 6}
+.tile[hidden]{display:none}
+.k{display:block;font:700 11px var(--disp);letter-spacing:.16em;color:var(--acc);margin-bottom:14px}
+.tile h3{margin:0 0 10px;font-size:19px;line-height:1.4}
+.tile p{margin:0;color:var(--mute);font-size:15px}
+.tile p+p{margin-top:10px}
+.tile b{color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
+.chips span{border:1px solid var(--line);border-radius:6px;padding:1px 10px;font-size:13px;color:var(--mute)}
+/* commands */
+.cmds{display:grid;grid-template-columns:repeat(2,1fr);gap:0 28px}
+.ci{display:grid;grid-template-columns:minmax(150px,auto) 1fr auto;align-items:center;gap:16px;text-align:left;cursor:pointer;background:transparent;border:0;border-bottom:1px solid var(--line);padding:14px 6px;transition:background .2s}
+.ci:hover{background:var(--surf)}
+.ci code{background:transparent;border:0;padding:0;color:var(--text);font-size:14.5px;font-weight:700}
+.ci:hover code{color:var(--acc2)}
+.ci span{color:var(--mute);font-size:13.5px;line-height:1.5}
+.ci em{font-style:normal;font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:0 7px;white-space:nowrap}
+.ci em.adm{color:var(--amber);border-color:rgba(242,195,91,.3)}
+.ci[hidden]{display:none}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);opacity:0;pointer-events:none;z-index:70;background:var(--text);color:var(--bg);border-radius:10px;padding:9px 20px;font-size:14px;font-weight:700;transition:all .3s var(--ease)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+/* trust */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dot{display:flex;align-items:center;gap:10px}
+.dot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);flex:none}
+.dot.n::before{background:var(--amber)}
+.tile ul{margin:12px 0 0;padding-left:1.2em;color:var(--mute);font-size:15px}.tile li{margin:6px 0}
+.sh{margin:56px 0 16px;font-size:20px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:16px}
+.perm{width:100%;min-width:560px;border-collapse:collapse;background:var(--surf);font-size:14.5px}
+.perm th,.perm td{padding:14px 20px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.perm tr:last-child td{border-bottom:0}
+.perm th{background:var(--surf2);font-weight:700;font-size:13px;color:var(--mute)}
+.perm td:first-child{font-weight:700;width:34%}
+.perm td:last-child{color:var(--mute)}
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;counter-reset:s}
+.steps .tile{counter-increment:s}
+.steps .tile::before{content:"0" counter(s);display:block;font:700 40px/1 var(--disp);color:var(--line2);margin-bottom:22px;letter-spacing:-.02em}
+.cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;background:var(--surf);border:1px solid var(--line2);border-radius:20px;padding:44px 48px;margin-top:28px;background-image:radial-gradient(60% 120% at 100% 0%,rgba(124,92,255,.16),transparent 70%)}
+.cta h2{margin:0}
+.cta .sub{flex-basis:100%;margin:0}
+/* faq */
+.search{width:100%;max-width:420px;background:var(--surf);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 18px;font:inherit;font-size:15px;margin-bottom:20px;transition:border-color .2s}
+.search:focus{outline:0;border-color:var(--acc)}
+.search::placeholder{color:var(--dim)}
+#faq details:first-of-type{border-top:1px solid var(--line)}
+details{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;font-weight:700;padding:20px 4px;list-style:none;display:flex;justify-content:space-between;gap:16px;transition:color .2s}
+summary:hover{color:var(--acc2)}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--mute);font-size:22px;line-height:1.3;transition:transform .25s var(--ease)}
+details[open] summary::after{transform:rotate(45deg)}
+details p{margin:0 0 22px;padding:0 4px;color:var(--mute);font-size:15px;max-width:48em}
+details[hidden]{display:none}
+.empty{display:none;color:var(--mute);padding:16px 4px}.empty.show{display:block}
+footer{color:var(--dim);font-size:13px;padding:64px 0 48px;border-top:1px solid var(--line);margin-top:24px}
+.fgrid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:40px}
+.fbrand p{margin:14px 0 0;max-width:22em;color:var(--mute);line-height:1.7}
+.fgrid h5{margin:0 0 14px;font:700 12px var(--disp);letter-spacing:.14em;color:var(--text)}
+.fgrid a{display:block;color:var(--mute);text-decoration:none;padding:4px 0;font-size:14px}.fgrid a:hover{color:var(--text)}
+.fbot{margin-top:48px;padding-top:24px;border-top:1px solid var(--line)}
+.totop{position:fixed;right:20px;bottom:24px;z-index:30;width:42px;height:42px;border-radius:10px;border:1px solid var(--line2);background:var(--surf);cursor:pointer;font-size:16px;opacity:0;pointer-events:none;transition:opacity .25s}
+.totop.show{opacity:1;pointer-events:auto}.totop:hover{background:var(--surf2)}
+/* patch notes */
+.pgrid{display:grid;grid-template-columns:340px 1fr;gap:72px;padding:88px 0 40px}
+.ph{position:sticky;top:112px;align-self:start}
+.ph h1{margin:0 0 16px;font-size:clamp(38px,5vw,56px)}
+.ph .lead{margin:0;font-size:16px}
+.list{margin:0 0 24px;padding:0;list-style:none;border-top:1px solid var(--line)}
+.item{position:relative;display:block;padding:28px 56px 28px 4px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none;transition:background .2s,padding .3s var(--ease)}
+.item::after{content:"→";position:absolute;right:8px;top:50%;transform:translateY(-50%);font:700 20px var(--disp);color:var(--dim);transition:color .2s,right .3s var(--ease)}
+.item:hover{background:var(--surf);padding-left:20px;color:var(--text)}.item:hover::after{color:var(--acc2);right:20px}
+.meta{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ver{font:700 13px var(--disp);color:var(--text);border:1px solid var(--line2);border-radius:6px;padding:0 10px}
+.new{font-size:12px;font-weight:700;color:var(--green);border:1px solid rgba(94,229,154,.35);border-radius:6px;padding:0 9px}
+.item h3{margin:0;font-size:20px;line-height:1.5}
+.item p{margin:4px 0 0;color:var(--mute);font-size:15px}
+@media(max-width:960px){
+.links{position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:stretch;gap:2px;padding:12px 20px 20px;background:var(--bg);border-bottom:1px solid var(--line);display:none}
+.links.open{display:flex}
+.links a{padding:12px 8px;font-size:15px}
+.nav-cta{margin:8px 0 0!important;justify-content:center;text-align:center}
+.burger{display:block}
+.nav{position:relative}
+.cmds{grid-template-columns:1fr}
+}
+@media(max-width:820px){
+.wrap{padding:0 20px}.nav{padding:0 20px}
+.hero{grid-template-columns:1fr;gap:48px;padding:56px 0 56px}
+.grid .tile,.grid .tile.s3,.grid .tile.s4,.grid .tile.s6{grid-column:span 6}
+.two,.steps{grid-template-columns:1fr}
+.stats{grid-template-columns:1fr 1fr}
+.stat{padding:26px 8px 26px 20px}.stat:nth-child(odd){border-left:0;padding-left:0}.stat:nth-child(n+3){border-top:1px solid var(--line)}
+section{padding:64px 0}
+.tile{padding:24px}
+.btn{width:100%}
+.cta{padding:32px 24px}
+.ci{grid-template-columns:1fr auto}.ci span{grid-column:1/-1;order:3}
+.pgrid{grid-template-columns:1fr;gap:32px;padding-top:56px}.ph{position:static}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important}}
 
-<h2 class="new">新機能</h2>
-<article class="new">
-<h3>役職と権限 <code>/manage rank_set</code></h3>
-<p>管理者・副管理者・幹部・モデレーター・一般スタッフの5つの役職を、Discordのロールに対応づけられます。機能ごとに必要な役職は <code>/manage perm_set</code> で変更でき、<code>/manage perm_list</code> で一覧を確認できます。</p>
-<p>サーバーオーナーとDiscordの<b>管理者権限</b>を持つ人は、常に管理者として扱われます。</p>
-</article>
-<article class="new">
-<h3>参加申請とスタッフ応募 <code>/apply setup</code> <code>/staffapp setup</code></h3>
-<p>パネルから参加申請とスタッフ応募を受け付けます。承認と却下はボタンで行い、却下には理由を付けられます。結果は申請者にDMで届き、承認するとロールが自動で付与されます。</p>
-<p>履歴は <code>/apply history</code> と <code>/staffapp history</code> で確認できます。スタッフ応募の役職ごとのロールは <code>/staffapp position</code> で設定します。</p>
-</article>
-<article class="new">
-<h3>ロール管理 <code>/manage role_set</code></h3>
-<p>管理するロールに名前を付けて登録し、<code>role_grant</code> でメンバーに付与します。日数を指定すると、期限が来たときに自動で外れます。外すときは <code>role_revoke</code> を使います。</p>
-<p><code>role_list</code> で登録ロールと期限つきの付与を、<code>role_history</code> で変更履歴を確認できます。都道府県ロールは <code>/region create</code> と <code>/region panel</code> で作れます。</p>
-</article>
-<article class="new">
-<h3>ポイントとランキング <code>/points</code> <code>/ranking</code></h3>
-<p><code>/points add</code> <code>remove</code> <code>undo</code> <code>show</code> <code>history</code> <code>config</code> <code>mvp</code> でポイントを管理します。<code>/ranking</code> では週間・月間・累計の順位を見られます。</p>
-<p>付与の上限があり、二重付与と相互付与は防止されます。指定したチャンネルでの発言に、自動でポイントを付ける設定もあります。</p>
-</article>
-<article class="new">
-<h3>管理ログ <code>/manage log</code></h3>
-<p>処罰・認証・参加退出などの管理ログを表示できます。ログはBOTを再起動しても残ります。チケットの対応履歴は <code>/manage ticket_history</code> で確認できます。</p>
-</article>
-<article class="new">
-<h3>Webのサーバー管理ページ</h3>
-<p><code>/web</code> を実行すると表示される「サーバー管理を開く」ボタンから、上の機能をブラウザで操作できます。役職を持っている人だけが開けます。</p>
-</article>
+/* feature blocks */
+.fb{display:grid;grid-template-columns:1fr 1.05fr;gap:72px;align-items:center;padding:56px 0;border-top:1px solid var(--line)}
+#features .sec-lead{margin-bottom:28px}
+.fb.rev .vis{order:-1}
+.ft h3{margin:0 0 14px;font-size:clamp(24px,3vw,32px);line-height:1.3;letter-spacing:-.01em}
+.ft p{margin:0;color:var(--mute);max-width:32em}
+.vis{margin:0}
+.vis figcaption{margin-top:12px;font:500 12px var(--disp);letter-spacing:.04em;color:var(--dim)}
+.dc{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:28px 24px;font-size:14px;line-height:1.6}
+.dmsg .who{margin-bottom:8px}
+.emb{background:var(--surf2);border-left:4px solid var(--acc);border-radius:6px;padding:14px 16px;max-width:380px}
+.emb.red{border-color:#ed4245}
+.emb h4{margin:0 0 4px;font-size:15px}
+.emb p{margin:0;color:var(--mute);font-size:13.5px}
+.dbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.db{background:#5865F2;color:#fff;border-radius:4px;padding:5px 16px;font-size:13.5px;font-weight:500}
+.db.g{background:#4e5058}.db.ok{background:#248046}
+.grid .tile{grid-column:span 2}
+.more{display:inline-block;margin-top:8px;font-weight:700;text-decoration:none}
+#updates .list{margin-top:8px}
+@media(max-width:820px){
+.fb{grid-template-columns:1fr;gap:28px;padding:40px 0}.fb.rev .vis{order:0}
+.app{grid-template-columns:1fr}.app-side{display:none}.app{margin-bottom:40px}
+.fgrid{grid-template-columns:1fr 1fr}.fbrand{grid-column:1/-1}
+.grid .tile{grid-column:span 6}
+}
 
-<h2 class="chg">変更</h2>
-<article class="chg">
-<h3>Webダッシュボードのデザインを刷新</h3>
-<p>項目一覧と内容を並べる2カラムにし、スマホでは項目が横スクロールの切り替えに変わります。ブラウザの設定に合わせて、ダークとライトを自動で切り替えます。保存・変更検知・ロールパネルなどの機能は変わりません。</p>
-</article>
-<article class="chg">
-<h3><code>/help</code> の表記</h3>
-<p>役職・権限、申請・応募、ロール管理、ポイント、ログの説明を追加しました。</p>
-</article>
+@media(min-width:961px) and (max-width:1320px){.links a.legal{display:none}}
+</style><script>document.documentElement.classList.add('js')</script></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<linearGradient id="azqBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C5CFF"/><stop offset="1" stop-color="#22D3EE"/></linearGradient>
+<linearGradient id="azqShade" x1="0" y1="0" x2="0" y2="1"><stop offset=".4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient>
+<linearGradient id="azqGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".68"/><stop offset="1" stop-color="#fff" stop-opacity=".04"/></linearGradient>
+<linearGradient id="azqRim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity=".38"/></linearGradient>
+<linearGradient id="azqRing" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#BFEFFF"/></linearGradient>
+<radialGradient id="azqEye" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#6FE3F7"/></radialGradient>
+<radialGradient id="azqBounce" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#7DE9FA" stop-opacity=".55"/><stop offset="1" stop-color="#7DE9FA" stop-opacity="0"/></radialGradient>
+<clipPath id="azqClip"><path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z"/></clipPath>
+<filter id="azqDs" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity=".35"/></filter>
+<symbol id="azqMark" viewBox="0 3 200 200">
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="url(#azqBody)"/>
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="url(#azqShade)"/>
+<g clip-path="url(#azqClip)"><ellipse cx="100" cy="16" rx="140" ry="76" fill="url(#azqGloss)"/><ellipse cx="100" cy="200" rx="80" ry="40" fill="url(#azqBounce)"/></g>
+<path d="M100 10 C130 26 158 30 180 30 L180 100 C180 150 146 180 100 196 C54 180 20 150 20 100 L20 30 C42 30 70 26 100 10 Z" fill="none" stroke="url(#azqRim)" stroke-width="3" stroke-linejoin="round"/>
+<g filter="url(#azqDs)"><circle cx="100" cy="94" r="34" fill="none" stroke="url(#azqRing)" stroke-width="15"/><line x1="124" y1="118" x2="146" y2="140" stroke="url(#azqRing)" stroke-width="15" stroke-linecap="round"/><circle cx="100" cy="94" r="9" fill="url(#azqEye)"/></g>
+</symbol>
+</defs>
+</svg>
 
-<h2 class="fix">サーバー管理者への注意</h2>
-<ul class="todo">
-<li><b>BOTに「ロールの管理」権限が必要です。</b>付与するロールよりも、BOTのロールを上に置いてください。順位が下だと、ロールを付与できません。</li>
-<li><b>申請の結果はDMで届きます。</b>申請者がDMを受け取れない設定の場合は、承認や却下のあと、直接伝えてください。</li>
-<li><b>管理者権限を持つ人は、常に管理者の扱いです。</b>管理者の役職に割り当てたロールを持つ人は、BOTの全機能を操作できます。ロールの付与権限は慎重に管理してください。</li>
+<a class="skip" href="#main">本文へスキップ</a>
+<header class="top"><nav class="nav" aria-label="メイン"><a class="logo" href="#top" aria-label="AZQ BOT トップへ"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg><span><span class="logo-a">AZQ</span><span class="logo-b">BOT</span></span></a>
+<button class="burger" type="button" aria-expanded="false" aria-controls="links" aria-label="メニューを開く"><i></i></button>
+<div class="links" id="links"><a href="#features">機能</a><a href="#commands">コマンド</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a><a class="btn nav-cta" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a></div></nav></header>
+<main id="main"><div class="wrap" id="top">
+
+<div class="hero">
+<a class="pill" href="../patchnote/1.9.html"><b>v1.9</b><span>サーバー管理機能を追加</span><i>→</i></a>
+<h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
+<p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
+<div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
+<span class="sub"><a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>に同意のうえ導入してください</span>
+<div class="badges"><span>✓ Discord認証済みBot</span><span>✓ オープンソース</span><span>✓ 必要な権限だけ要求</span><span>✓ 管理者だけが設定を変更</span></div>
+</div>
+<div class="app" aria-label="荒らし対策の動作イメージ">
+<div class="app-side"><div class="srv">Your Server</div><div class="ch-h">チャンネル</div><div class="ch"># お知らせ</div><div class="ch"># 認証</div><div class="ch on"># general</div><div class="ch"># サポート</div><div class="ch"># ロール</div></div>
+<div class="app-main"><div class="chat-bar"><b># general</b></div><div class="chat-body">
+<div class="msg"><div class="av" style="background:#8a5a44">荒</div><div><div class="who">荒らし太郎<small>今日 21:04</small></div><div class="gone">discord.gg/xxxxxxx 参加してね!!</div></div></div>
+<div class="msg bot"><div class="av"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg></div><div><div class="who">AZQ BOT<span class="tag">BOT</span></div><div class="note">@荒らし太郎 ⚠️ <em>招待リンクの投稿</em> を検知したためメッセージを削除しました。</div></div></div>
+<div class="msg"><div class="av" style="background:#3f7f6a">管</div><div><div class="who">管理者<small>今日 21:06</small></div><div class="cmd"><b>/kaso</b> 過疎度を診断</div></div></div>
+</div></div></div>
+<div class="stats">
+<div class="stat"><b>6種</b><span>の自動検知</span></div>
+<div class="stat"><b>3方式</b><span>のメンバー認証</span></div>
+<div class="stat"><b>25</b><span>ロールまで1パネルに</span></div>
+<div class="stat"><b>0</b><span>メッセージ本文のDB保存</span></div>
+</div>
+
+<section id="features">
+<span class="eyebrow">Features</span>
+<h2>サーバー管理に必要な機能</h2>
+<p class="sec-lead">自動で動くものと、コマンドで使うものがあります。</p>
+
+<div class="fb">
+<div class="ft"><span class="k">01 — AUTOMOD</span><h3>荒らし対策</h3><p>連投・同一メッセージ・メンション爆撃・招待リンク・NGワード・レイド(大量参加)を自動検知し、削除やタイムアウトを行います。</p>
+<div class="chips"><span>連投</span><span>同一投稿</span><span>メンション爆撃</span><span>招待リンク</span><span>NGワード</span><span>レイド検知</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb red"><h4>レイドを検知しました</h4><p>短時間に大量の参加がありました。メンバー認証を自動で強化しています。</p></div></div></div><figcaption>Fig 1 — レイド検知時の動作イメージ</figcaption></figure>
+</div>
+
+<div class="fb rev">
+<div class="ft"><span class="k">02 — VERIFICATION</span><h3>メンバー認証</h3><p>参加したメンバーに認証を行わせ、通過した人だけにロールを付与します。<code>/verify setup</code> で設置でき、荒らし・BOT対策に使えます。</p>
+<div class="chips"><span>ボタン認証</span><span>計算認証</span><span>画像CAPTCHA</span><span>未認証ロール</span><span>アカウント年齢制限</span><span>未認証キック</span><span>レイド時に自動強化</span><span>ロボット確認の強化</span><span>Web認証(BOT自身が配信)</span><span>VPN・プロキシの回線を排除</span><span>同じ回線のサブ垢を検出</span><span>サブ垢の疑いを検出(デフォルトアイコン・再参加・集団参加)</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>メンバー認証</h4><p>下のボタンを押して認証を完了してください。</p><div class="dbtns"><span class="db ok">認証する</span></div></div></div></div><figcaption>Fig 2 — 認証パネルのイメージ</figcaption></figure>
+</div>
+
+<div class="fb">
+<div class="ft"><span class="k">03 — SUPPORT</span><h3>サポートチケット</h3><p>パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成。クローズは作成者・スタッフ・管理者が行え、<b>削除できるのは管理者のみ</b>です。</p>
+<div class="chips"><span>非公開chの自動作成</span><span>担当者の設定</span><span>記録(.txt)の保存・DM</span><span>無操作で自動クローズ</span><span>認証との連携</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>サポート</h4><p>ボタンを押すと、スタッフとだけ話せる非公開チャンネルが作成されます。</p><div class="dbtns"><span class="db">チケットを作成</span></div></div></div></div><figcaption>Fig 3 — チケットパネルのイメージ</figcaption></figure>
+</div>
+
+<div class="fb rev">
+<div class="ft"><span class="k">04 — ROLES</span><h3>ロールパネル</h3><p>ボタンを押すだけでロールを付与・解除できるパネルを設置できます。<code>/rolepanel create</code> で作成し、設定は管理者のみ。</p>
+<div class="chips"><span>ボタンで付与/解除</span><span>1つだけ選択モード</span><span>最大25ロール</span><span>認証前は利用不可</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>ロールパネル</h4><p>ボタンを押してロールを付与・解除できます。</p><div class="dbtns"><span class="db ok">ゲーム</span><span class="db g">お知らせ</span><span class="db g">イラスト</span></div></div></div></div><figcaption>Fig 4 — ロールパネルのイメージ(ロール名は例)</figcaption></figure>
+</div>
+
+<h3 class="sh">そのほかの機能</h3>
+<div class="grid">
+<div class="tile"><span class="k">DIAGNOSIS</span><h3>過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
+<div class="tile"><span class="k">FUN</span><h3>脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
+<div class="tile"><span class="k">FUN</span><h3>名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
+<div class="tile"><span class="k">FUN</span><h3>王様ゲーム</h3><p><code>/ousama</code> で参加者を募集して開始すると、王様と番号が自動で決まります。チャンネルには王様と参加者を表示し、各自の番号はDMで届きます。命令は自由に出せます。</p></div>
+<div class="tile"><span class="k">UTILITY</span><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
+<div class="tile"><span class="k">RELIABILITY</span><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
+<div class="tile" style="grid-column:1/-1"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
+<div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
+</div>
+</section>
+
+<section id="commands">
+<span class="eyebrow">Commands</span>
+<h2>コマンドリファレンス</h2>
+<p class="sec-lead">クリックするとコマンドをコピーできます。そのままDiscordに貼り付けて使えます。</p>
+<div class="tabs" role="tablist" aria-label="コマンドの絞り込み">
+<button class="tab cf" role="tab" aria-selected="true" data-f="all" type="button">すべて</button>
+<button class="tab cf" role="tab" aria-selected="false" data-f="all-user" type="button">誰でも</button>
+<button class="tab cf" role="tab" aria-selected="false" data-f="admin" type="button">管理者のみ</button>
+</div>
+<div class="cmds">
+<button class="ci" type="button" data-role="all-user" data-copy="/kaso"><code>/kaso</code><span>サーバーの過疎度を診断</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/nounai"><code>/nounai</code><span>名前から脳内を表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/meigen"><code>/meigen</code><span>アイコン付きの名言画像を作成</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/meigenprivacy"><code>/meigenprivacy</code><span>自分のアイコン・名前の使用許可を変更</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/ousama"><code>/ousama</code><span>王様ゲームを開始(王様と番号を自動で決定)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/ping"><code>/ping</code><span>BOT・Webサイトの応答速度を測定</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/userinfo"><code>/userinfo</code><span>ユーザー情報を表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/serverinfo"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/avatar"><code>/avatar</code><span>アイコンを表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/help"><code>/help</code><span>コマンド一覧を確認</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/ticket close"><code>/ticket close</code><span>チケットをクローズ(作成者・スタッフも可)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/config log_channel"><code>/config log_channel</code><span>ログチャンネルを設定</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/config automod_set"><code>/config automod_set</code><span>荒らし検知の厳しさを調整・無効化</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/config meigen"><code>/config meigen</code><span>サーバー内の名言画像をON/OFF</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/verify setup"><code>/verify setup</code><span>メンバー認証パネルを設置</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/ticketconfig setup"><code>/ticketconfig setup</code><span>サポートチケットパネルを設置</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/ticket delete"><code>/ticket delete</code><span>クローズ済みチケットを削除</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/rolepanel create"><code>/rolepanel create</code><span>ロールパネルを作成</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/kick"><code>/kick</code><span>メンバーをキック</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/ban"><code>/ban</code><span>メンバーをBAN</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/unban"><code>/unban</code><span>BANを解除</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/timeout"><code>/timeout</code><span>メンバーをタイムアウト</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/warn"><code>/warn</code><span>警告を記録</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/purge"><code>/purge</code><span>メッセージを一括削除</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/slowmode"><code>/slowmode</code><span>低速モードを設定</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/lock"><code>/lock</code><span>チャンネルをロック</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/unlock"><code>/unlock</code><span>チャンネルのロックを解除</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/role_add"><code>/role_add</code><span>ロールを付与</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/role_remove"><code>/role_remove</code><span>ロールを剥奪</span><em class="adm">管理者</em></button>
+</div>
+</section>
+
+<section id="updates">
+<span class="eyebrow">Changelog</span>
+<h2>最近のアップデート</h2>
+<p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
+<ul class="list">
+<li><a class="item" href="../patchnote/1.9.html"><div class="meta"><span class="ver">v1.9</span><span class="new">最新</span></div><h3>バージョン 1.9 のパッチノート</h3><p>サーバー管理機能を追加(役職・参加申請・スタッフ応募・ロール管理・ポイント)</p></a></li>
+<li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>
+<li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
+<li><a class="item" href="../patchnote/1.6.html"><div class="meta"><span class="ver">v1.6</span></div><h3>バージョン 1.6 のパッチノート</h3><p>Web認証にreCAPTCHAを追加</p></a></li>
+<li><a class="item" href="../patchnote/1.5.html"><div class="meta"><span class="ver">v1.5</span></div><h3>バージョン 1.5 のパッチノート</h3><p>このバージョンの変更内容を見る</p></a></li>
 </ul>
+<a class="more" href="../patchnote/index.html">すべてのパッチノートを見る →</a>
+</section>
 
-<h2 class="fix">自分でbotをホスティングする人向け</h2>
-<ul class="todo">
-<li><b><code>bot.py</code> と <code>dashboard.html</code> を入れ替えてください。</b>入れ替えたあとは、BOTを再起動してください。</li>
-<li><b>データは <code>server_admin.json</code> に保存されます。</b>データの保存先(<code>DATA_DIR</code>)を消さないように注意してください。</li>
-<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
-</ul>
-</main>
-</body>
-</html>
+<section id="trust">
+<span class="eyebrow">Trust</span>
+<h2>安心して使うための情報</h2>
+<p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
+<div class="two">
+<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
+<div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
+</div>
+<div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
+
+<h3 class="sh">必要な特権インテント</h3>
+<div class="two">
+<div class="tile"><h3>Server Members Intent</h3><p>メンバーの参加・退出の検知(ウェルカム、自動ロール、レイド検知、参加ログ)と、過疎診断でのメンバー数の集計のため。</p></div>
+<div class="tile"><h3>Message Content Intent</h3><p>荒らし対策のためのメッセージ本文の判定(NGワード・招待リンク・連投・同一投稿)と、メッセージの編集・削除ログのため。</p></div>
+</div>
+
+<h3 class="sh">要求する権限とその理由</h3>
+<div class="scroll"><table class="perm">
+<tr><th>権限</th><th>使う機能</th></tr>
+<tr><td>チャンネルを見る / メッセージ履歴を読む</td><td>荒らし判定、過疎診断の集計、チケット記録の作成</td></tr>
+<tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像、認証・チケットのパネル、チケット記録(.txt)の送信</td></tr>
+<tr><td>メッセージの管理</td><td>荒らしメッセージの自動削除、/purge</td></tr>
+<tr><td>メンバーをキック / BAN</td><td>/kick /ban /unban(管理者のみ実行可能)、時間内に認証しなかった人のキック(設定した場合のみ)</td></tr>
+<tr><td>メンバーをタイムアウト</td><td>/timeout、警告上限・荒らし検知時の自動タイムアウト</td></tr>
+<tr><td>ロールの管理</td><td>自動ロール、/role_add /role_remove、/lock /unlock、認証ロール・未認証ロールの付与と剥奪、ロールパネルでのロール付与</td></tr>
+<tr><td>チャンネルの管理</td><td>/slowmode /lock /unlock、チケットチャンネルの作成・ロック・削除</td></tr>
+</table></div>
+</section>
+
+<section id="setup">
+<span class="eyebrow">Get started</span>
+<h2>導入は3ステップ</h2>
+<p class="sec-lead">管理者権限は要求しません。使わない機能の権限は、導入画面で外すこともできます。</p>
+<div class="steps">
+<div class="tile"><h3>BOTを追加</h3><p>下のボタンから導入先のサーバーを選び、権限を確認して承認します。</p></div>
+<div class="tile"><h3>ロールを上に移動</h3><p>サーバー設定でBOTのロールを、管理対象のメンバー・ロールより上に配置します。</p></div>
+<div class="tile"><h3>設定する</h3><p><code>/config log_channel</code> などで設定します。認証は <code>/verify setup</code>、チケットは <code>/ticketconfig setup</code> で設置でき、<code>/help</code> でコマンドを確認できます。</p></div>
+</div>
+<div class="cta">
+<h2>サーバーを守る準備はできましたか?</h2>
+<div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a>
+<a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
+<span class="sub">導入前に<a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>をご確認ください</span>
+</div>
+</section>
+
+<section id="faq">
+<span class="eyebrow">FAQ</span>
+<h2>よくある質問</h2>
+<p class="sec-lead">キーワードで絞り込めます。</p>
+<input class="search" id="faqsearch" type="search" placeholder="質問を検索(例:認証、チケット、IP)" aria-label="FAQを検索">
+<details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
+<details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
+<details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
+<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ousama /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
+<details><summary>チケットは誰が閉じて、誰が削除できますか?</summary><p>クローズは、チケットを作った本人・スタッフロールのメンバー・管理者ができます。クローズすると記録が保存され、チャンネルは閲覧のみになります。チャンネルの削除は管理者だけが行えます(クローズ済みのチケットに付く「削除」ボタン、または /ticket delete)。</p></details>
+<details><summary>自分のアイコンを名言画像に使われたくありません</summary><p>他の人があなたのアイコン・名前で名言画像を作ろうとすると、BOTからあなたにDMが届き、ボタンで「許可する」「許可しない」を選べます。選ぶまでは作成されません。あとから <code>/meigenprivacy</code> でも変更できます。サーバー管理者は <code>/config meigen</code> で、そのサーバー全体の名言画像をOFFにできます。</p></details>
+<details><summary>ロールパネルは誰でも作れますか?</summary><p>パネルの作成・編集は管理者のみです。メンバーはパネルのボタンを押してロールを付与・解除できます。管理者権限などの危険な権限を持つロールはパネルに設定できず、メンバー認証を終えていない人は利用できません。BOTのロールが対象ロールより下にあると付与に失敗するので、ロール順位を確認してください。</p></details>
+<details><summary>Web認証では、IPアドレスを取得しますか?</summary><p>Web認証を使うサーバーでは、認証ページを開いたときにBOTが接続元のIPアドレスを一時的に使います。外部のサービスにIPを送ることはありません。VPN・プロキシ・データセンターの回線かどうかは、公開されているIPアドレスの一覧と照合して、BOTの中だけで判定します。「同じ回線から別のアカウントが認証していないか」の判定を有効にしたサーバーでは、IPアドレスをそのままではなく、元に戻せない値(ハッシュ)にして保存します。いずれも推測による判定なので、学校・会社・家族で同じ回線を使っている場合などに、承認待ちになることがあります。管理者はいつでも保存した値を削除できます。</p></details>
+<details><summary>メンバー認証とは何ですか?</summary><p>参加したメンバーがボタン・計算・画像CAPTCHAのいずれかを通過すると、認証ロールが付与される機能です。アカウント作成からの日数制限や、時間内に認証しない人のキック、レイド検知時の自動強化も設定できます。認証が必要なチャンネルの権限設定は、設置時のメッセージの案内に沿って行ってください。</p></details>
+<details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
+<p class="empty" id="faqempty">該当する質問が見つかりませんでした。<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でお気軽にご質問ください。</p>
+</section>
+
+
+<footer><div class="fgrid">
+<div class="fbrand"><span class="logo"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg><span><span class="logo-a">AZQ</span><span class="logo-b">BOT</span></span></span><p>荒らし対策・メンバー認証・サポートチケットをひとつにまとめたDiscord Bot。</p></div>
+<div><h5>プロダクト</h5><a href="#features">機能</a><a href="#commands">コマンド</a><a href="#trust">安全性</a><a href="#faq">FAQ</a></div>
+<div><h5>リソース</h5><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a></div>
+<div><h5>法務</h5><a href="terms.html">利用規約</a><a href="privacy.html">プライバシーポリシー</a></div>
+</div><div class="fbot">AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。画面は動作イメージです。</div></footer>
+</div></main><script>(function(){
+var d=document,de=d.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)').matches;
+function $(s,r){return (r||d).querySelector(s)}function $$(s,r){return [].slice.call((r||d).querySelectorAll(s))}
+/* to-top */
+var tt=d.createElement('button');tt.className='totop';tt.type='button';tt.setAttribute('aria-label','ページの先頭へ');tt.textContent='↑';d.body.appendChild(tt);
+tt.addEventListener('click',function(){scrollTo({top:0,behavior:rm?'auto':'smooth'})});
+addEventListener('scroll',function(){tt.classList.toggle('show',scrollY>700)},{passive:true});
+/* mobile nav */
+var bg=$('.burger'),ln=$('.links');
+if(bg&&ln){
+function close(){bg.setAttribute('aria-expanded','false');ln.classList.remove('open')}
+bg.addEventListener('click',function(){var o=bg.getAttribute('aria-expanded')!=='true';bg.setAttribute('aria-expanded',o);ln.classList.toggle('open',o)});
+ln.addEventListener('click',function(e){if(e.target.closest('a'))close()});
+d.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
+d.addEventListener('click',function(e){if(!e.target.closest('.nav'))close()});
+}
+/* scroll spy */
+var spy=$$('.links a[href^="#"]');
+if(spy.length&&'IntersectionObserver' in window){
+var map={};spy.forEach(function(a){var s=$(a.getAttribute('href'));if(s)map[s.id]=a});
+var so=new IntersectionObserver(function(es){es.forEach(function(x){if(x.isIntersecting&&map[x.target.id]){spy.forEach(function(a){a.classList.remove('on')});map[x.target.id].classList.add('on')}})},{rootMargin:'-40% 0px -55% 0px'});
+Object.keys(map).forEach(function(k){so.observe(d.getElementById(k))});
+}
+/* feature filter */
+var tabs=$$('.tab:not(.cf)');
+tabs.forEach(function(t){t.addEventListener('click',function(){
+tabs.forEach(function(x){x.setAttribute('aria-selected',x===t)});
+var c=t.dataset.f;
+$$('#features .tile[data-cat]').forEach(function(card){card.hidden=!(c==='all'||card.dataset.cat.split(' ').indexOf(c)>-1)});
+})});
+/* copy commands */
+var toast=d.createElement('div');toast.className='toast';toast.setAttribute('role','status');d.body.appendChild(toast);var tm;
+function say(m){toast.textContent=m;toast.classList.add('show');clearTimeout(tm);tm=setTimeout(function(){toast.classList.remove('show')},1800)}
+$$('.ci').forEach(function(b){b.addEventListener('click',function(){
+var v=b.dataset.copy;
+function ok(){say(v+' をコピーしました')}
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(v).then(ok,function(){say('コピーできませんでした')})}
+else{var t=d.createElement('textarea');t.value=v;d.body.appendChild(t);t.select();try{d.execCommand('copy');ok()}catch(e){say('コピーできませんでした')}t.remove()}
+})});
+var cf=$$('.cf');
+cf.forEach(function(t){t.addEventListener('click',function(){
+cf.forEach(function(x){x.setAttribute('aria-selected',x===t)});
+$$('.ci').forEach(function(c){c.hidden=!(t.dataset.f==='all'||c.dataset.role===t.dataset.f)});
+})});
+/* faq search */
+var fs=$('#faqsearch');
+if(fs){var ds=$$('#faq details'),em=$('#faqempty');
+fs.addEventListener('input',function(){var q=fs.value.trim().toLowerCase(),n=0;
+ds.forEach(function(x){var hit=!q||x.textContent.toLowerCase().indexOf(q)>-1;x.hidden=!hit;if(hit)n++;if(q&&hit&&n===1)x.open=true});
+em.classList.toggle('show',n===0)});}
+})();
+</script></body></html>
