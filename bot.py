@@ -390,7 +390,14 @@ async def start_web():
     if not port:
         log.info("Webサーバーは無効です(PORT または WEB_URL を設定すると有効になります)")
         return
-    app = web.Application(client_max_size=6 * 1024 * 1024)
+    @web.middleware
+    async def cf_only(request, handler):
+        if CF_PROXY and request.path != "/health" and not _is_cf_peer(request.remote or ""):
+            log.warning("Cloudflare以外からのアクセスを拒否: remote=%s path=%s", request.remote, request.path)
+            raise web.HTTPForbidden()
+        return await handler(request)
+
+    app = web.Application(client_max_size=6 * 1024 * 1024, middlewares=[cf_only] if CF_PROXY else [])
     app.router.add_get("/health", health)
     if DASH_BASE:
         add_dashboard_routes(app)
@@ -821,28 +828,31 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
         store.save()
 
 
+def intro_embeds() -> list:
+    """導入時・/about で表示する説明(短縮版・機能ごとに分けたフィールド)"""
+    e = discord.Embed(title="🛡️ AZQ BOT でできること",
+                      description="サーバー運営をこれ1つで。設定は `/web` からブラウザでも操作できます。", color=BLUE)
+    e.add_field(name="🎭 ロールパネル", value="ボタンでロールを付け外し。\n`/rolepanel create`", inline=False)
+    e.add_field(name="🛡️ 荒らし検知", value="連投・招待リンク・NGワード・レイドを自動対処。導入後すぐ有効。", inline=False)
+    e.add_field(name="🔐 メンバー認証", value="ボタン/計算/画像/Web認証で荒らしを防止。\n`/verify setup`", inline=False)
+    e.add_field(name="📜 ログ", value="参加・削除・処罰などを記録。\n`/config log_channel`", inline=False)
+    e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/config log_channel` → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
+    return [e]
+
+
+def intro_view() -> discord.ui.View:
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label="サポートサーバーに参加", emoji="📢", style=discord.ButtonStyle.link, url=SUPPORT_URL))
+    return view
+
+
+async def send_intro(dest) -> None:
+    await dest.send(embeds=intro_embeds(), view=intro_view())
+
+
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     log.info("サーバーに参加: %s (%s) メンバー数=%s", guild.name, guild.id, guild.member_count)
-    e = make_embed("🛡️ AZQ BOT を導入していただきありがとうございます!", color=BLUE)
-    e.description = (
-        "荒らし対策からメンバー認証・チケットまで、サーバー管理を1つのBotでまとめて行えます。\n\n"
-        "**主な機能**\n"
-        "🛡️ 荒らし対策: 連投・招待リンク・NGワード・レイドなどを自動検知\n"
-        "🔐 メンバー認証: ボタン / 計算 / 画像CAPTCHA\n"
-        "🎫 サポートチケット: 非公開chの自動作成、記録の保存\n"
-        "📊 過疎診断 `/kaso` ・ 🔨 モデレーション ・ 🧠 脳内メーカー ・ 🖼️ 名言画像\n\n"
-        "**はじめに**\n"
-        "・コマンド一覧は `/help` で確認できます\n"
-        "・BOTのロールを、管理したいメンバー・ロールより**上**に移動してください\n"
-        "・ログなどの設定は管理者が `/config log_channel` から行えます\n\n"
-        "📢 **サポートサーバーに参加してください**\n"
-        "メンテナンス・障害・アップデートなどの**お知らせは、サポートサーバーでのみ配信**します。"
-        "参加していないと、これらのお知らせを受け取れません。\n"
-        f"👉 {SUPPORT_URL}"
-    )
-    view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="サポートサーバーに参加", emoji="📢", style=discord.ButtonStyle.link, url=SUPPORT_URL))
     me = guild.me
     targets = []
     if guild.system_channel:
@@ -852,15 +862,21 @@ async def on_guild_join(guild: discord.Guild):
         p = ch.permissions_for(me)
         if p.view_channel and p.send_messages and p.embed_links:
             try:
-                await ch.send(embed=e, view=view)
+                await send_intro(ch)
                 return
             except discord.HTTPException:
                 continue
     try:
         owner = guild.owner or await guild.fetch_member(guild.owner_id)
-        await owner.send(content=f"**{guild.name}** にAZQ BOTが参加しました。", embed=e, view=view)
+        await owner.send(content=f"**{guild.name}** にAZQ BOTが参加しました。使い方の説明です。")
+        await send_intro(owner)
     except discord.HTTPException:
         log.info("参加メッセージを送信できませんでした guild=%s", guild.id)
+
+
+@bot.tree.command(name="about", description="AZQ BOTでできることを表示します")
+async def about_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(embeds=intro_embeds(), view=intro_view(), ephemeral=True)
 
 
 @bot.event
@@ -4208,8 +4224,34 @@ async def notify_web_verified(interaction: Optional[discord.Interaction], member
     await try_dm(member, text)
 
 
+CF_PROXY = (os.getenv("CF_PROXY") or "").strip() == "1"
+CF_NETS = [ipaddress.ip_network(n) for n in (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+    "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+    "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
+    "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32")]
+
+
+def _is_cf_peer(remote: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(remote)
+    except ValueError:
+        return False
+    return any(ip in n for n in CF_NETS if n.version == ip.version)
+
+
 def client_ip(request) -> str:
-    return request.remote or ""
+    """接続元が Cloudflare のときだけ CF-Connecting-IP を信用する(偽装対策)"""
+    remote = request.remote or ""
+    if CF_PROXY and _is_cf_peer(remote):
+        v = request.headers.get("CF-Connecting-IP", "").strip()
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            pass
+    return remote
 
 
 def _rate_ok(ip: str) -> bool:
@@ -7691,7 +7733,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
     e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking` 週間・月間・累計\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
-    e.add_field(name="ℹ️ 情報", value="`/userinfo` `/serverinfo` `/avatar`", inline=False)
+    e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
 
 
