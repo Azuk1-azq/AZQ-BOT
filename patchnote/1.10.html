@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>AZQ BOT パッチノート: 操作の案内を追加</title>
+<style>
+:root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
+--fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Noto Sans JP','Hiragino Sans','Yu Gothic UI',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:28px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:4px;height:22px;border-radius:1px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:6px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);color:#134a8e;padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+a{color:#1b5fb0}a:hover{color:#134a8e}
+</style>
+</head>
+<body>
+<main>
+<h1>操作の案内を追加</h1>
+<p class="meta">AZQ BOT v1.10 パッチノート / 2026年11月5日</p>
+<p class="lead">設定や管理の操作で迷わないように、導入時の説明と、コマンドを初めて使ったときの案内を追加しました。設定は <code>/web</code> からブラウザで行うのがおすすめです。これまでどおり、スラッシュコマンドでも操作できます。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>コマンド実行時の案内</h3>
+<p>管理者や役職を持つ人が、コマンドを初めて使ったとき、<b>「<code>/web</code> 推奨です。(またはこのままスラッシュコマンドでもOK)」</b>という案内が届きます。<code>/web</code> が使える環境では、ブラウザを開くボタンも付きます。</p>
+<p>案内は、コマンドの結果が表示されたあとに、<b>その人にだけ</b>見える形で届きます。同じ人には<b>一度だけ</b>表示され、BOTを再起動しても再び表示されることはありません。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3>導入時と <code>/about</code> の説明</h3>
+<p>説明文と「まずは」の手順に、<b>「<code>/web</code> 推奨(またはスラッシュコマンド)」</b>と明記しました。</p>
+</article>
+<article class="chg">
+<h3>案内の対象を、すべてのコマンドに拡大</h3>
+<p>これまでの案内は、<code>/config</code> <code>/verify</code> <code>/ticketconfig</code> <code>/rolepanel</code> の4つだけが対象でした。今回から、右クリックメニューを含むすべてのコマンドが対象です。ただし、案内そのものである <code>/web</code> <code>/help</code> <code>/about</code> では表示されません。</p>
+<p>一般のメンバーには表示されません。<code>/web</code> を使える人(サーバー管理者・役職を持つ人)だけが対象です。</p>
+</article>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>Webダッシュボードが未設定のサーバーでは、ボタンは表示されません。</b>案内の文章だけが届きます。<code>/web</code> を実行すると、設定の手順を確認できます。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b><code>bot.py</code> を入れ替えてください。</b>入れ替えたあとは、BOTを再起動してください。</li>
+<li><b>追加の設定は不要です。</b>案内を表示したかどうかは、ユーザーごとの保存データに記録されます。データの保存先(<code>DATA_DIR</code>)を消さないように注意してください。消すと、案内がもう一度表示されます。</li>
+</ul>
+</main>
+</body>
+</html>
