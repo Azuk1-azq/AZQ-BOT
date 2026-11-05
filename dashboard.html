@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#0b0c11"><meta name="color-scheme" content="dark light">
+<title>AZQ BOT ダッシュボード</title>
+<style>
+:root{color-scheme:dark light;--bg:#0b0c11;--surface:#13151d;--surface2:#1a1d28;--line:#252a38;--line2:#343b4f;--text:#eceef6;--mute:#8e95aa;--accent:#5865f2;--accent2:#7783ff;--soft:rgba(88,101,242,.16);--ok:#34d399;--danger:#ff5c6c;--warn:#f5c451;--shadow:0 10px 34px rgba(0,0,0,.45);--r:14px;--font:"Inter","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5fa;--surface:#fff;--surface2:#f0f2f8;--line:#e3e6ef;--line2:#cfd5e3;--text:#151823;--mute:#626a80;--accent:#4a56e2;--accent2:#3a46cc;--soft:rgba(74,86,226,.1);--ok:#0c9467;--danger:#d62c3f;--warn:#9a6f00;--shadow:0 10px 34px rgba(24,30,56,.10)}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font:15px/1.7 var(--font);color:var(--text);background:radial-gradient(900px 420px at 8% -8%,var(--soft),transparent 62%),var(--bg);background-attachment:fixed;-webkit-font-smoothing:antialiased;padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+a{color:var(--accent2);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;border-radius:8px}
+::selection{background:var(--soft)}
+h1{font-size:26px;line-height:1.3;letter-spacing:-.01em;margin:4px 0 22px;font-weight:800}
+/* 上部バー */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.bar{max-width:1080px;margin:0 auto;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}
+.brand{display:flex;align-items:baseline;gap:10px;white-space:nowrap}
+.bn{font-weight:800;letter-spacing:.04em;font-size:16px}
+.bs{color:var(--mute);font-size:13px;font-weight:500}
+.who{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:13px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.who>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;padding:4px 12px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);color:var(--text);font-weight:600}
+.who>span:empty{display:none}
+/* レイアウト:左にナビ、右に内容 */
+.shell{max-width:1080px;margin:0 auto;padding:26px 20px;display:grid;grid-template-columns:196px minmax(0,1fr);gap:32px;align-items:start}
+.shell:has(#tabs.hidden){grid-template-columns:minmax(0,780px);justify-content:start}
+.side{position:sticky;top:78px}
+.side:has(#tabs.hidden){display:none}
+.tabs{display:flex;flex-direction:column;gap:3px}
+.tabs button{position:relative;display:block;width:100%;text-align:left;background:none;border:0;border-radius:10px;color:var(--mute);font:600 14px var(--font);padding:9px 14px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.tabs button:hover{color:var(--text);background:var(--surface2)}
+.tabs button[aria-selected=true],.tabs button.on{color:var(--text);background:var(--soft)}
+.tabs button[aria-selected=true]::before,.tabs button.on::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--accent2)}
+main{min-width:0;max-width:780px}
+/* カード */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px 24px;margin:0 0 16px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+.card h2{font-size:15px;font-weight:700;letter-spacing:.01em;margin:0 0 4px}
+.desc{color:var(--mute);font-size:13px;margin:0 0 14px;line-height:1.65}
+/* 入力 */
+select,input:not([type]),input[type=number],input[type=text],textarea{width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 13px;font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s,background .15s}
+select{appearance:none;-webkit-appearance:none;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238e95aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;cursor:pointer}
+select:hover,input:hover,textarea:hover{border-color:var(--line2)}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
+textarea{resize:vertical;min-height:88px;line-height:1.6}
+::placeholder{color:var(--mute);opacity:.7}
+input[type=file]{color:var(--mute);font-size:13px;max-width:100%}
+input[type=file]::file-selector-button{margin-right:10px;padding:7px 14px;border-radius:9px;border:1px solid var(--line2);background:var(--surface2);color:var(--text);font:600 13px var(--font);cursor:pointer}
+/* ボタン */
+.btn,.b{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--accent);color:#fff;border:1px solid transparent;border-radius:10px;padding:8px 18px;font:700 14px var(--font);cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .05s,box-shadow .15s}
+.btn:hover{background:var(--accent2)}
+.btn:active,.b:active{transform:translateY(1px)}
+.btn:disabled,.b:disabled{opacity:.5;cursor:not-allowed}
+.btn.sub,.b{background:var(--surface2);border-color:var(--line);color:var(--text);padding:7px 14px;font-size:13px}
+.btn.sub:hover,.b:hover{border-color:var(--line2);background:var(--line)}
+.b.pri{background:var(--accent);border-color:transparent;color:#fff;padding:8px 18px;font-size:14px}
+.b.pri:hover{background:var(--accent2)}
+.btn.red,.b.ng{background:var(--danger);border-color:transparent;color:#fff}
+.btn.red:hover,.b.ng:hover{filter:brightness(1.1);background:var(--danger)}
+.b.ok{background:var(--ok);border-color:transparent;color:#06281c}
+.b.ok:hover{filter:brightness(1.08);background:var(--ok)}
+/* 切り替えスイッチ */
+.check{display:flex;gap:12px;align-items:flex-start;padding:9px 0;cursor:pointer}
+.check input{appearance:none;-webkit-appearance:none;flex:none;width:40px;height:23px;margin:1px 0 0;border-radius:99px;background:var(--line2);position:relative;cursor:pointer;transition:background .2s}
+.check input::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
+.check input:checked{background:var(--accent)}
+.check input:checked::after{transform:translateX(17px)}
+.check small{display:block;color:var(--mute);font-size:12px;line-height:1.55;margin-top:1px}
+/* チップ */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.chip{background:var(--soft);border:1px solid transparent;color:var(--text);border-radius:99px;padding:2px 12px;font:600 13px var(--font);cursor:pointer;transition:background .15s,border-color .15s}
+.chip:hover{border-color:var(--danger);background:transparent}
+/* 通知・保存バー */
+.msg{border-radius:12px;padding:11px 16px;margin:0 0 16px;border:1px solid var(--line);background:var(--surface2);font-size:14px}
+.msg.err{border-color:var(--danger);color:var(--danger)}
+.savebar{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:0 16px calc(16px + env(safe-area-inset-bottom,0px));pointer-events:none}
+.savebar .bar2{pointer-events:auto;max-width:780px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px 10px 20px;border-radius:16px;background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line2);box-shadow:var(--shadow)}
+/* 保存ボタンが無い画面で、メッセージも無いときは、バーごと隠す */
+.savebar:has(#saveBtn.hidden):has(#status:empty){display:none}
+#status{font-size:13px;color:var(--mute);min-width:0}
+#status.err{color:var(--danger)}#status.ok{color:var(--ok)}#status.dirty{color:var(--warn)}
+#status a{color:var(--accent2);margin:0 4px}
+.hidden{display:none!important}
+footer{color:var(--mute);font-size:12px;margin:28px 0 8px}
+@media(max-width:860px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:14px;padding:16px 14px}
+  .side{position:sticky;top:57px;z-index:15;margin:0 -14px;padding:8px 14px;background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .tabs{flex-direction:row;overflow-x:auto;gap:4px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{width:auto;flex:0 0 auto;padding:8px 14px}
+  .tabs button[aria-selected=true]::before,.tabs button.on::before{left:12px;right:12px;top:auto;bottom:2px;width:auto;height:2px}
+  .bar{padding:10px 14px}.bs{display:none}
+  .who{flex-wrap:nowrap;gap:6px}.who>span{display:none}.who .btn,.who select{padding:6px 11px;font-size:12px}.who select{padding-right:30px}
+  .card{padding:16px 16px}
+  h1{font-size:22px;margin-bottom:16px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+/* ダッシュボード固有 */
+.row{margin:14px 0 0}
+.l{display:block;font-weight:600;font-size:13px;margin:0 0 6px}
+.hint{color:var(--mute);font-size:12px;margin:6px 0 0;line-height:1.55}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.srv-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.srv{display:flex;align-items:center;gap:14px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;color:var(--text);font:700 15px var(--font);cursor:pointer;text-align:left;transition:border-color .15s,transform .15s,box-shadow .15s}
+.srv:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow)}
+.srv span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srv img,.srv i{width:42px;height:42px;border-radius:12px;flex:none;background:var(--surface2);display:grid;place-items:center;font-style:normal;font-weight:800;color:var(--mute)}
+details{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;padding:0 22px;transition:border-color .15s}
+details[open]{border-color:var(--line2)}
+summary{cursor:pointer;font-weight:700;padding:14px 0;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--mute);border-bottom:2px solid var(--mute);transform:rotate(45deg);transition:transform .2s;margin-right:4px}
+details[open]>summary::after{transform:rotate(-135deg)}
+details>*:last-child{margin-bottom:18px}
+.rr{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin:8px 0}
+.rr2{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0;padding:10px 0;border-top:1px solid var(--line)}
+.rr2:first-of-type{border-top:0}
+.rr2 span{min-width:0;overflow-wrap:anywhere;font-size:14px}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;align-items:center}
+.acts input[type=text]{flex:1 1 220px;width:auto}
+code{background:var(--surface2);border:1px solid var(--line);padding:1px 7px;border-radius:6px;font-size:.88em}
+@media(max-width:600px){.grid{grid-template-columns:1fr}.rr{grid-template-columns:1fr 1fr}.rr button{grid-column:span 2}}
+</style></head>
+<body>
+<header class="top"><div class="bar"><div class="brand"><span class="bn">AZQ BOT</span><span class="bs">ダッシュボード</span></div>
+<div class="who"><span id="whoName"></span><a class="btn sub" href="/web/manage">サーバー管理</a><button class="btn sub hidden" id="serversBtn" type="button">サーバー一覧</button><button class="btn sub hidden" id="logoutBtn" type="button">ログアウト</button></div></div></header>
+<div class="shell">
+<aside class="side"><div class="tabs hidden" id="tabs" role="tablist" aria-label="設定の項目"></div></aside>
+<main>
+<h1 id="title">設定</h1>
+<div id="notice" class="msg hidden" role="status"></div>
+<section id="vLoading" class="card"><p style="margin:0;color:var(--mute)">読み込み中…</p></section>
+<section id="vServers" class="hidden"><div id="serverList"></div></section>
+<section id="vApp" class="hidden">
+<div id="tab-basic"></div><div id="tab-mod" class="hidden"></div><div id="tab-verify" class="hidden"></div><div id="tab-ticket" class="hidden"></div><div id="tab-role" class="hidden"></div><div id="tab-member" class="hidden"></div>
+</section>
+<footer>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</footer>
+</main></div>
+<div class="savebar hidden" id="savebar"><div class="bar2"><div id="status" role="status" aria-live="polite"></div><button class="btn" id="saveBtn" type="button">保存</button></div></div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const S = {snap: null, tab: "basic", dirty: {}, forms: {}, guilds: []};
+const el = (t, a, ...k) => { const e = document.createElement(t); for (const [n, v] of Object.entries(a || {})) { if (n === "text") e.textContent = v; else if (n === "class") e.className = v; else if (n.startsWith("on")) e[n] = v; else e.setAttribute(n, v); } e.append(...k); return e; };
+const setStatus = (t, c) => { const s = $("#status"); s.textContent = t || ""; s.className = c || ""; };
+const mark = g => { S.dirty[g] = true; setStatus("未保存の変更があります", "dirty"); };
+const clean = g => { S.dirty[g] = false; };
+window.addEventListener("beforeunload", e => { if (Object.values(S.dirty).some(Boolean)) { e.preventDefault(); e.returnValue = ""; } });
+const api = (p, o = {}) => fetch(p, Object.assign({credentials: "same-origin", cache: "no-store"}, o));
+const post = (p, body) => api(p, {method: "POST", headers: {"Content-Type": "application/json", "X-Requested-With": "azq-dashboard"}, body: JSON.stringify(body)});
+
+/* ---- 部品 ---- 戻り値 {el, get} ---- */
+const nm = (arr, pre) => arr.map(i => ({v: i.id, t: pre + i.name}));
+function selectBox(opts, cur, empty) {
+  const s = el("select"); cur = cur == null ? "" : String(cur);
+  if (empty != null) s.append(el("option", {value: "", text: empty}));
+  let hit = cur === "";
+  opts.forEach(o => { const e = el("option", {value: o.v, text: o.t}); if (o.v === cur) { e.selected = true; hit = true; } s.append(e); });
+  if (!hit) { const e = el("option", {value: cur, text: "(見つかりません: " + cur + ")"}); e.selected = true; s.append(e); }
+  return s;
+}
+function multi(opts, cur, mk) {
+  let sel = (cur || []).map(String); const chips = el("div", {class: "chips"}), s = el("select");
+  const draw = () => {
+    chips.replaceChildren(...sel.map(id => el("button", {type: "button", class: "chip", title: "クリックで外す", text: ((opts.find(o => o.v === id) || {t: id}).t) + " ×",
+      onclick: () => { sel = sel.filter(x => x !== id); draw(); mk(); }})));
+    s.replaceChildren(el("option", {value: "", text: "＋ 追加…"}), ...opts.filter(o => !sel.includes(o.v)).map(o => el("option", {value: o.v, text: o.t})));
+  };
+  s.onchange = () => { if (s.value) { sel.push(s.value); draw(); mk(); } };
+  draw();
+  return {el: el("div", {}, chips, s), get: () => sel};
+}
+/* f: {k,t,l,h,min,max,opts,empty} */
+function field(f, val, group) {
+  const mk = () => mark(group), snap = S.snap, ch = nm(snap.channels, "# "), ro = nm(snap.roles, "@ "), ca = nm(snap.categories, "");
+  let w, get;
+  const box = (input, g) => { w = input; get = g; };
+  switch (f.t) {
+    case "chk": { const c = el("input", {type: "checkbox"}); c.checked = !!val; return {el: el("label", {class: "check"}, c, el("span", {}, f.l, f.h ? el("small", {text: f.h}) : "")), get: () => c.checked}; }
+    case "ch": case "cat": case "role": case "sel": { const s = selectBox(f.t === "ch" ? ch : f.t === "role" ? ro : f.t === "cat" ? ca : f.opts, val, f.t === "sel" ? null : f.empty || "(なし)"); box(s, () => s.value); break; }
+    case "num": { const i = el("input", {type: "number", min: f.min, max: f.max, step: 1}); i.value = val; box(i, () => parseInt(i.value, 10)); break; }
+    case "txt": { const i = el("input", {type: "text", maxlength: f.max || 100}); i.value = val || ""; box(i, () => i.value); break; }
+    case "area": { const a = el("textarea", {maxlength: f.max || 1500}); a.value = val || ""; box(a, () => a.value); break; }
+    case "lines": { const a = el("textarea", {spellcheck: "false"}); a.value = (val || []).join("\n"); box(a, () => a.value.split("\n").map(x => x.trim()).filter(Boolean)); break; }
+    case "mch": case "mrole": { const m = multi(f.t === "mch" ? ch : ro, val, mk); w = m.el; get = m.get; break; }
+  }
+  const row = el("div", {class: "row"}, el("label", {class: "l", text: f.l}), w);
+  if (f.h) row.append(el("p", {class: "hint", text: f.h}));
+  return {el: row, get};
+}
+/* sections: [{t,d,f:[field...]}] → {el, get} */
+function form(sections, data, group) {
+  const root = el("div"), gets = [];
+  sections.forEach(sec => {
+    const c = el("div", {class: "card"}, el("h2", {text: sec.t})); if (sec.d) c.append(el("p", {class: "desc", text: sec.d}));
+    let g = null;
+    sec.f.forEach(f => { const x = field(f, data[f.k], group); gets.push([f.k, x.get]); if (f.g) x.el.dataset.g = f.g; if (f.half) { if (!g) { g = el("div", {class: "grid"}); c.append(g); } g.append(x.el); } else { g = null; c.append(x.el); } });
+    root.append(c);
+  });
+  root.addEventListener("input", () => mark(group)); root.addEventListener("change", () => mark(group));
+  return {el: root, get: () => Object.fromEntries(gets.map(([k, g]) => [k, g()]))};
+}
+
+/* ---- 項目の定義 ---- */
+const N = (k, l, min, max, h) => ({k, t: "num", l, min, max, h, half: 1});
+const C = (k, l, h) => ({k, t: "chk", l, h});
+const BASIC = [
+  {t: "ログ", d: "削除・編集されたメッセージや、モデレーションの記録を送るチャンネルです。管理者だけが見られる場所にしてください。", f: [{k: "log_channel", t: "ch", l: "ログチャンネル", empty: "(使わない)"}]},
+  {t: "ウェルカムメッセージ", d: "メンバーが参加したときに送るメッセージです。画像を付けるオプションもあります。", f: [{k: "welcome_channel", t: "ch", l: "送信先チャンネル", empty: "(送らない)"}, {k: "welcome_message", t: "area", l: "メッセージ", max: 1500, h: "使える変数: {user} {server} {count}"},
+    C("welcome_image_enabled", "メッセージに画像を付ける(オプション)", "参加した人のアイコンと名前の画像を添付します。BOTに「ファイルを添付」権限が必要です。"),
+    {k: "welcome_image_title", t: "txt", l: "画像のタイトル", max: 24, h: "使える変数: {user} {server} {count}", g: "wi"}, {k: "welcome_image_subtitle", t: "txt", l: "画像のサブタイトル", max: 60, h: "使える変数: {user} {server} {count}", g: "wi"},
+    {k: "welcome_image_style", t: "sel", l: "画像のデザイン", opts: [{v: "black", t: "ブラック"}, {v: "white", t: "ホワイト"}, {v: "blue", t: "ブルー"}], g: "wi"},
+    {...C("welcome_image_color", "アイコンをカラーにする", "オフでモノクロになります。"), g: "wi"}, {...C("welcome_image_count", "「◯人目のメンバー」を表示する"), g: "wi"}]},
+  {t: "自動ロール", d: "参加したメンバーに自動で付けるロールです。", f: [{k: "autorole", t: "role", l: "ロール", empty: "(付けない)", h: "強い権限のロール・BOTより上のロール・管理ロールは選べません。"}]},
+  {t: "警告(/warn)", f: [N("warn_limit", "警告の上限回数", 1, 20), N("warn_timeout_minutes", "到達時のタイムアウト(分)", 1, 40320)]},
+  {t: "過疎アラート", d: "活発度がしきい値を下回ると通知します。", f: [C("kaso_enabled", "自動アラートを有効にする"), {k: "kaso_channel", t: "ch", l: "通知先チャンネル", empty: "(通知しない)"}, N("kaso_threshold", "しきい値(24時間のメッセージ数)", 1, 100000)]},
+  {t: "名言画像", f: [C("meigen_enabled", "このサーバーで名言画像を使えるようにする", "オフにすると /meigen などが使えなくなります。")]},
+];
+const MOD = [
+  {t: "荒らし対策(AutoMod)", d: "メッセージを自動で検知して削除し、違反が重なった人をタイムアウトします。管理者・「メッセージの管理」権限を持つ人は対象外です。", f: [C("automod_enabled", "荒らし対策を有効にする", "オフにすると、下の検知もレイド検知もすべて止まります。"), C("block_invites", "招待リンクを削除する", "discord.gg などのDiscord招待リンクを含む投稿を削除します。")]},
+  {t: "連投(スパム)", d: "「判定秒数」以内に「件数」以上投稿した人のメッセージをまとめて削除し、すぐタイムアウトします。", f: [N("spam_count", "件数", 1, 100000), N("spam_seconds", "判定秒数", 1, 100000)]},
+  {t: "同一メッセージの連続投稿", d: "30秒以内に同じ内容を「回数」以上投稿すると削除します。", f: [N("dup_count", "回数", 1, 100000)]},
+  {t: "メンション爆撃", d: "1回の投稿に含まれるユーザー+ロールのメンションが「上限」以上だと削除し、すぐタイムアウトします。", f: [N("mention_limit", "メンション上限", 1, 100000)]},
+  {t: "違反が重なったときの処置", d: "NGワード・招待リンク・同一投稿は、5分以内の違反が「違反数」に達するとタイムアウトします。(連投・メンション爆撃は1回でタイムアウト)", f: [N("strikes_to_timeout", "タイムアウトまでの違反数", 1, 100000), N("punish_minutes", "タイムアウトの分数", 1, 100000)]},
+  {t: "レイド検知(大量参加)", d: "「秒数」以内に「人数」以上が参加すると、ログに警告を出します。認証が有効なら、10分間だけ画像認証+アカウント作成7日以上に自動で強化します。", f: [N("raid_joins", "参加人数", 1, 100000), N("raid_seconds", "判定秒数", 1, 100000)]},
+  {t: "NGワード", d: "含む投稿を削除します。大文字小文字は区別しません。", f: [{k: "ng_words", t: "lines", l: "NGワード(1行に1つ)", h: "最大100個、1つにつき50文字まで。"}]},
+  {t: "除外", d: "ここに入れたチャンネル・ロールは荒らし対策の対象外になります。", f: [{k: "ignore_channels", t: "mch", l: "除外チャンネル"}, {k: "ignore_roles", t: "mrole", l: "除外ロール"}]},
+];
+const VERIFY = snap => [
+  {t: "メンバー認証", d: "参加したメンバーに認証をさせ、通過した人だけにロールを付与します。", f: [C("enabled", "認証を有効にする", "オフで保存すると、認証パネルを削除します。"),
+    {k: "mode", t: "sel", l: "認証方式", opts: [{v: "button", t: "ボタン認証"}, {v: "math", t: "計算認証"}, {v: "image", t: "画像認証(CAPTCHA)"}, {v: "web", t: "Web認証(ブラウザで確認)" + (snap.web_ready ? "" : " ※WEB_URL未設定")}]},
+    {k: "role", t: "role", l: "認証後に付与するロール", h: "強い権限のロール・BOTより上のロールは選べません。"}, {k: "unverified_role", t: "role", l: "未認証ロール(任意)", h: "参加時に付与し、認証後に外すロールです。"},
+    {k: "panel_channel", t: "ch", l: "認証パネルを置くチャンネル"}]},
+  {t: "パネルの文面", f: [{k: "panel_title", t: "txt", l: "タイトル", max: 100}, {k: "panel_text", t: "area", l: "説明文"}, {k: "panel_button", t: "txt", l: "ボタンの名前", max: 30}]},
+  {t: "条件と失敗時の処置", f: [N("min_account_days", "最低アカウント年齢(日・0=制限なし)", 0, 365), N("kick_minutes", "未認証キック(分・0=しない)", 0, 1440), N("max_attempts", "連続で間違えてよい回数", 1, 10), N("lockout_minutes", "上限到達後のロック(分)", 1, 1440),
+    {k: "violation", t: "sel", l: "新規アカウント・失敗上限の人への処置", opts: [{v: "deny", t: "拒否のみ(一時ロック)"}, {v: "kick", t: "キック"}]},
+    {k: "suspect_action", t: "sel", l: "疑わしいアカウントへの処置", opts: [{v: "hold", t: "管理者の承認待ち(/verify approve)"}, {v: "kick", t: "キック"}]}]},
+  {t: "荒らし・サブ垢対策", f: [C("bot_check", "ロボット確認を強化", "早すぎる回答は失敗/ボタン方式は計算に/疑わしい新規は画像認証に"), C("block_default_avatar", "デフォルトアイコンのままのアカウントを自動では通さない"), C("block_rejoin", "認証失敗・未認証キックされた人の再参加を自動では通さない"),
+    C("block_cluster", "作成時刻が近いアカウントが短時間に複数参加したら自動では通さない"), C("block_vpn", "VPN・プロキシ・データセンターの回線から認証させない", "Web認証のときに働きます。"), C("block_alt_ip", "同じ回線から別アカウントが認証済みなら通さない", "Web認証のときに働きます。IPはハッシュで保存します。")]},
+];
+const TICKET = [
+  {t: "サポートチケット", d: "パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成します。", f: [C("enabled", "チケット機能を有効にする", "オフで保存すると、パネルを削除します。(開いているチケットは残ります)"),
+    {k: "category", t: "cat", l: "チケットを作るカテゴリ", h: "BOTに「チャンネルの管理」権限が必要です。1カテゴリ最大50チャンネル。"}, {k: "staff_roles", t: "mrole", l: "スタッフロール(最大10)"},
+    {k: "panel_channel", t: "ch", l: "パネルを置くチャンネル"}, {k: "transcript_channel", t: "ch", l: "記録(.txt)の送信先", empty: "(ログチャンネル)"}]},
+  {t: "パネルの文面", f: [{k: "panel_title", t: "txt", l: "タイトル", max: 100}, {k: "panel_text", t: "area", l: "説明文"}]},
+  {t: "詳細", f: [N("max_open", "1人が同時に開けるチケット数", 1, 5), N("auto_close_hours", "無操作で自動クローズ(時間・0=しない)", 0, 720), C("ping_staff", "作成時にスタッフロールへメンションする"), C("dm_transcript", "クローズ時に作成者へ記録をDMする")]},
+  {t: "作成を禁止するユーザー", f: [{k: "blocked", t: "lines", l: "ユーザーID(1行に1つ)", h: "Discordの開発者モードで、ユーザーを右クリック→「IDをコピー」。"}]},
+];
+
+/* ---- 画面 ---- */
+function info(parent, text) { parent.append(el("p", {class: "desc", text})); }
+function bgBox(snap) {   // ウェルカム画像の背景(アップロードは即時反映。上の設定とは別に保存される)
+  const state = el("p", {class: "desc", text: snap.cfg.welcome_image_bg ? "現在: 背景画像を設定済み" : "現在: なし(グラデーション)"});
+  const pick = el("input", {type: "file", accept: "image/png,image/jpeg,image/webp,image/gif"});
+  const msg = (t, c) => { state.textContent = t; state.style.color = c === "err" ? "#ffb3b5" : ""; };
+  const up = el("button", {type: "button", class: "btn sub", text: "アップロード", onclick: async () => {
+    const f = pick.files[0]; if (!f) return msg("画像を選んでください。", "err");
+    if (f.size > 5 * 1024 * 1024) return msg("5MB以下の画像を選んでください。", "err");
+    msg("アップロード中…");
+    try {
+      const res = await handle(await api("/api/guild/" + S.snap.gid + "/welcome_bg", {method: "POST", headers: {"Content-Type": "application/octet-stream", "X-Requested-With": "azq-dashboard"}, body: f}));
+      if (!res) return msg("アップロードできませんでした。", "err");
+      S.snap.cfg.welcome_image_bg = true; pick.value = ""; msg("背景画像を設定しました。(次に参加した人から使われます)");
+    } catch (e) { msg("通信に失敗しました。", "err"); }
+  }});
+  const del = el("button", {type: "button", class: "btn sub", text: "背景を削除", onclick: async () => {
+    if (!confirm("背景画像を削除します。よろしいですか?")) return;
+    try {
+      const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", {action: "welcome_bg_delete"})); if (!res) return;
+      S.snap.cfg.welcome_image_bg = false; msg("背景画像を削除しました。");
+    } catch (e) { msg("通信に失敗しました。", "err"); }
+  }});
+  const box = el("div", {class: "row"}, el("span", {class: "l", text: "画像の背景(任意)"}),
+    el("p", {class: "hint", text: "好きな画像を背景にできます。PNG・JPEG・WebP・GIF(5MBまで)。横長(1000×360)に切り取られ、文字が読めるようデザインの色が重なります。アップロードはすぐ保存され、上の「保存」は不要です。"}),
+    state, el("div", {class: "acts", style: "margin:0"}, pick, up, del));
+  box.dataset.g = "wi";
+  return box;
+}
+function testBox() {   // 保存済みの設定で、自分(管理者)宛てのウェルカムを送信先チャンネルに送る
+  const b = el("button", {type: "button", class: "btn sub", text: "テスト送信", onclick: async () => {
+    setStatus("送信中…");
+    try {
+      const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", {action: "welcome_test"})); if (!res) return;
+      setStatus((await res.json()).msg, "ok");
+    } catch (e) { setStatus("通信に失敗しました。", "err"); }
+  }});
+  return el("div", {class: "row"}, el("span", {class: "l", text: "動作の確認"}),
+    el("p", {class: "hint", text: "保存済みの設定で、あなたが参加したものとして、送信先チャンネルにウェルカムを送ります。届かないときは、理由がここに表示されます。変更した内容は、先に「保存」してください。"}), b);
+}
+function renderGeneral(snap) {
+  const a = form(BASIC, snap.cfg, "gen"), b = form(MOD, snap.cfg, "gen");
+  $("#tab-basic").replaceChildren(a.el); $("#tab-mod").replaceChildren(b.el);
+  const card = [...a.el.querySelectorAll(".card")].find(c => c.querySelector("h2").textContent.startsWith("ウェルカム")), chk = card && card.querySelector("label.check input");   // ウェルカムメッセージのカード
+  if (card && chk) {
+    card.append(bgBox(snap), testBox());
+    const sync = () => card.querySelectorAll("[data-g=wi]").forEach(n => n.classList.toggle("hidden", !chk.checked));
+    chk.addEventListener("change", sync); sync();
+  }
+  S.forms.gen = () => Object.assign(a.get(), b.get());
+}
+function actionCard(title, ...kids) { const c = el("div", {class: "card"}, el("h2", {text: title})); c.append(...kids); return c; }
+function renderVerify(snap) {
+  const v = snap.verify, f = form(VERIFY(snap), v, "verify"); S.forms.verify = () => f.get();
+  const mins = el("input", {type: "number", min: 1, max: 1440, value: 30, style: "width:90px"});
+  const run = (label, body, ask) => el("button", {type: "button", class: "btn sub", text: label, onclick: () => { if (!ask || confirm(ask)) act(body); }});
+  const s = v.stats;
+  f.el.append(actionCard("操作", el("p", {class: "desc", text: `累計: 認証 ${s.verified} / 失敗 ${s.failed} / 拒否 ${s.denied} / キック ${s.kicked}　認証待ち ${v.pending}人　保存中のIPハッシュ ${v.ips}件`}),
+    el("div", {class: "acts"}, el("button", {type: "button", class: "btn sub", text: "パネルを再設置", onclick: () => saveCard("verify", {repost: true})}), run("IPハッシュをすべて削除", {action: "verify_clearips"}, "保存しているIPのハッシュをすべて削除します。よろしいですか?")),
+    el("div", {class: "acts"}, el("span", {text: v.raid_left ? `レイド警戒中(あと約${v.raid_left}分)` : "レイド警戒モード:"}), mins, el("span", {text: "分"}),
+      el("button", {type: "button", class: "btn sub", text: "ON", onclick: () => act({action: "verify_raid", enabled: true, minutes: parseInt(mins.value, 10)})}), run("OFF", {action: "verify_raid", enabled: false})),
+    el("p", {class: "hint", text: "メンバーの手動承認・認証の取り消し・一括承認は「メンバー」タブで行えます。"})));
+  $("#tab-verify").replaceChildren(f.el);
+}
+function renderTicket(snap) {
+  const t = snap.ticket, f = form(TICKET, t, "ticket"); S.forms.ticket = () => f.get();
+  f.el.append(actionCard("操作", el("p", {class: "desc", text: `累計: 作成 ${t.stats.created} / クローズ ${t.stats.closed}　開いているチケット ${t.open}件`}),
+    el("div", {class: "acts"}, el("button", {type: "button", class: "btn sub", text: "パネルを再設置", onclick: () => saveCard("ticket", {repost: true})}))));
+  $("#tab-ticket").replaceChildren(f.el);
+}
+function roleEditor(p, snap) {   // p が null なら新規
+  const ro = nm(snap.roles, "@ "), rows = el("div"), ch = p ? null : selectBox(nm(snap.channels, "# "), "", "(選んでください)");
+  const title = el("input", {type: "text", maxlength: 100}), text = el("textarea"), ex = el("input", {type: "checkbox"});
+  title.value = p ? p.title : "ロールパネル"; text.value = p ? p.text : "ボタンを押して、好きなロールを受け取りましょう。"; ex.checked = p ? p.exclusive : false;
+  const addRow = r => {
+    const s = selectBox(ro, r ? r.id : "", "(ロールを選ぶ)"), lb = el("input", {type: "text", maxlength: 80, placeholder: "ボタンの名前"}); lb.value = r ? r.label : "";
+    s.onchange = () => { if (!lb.value) lb.value = (ro.find(o => o.v === s.value) || {t: ""}).t.replace(/^@ /, ""); };
+    const row = el("div", {class: "rr"}, s, lb, el("button", {type: "button", class: "btn sub", text: "削除", onclick: () => row.remove()}));
+    row.get = () => ({id: s.value, label: lb.value}); rows.append(row);
+  };
+  (p ? p.roles : [null]).forEach(addRow);
+  const body = el("div", {},
+    ch ? el("div", {class: "row"}, el("label", {class: "l", text: "パネルを置くチャンネル"}), ch) : el("p", {class: "desc"}, "設置先: ", el("a", {href: p.url, target: "_blank", rel: "noopener", text: "メッセージを開く"}), "(チャンネルを変えるには、削除して作り直してください)"),
+    el("div", {class: "row"}, el("label", {class: "l", text: "タイトル"}), title), el("div", {class: "row"}, el("label", {class: "l", text: "説明文"}), text),
+    el("label", {class: "check"}, ex, el("span", {text: "1つだけ選択(押すと他のロールが外れる)"})),
+    el("div", {class: "row"}, el("span", {class: "l", text: "ロールとボタン(最大25)"}), rows, el("button", {type: "button", class: "btn sub", text: "＋ ロールを追加", onclick: () => { if (rows.children.length < 25) addRow(null); }}),
+      el("p", {class: "hint", text: "管理者などの強い権限を持つロールは設定できません。BOTのロールを、付与するロールより上に置いてください。"})));
+  const save = el("button", {type: "button", class: "btn", text: p ? "保存して反映" : "設置する", onclick: () => act({action: "rp_save", id: p ? p.id : "", channel: ch ? ch.value : "", title: title.value, text: text.value,
+    exclusive: ex.checked, roles: [...rows.children].map(r => r.get()).filter(r => r.id)})});
+  const acts = el("div", {class: "acts"}, save);
+  if (p) acts.append(el("button", {type: "button", class: "btn red", text: "パネルを削除", onclick: () => { if (confirm("このロールパネルを削除します。(付与済みのロールはそのままです)")) act({action: "rp_delete", id: p.id}); }}));
+  body.append(acts);
+  return body;
+}
+function renderRoles(snap) {
+  const root = el("div"); root.append(el("p", {class: "desc", text: "ボタンを押すだけでロールを付与・解除できるパネルです。"}));
+  snap.rolepanels.forEach(p => { const chn = (snap.channels.find(c => c.id === p.channel) || {name: "不明"}).name;
+    root.append(el("details", {}, el("summary", {text: `${p.title}  (# ${chn} / ${p.roles.length}ロール)`}), roleEditor(p, snap))); });
+  const nw = el("details", {}, el("summary", {text: "＋ 新しいロールパネルを作る"}), roleEditor(null, snap)); if (!snap.rolepanels.length) nw.open = true;
+  root.append(nw); $("#tab-role").replaceChildren(root);
+}
+function renderAll(snap) {
+  S.snap = snap; renderGeneral(snap); renderVerify(snap); renderTicket(snap); renderRoles(snap); renderMember(snap); S.dirty = {};
+}
+
+
+/* ---- メンバー(警告・手動承認) ---- */
+const fmtDate = t => new Date(t * 1000).toLocaleDateString("ja-JP");
+async function memAct(body, onData) {
+  setStatus("処理中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", body)); if (!res) return;
+    const r = await res.json();
+    Object.assign(S.snap, {warned: r.snap.warned, pending_list: r.snap.pending_list, verify: r.snap.verify});
+    setStatus(r.msg, "ok"); if (onData && r.data) onData(r.data); renderMemberLists();
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+function memberCard(info) {
+  const card = el("div", {class: "card"});
+  const run = (body, ask) => { if (!ask || confirm(ask)) memAct(body, d => card.replaceWith(memberCard(d))); };
+  const btn = (label, body, ask) => el("button", {type: "button", class: "btn sub", text: label, onclick: () => run(body, ask)});
+  card.append(el("h2", {text: info.name}), el("p", {class: "desc", text: "ID: " + info.id + (info.bot ? " / BOT" : "")}));
+  const st = ["警告 " + info.warn_total + "件"];
+  if (info.verify) st.push("認証: " + {done: "済み", pending: "認証待ち", none: "未認証"}[info.verify]);
+  if (info.suspect) st.push("要確認: " + info.suspect);
+  card.append(el("p", {text: st.join(" / ")}));
+  info.warns.forEach(w => card.append(el("div", {class: "rr2"}, el("span", {text: `#${w.n}  ${fmtDate(w.time)}  ${w.reason}  (by ${w.mod})`}), btn("取り消し", {action: "warn_remove", uid: info.id, number: w.n}))));
+  const acts = el("div", {class: "acts"});
+  if (info.warn_total) acts.append(btn("警告をすべて消す", {action: "warn_clear", uid: info.id}, "このメンバーの警告をすべて消します。よろしいですか?"));
+  if (info.verify && info.in_guild) acts.append(info.verify === "done" ? btn("認証を取り消す", {action: "verify_revoke", uid: info.id}, "認証を取り消して未認証に戻します。よろしいですか?") : btn("認証済みにする", {action: "verify_approve", uid: info.id}));
+  if (acts.children.length) card.append(acts);
+  return card;
+}
+function findMember(q) { memAct({action: "member_search", q}, d => { S.memRes.replaceChildren(...d.map(memberCard)); S.memRes.scrollIntoView({block: "nearest"}); }); }
+function renderMemberLists() {
+  const s = S.snap, box = $("#memLists"), v = s.verify;
+  const pend = el("div", {class: "card"}, el("h2", {text: `認証待ち・疑わしいアカウント (${v.pending}人)`}));
+  if (!s.pending_list.length) pend.append(el("p", {class: "desc", text: "いません。"}));
+  s.pending_list.forEach(p => pend.append(el("div", {class: "rr2"}, el("span", {text: `${p.name} — ${p.minutes}分前` + (p.suspect ? `  要確認: ${p.suspect}` : "")}),
+    el("button", {type: "button", class: "btn sub", text: "承認", onclick: () => memAct({action: "verify_approve", uid: p.id})}))));
+  if (v.pending > s.pending_list.length) pend.append(el("p", {class: "hint", text: "古い順に50人まで表示しています。"}));
+  const wr = el("div", {class: "card"}, el("h2", {text: "警告がある人"}));
+  if (!s.warned.length) wr.append(el("p", {class: "desc", text: "いません。"}));
+  s.warned.forEach(w => wr.append(el("div", {class: "rr2"}, el("span", {text: `${w.name} — ${w.count}件`}), el("button", {type: "button", class: "btn sub", text: "表示", onclick: () => findMember(w.id)}))));
+  const bulk = el("div", {class: "card"}, el("h2", {text: "一括承認"}), el("p", {class: "desc", text: "認証待ち以外の全メンバー(BOTを除く)に、認証ロールを付与します。認証を導入する前から参加していた人向けです。5分に1回まで。"}),
+    el("button", {type: "button", class: "btn sub", text: "既存メンバーを全員、認証済みにする", onclick: () => { if (confirm("認証待ち以外の全メンバーに認証ロールを付与します。よろしいですか?")) memAct({action: "verify_bulk"}); }}));
+  box.replaceChildren(pend, wr, bulk);
+}
+function renderMember(snap) {
+  const q = el("input", {type: "text", maxlength: 100, placeholder: "名前またはユーザーID", style: "flex:1"});
+  const go = () => { if (q.value.trim()) findMember(q.value); };
+  q.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); go(); } };
+  S.memRes = el("div");
+  $("#tab-member").replaceChildren(
+    el("div", {class: "card"}, el("h2", {text: "メンバーを探す"}), el("p", {class: "desc", text: "警告の確認・取り消しや、認証の手動承認・取り消しができます。キックやBANなどの操作は、Discordのコマンドで行います。"}),
+      el("div", {class: "acts", style: "margin:0"}, q, el("button", {type: "button", class: "btn", text: "検索", onclick: go}))),
+    S.memRes, el("div", {id: "memLists"}));
+  renderMemberLists();
+}
+
+/* ---- 保存・操作 ---- */
+function expired() {   // 入力を残したまま、別のタブでログインし直せるようにする
+  const s = $("#status"); s.className = "err";
+  s.replaceChildren("ログインの有効期限が切れました。", el("a", {href: loginUrl(S.snap && S.snap.gid), target: "_blank", rel: "noopener", text: "ログインし直す"}), "(別のタブで開きます。この画面の入力は残ります)");
+}
+async function handle(res, group) {
+  if (res.ok) return res;
+  if (res.status === 401) { expired(); return null; }
+  const t = res.status === 403 ? "この操作を行う権限がありません。" : (await res.text()) || ("失敗しました(" + res.status + ")");
+  setStatus(t, "err"); return null;
+}
+async function act(body) {   // ロールパネル・レイド・IP削除など(サーバーから最新の状態が返る)
+  setStatus("処理中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", body)); if (!res) return;
+    const r = await res.json(); const keep = Object.assign({}, S.dirty);
+    const open = [...document.querySelectorAll("#tab-role details")].map(d => d.open);
+    const gen = S.forms.gen && S.dirty.gen ? S.forms.gen() : null;
+    renderAll(r.snap); if (gen) { /* 基本設定の未保存の入力は、再描画で戻るので警告のみ */ setStatus(r.msg + "(基本設定の未保存の変更は破棄されました)", "ok"); } else setStatus(r.msg, "ok");
+    document.querySelectorAll("#tab-role details").forEach((d, i) => { if (open[i]) d.open = true; });
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+async function saveCard(g, extra) {
+  const body = Object.assign({action: g + "_save"}, S.forms[g](), extra || {});
+  setStatus("保存中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", body)); if (!res) return;
+    const r = await res.json(); const gen = S.dirty.gen; renderAll(r.snap); setStatus(r.msg + (gen ? "(基本設定の未保存の変更は破棄されました)" : ""), "ok");
+    showTab(S.tab);
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+async function saveGeneral() {
+  setStatus("保存中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid, S.forms.gen())); if (!res) return;
+    clean("gen"); setStatus("保存しました", "ok");
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+$("#saveBtn").onclick = async () => { $("#saveBtn").disabled = true; try { await (S.tab === "verify" || S.tab === "ticket" ? saveCard(S.tab) : saveGeneral()); } finally { $("#saveBtn").disabled = false; } };
+
+/* ---- タブ・起動 ---- */
+const TABS = [["basic", "基本"], ["mod", "荒らし対策"], ["verify", "認証"], ["ticket", "チケット"], ["role", "ロールパネル"], ["member", "メンバー"]];
+function showTab(id) {
+  S.tab = id;
+  TABS.forEach(([k]) => { $("#tab-" + k).classList.toggle("hidden", k !== id); });
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.k === id)));
+  $("#saveBtn").classList.toggle("hidden", id === "role" || id === "member");
+  $("#saveBtn").textContent = id === "verify" ? "認証を保存して反映" : id === "ticket" ? "チケットを保存して反映" : "保存";
+}
+function show(id) { ["vLoading", "vServers", "vApp"].forEach(v => $("#" + v).classList.toggle("hidden", v !== id)); $("#tabs").classList.toggle("hidden", id !== "vApp"); $("#savebar").classList.toggle("hidden", id !== "vApp"); }
+const loginUrl = gid => "/login" + (gid ? "?g=" + encodeURIComponent(gid) : "");
+const notice = (t, err) => { const n = $("#notice"); n.textContent = t || ""; n.className = "msg" + (err ? " err" : "") + (t ? "" : " hidden"); };
+function fatal(t, link) {
+  show("vLoading"); $("#vLoading").replaceChildren(el("p", {style: "margin:0"}, t, " ", el("a", {href: link || "/login?consent=1", text: "もう一度ログインする"})));
+}
+function toLogin(gid) {   // Discordのログインへ(ログイン後は、このサーバーの画面に戻る)。Cookieが使えない環境での無限の繰り返しを防ぐ
+  try {
+    const t = +sessionStorage.getItem("azq_l") || 0;
+    if (Date.now() - t < 20000) return fatal("ログインを保てませんでした。ブラウザのCookieが無効になっていないか確認してください。");
+    sessionStorage.setItem("azq_l", String(Date.now()));
+  } catch (e) { /* sessionStorage が使えなくても続ける */ }
+  location.replace(loginUrl(gid));
+}
+const dirtyOk = () => !Object.values(S.dirty).some(Boolean) || confirm("未保存の変更があります。移動しますか?");
+const gname = gid => (S.guilds.find(g => g.id === String(gid)) || {name: ""}).name;
+function renderServers(msg) {
+  $("#title").textContent = "サーバー一覧"; notice(msg, !!msg); S.snap = null;
+  const box = $("#serverList");
+  if (!S.guilds.length) { box.replaceChildren(el("div", {class: "card"}, el("p", {style: "margin:0", text: "編集できるサーバーがありません。BOTが参加していて、あなたが管理者(またはサーバー管理権限を持つ)サーバーだけが表示されます。"}))); return show("vServers"); }
+  box.replaceChildren(el("p", {class: "desc", text: "設定を編集するサーバーを選んでください。"}), el("div", {class: "srv-list"}, ...S.guilds.map(g => {
+    const ok = g.icon && /^https:\/\/cdn\.discordapp\.com\//.test(g.icon);
+    return el("button", {type: "button", class: "srv", onclick: () => openGuild(g.id)}, ok ? el("img", {src: g.icon, alt: "", referrerpolicy: "no-referrer"}) : el("i", {text: g.name.slice(0, 1)}), el("span", {text: g.name}));
+  })));
+  show("vServers");
+}
+function openGuild(gid) { if (!dirtyOk()) return; history.pushState(null, "", "/?g=" + encodeURIComponent(gid)); route(); }
+async function loadGuild(gid) {
+  setStatus("読み込み中…");
+  try {
+    const res = await api("/api/guild/" + encodeURIComponent(gid));
+    if (res.status === 401) return toLogin(gid);
+    if (res.status === 403 || res.status === 404) return renderServers("このサーバーを管理する権限がありません。(BOTが参加していて、あなたが管理者・サーバー管理権限を持つサーバーだけ開けます)");
+    if (!res.ok) return setStatus("設定を読み込めませんでした(" + res.status + ")", "err");
+    S.dirty = {}; notice(""); renderAll(await res.json()); $("#title").textContent = "設定 — " + gname(gid); show("vApp"); showTab(S.tab); setStatus("");
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+async function route() {   // URLの ?g=サーバーID があれば、そのサーバーの画面を直接開く(/web から入った場合)
+  const want = new URLSearchParams(location.search).get("g") || "";
+  if (want && S.guilds.some(g => g.id === want)) return loadGuild(want);
+  if (!want && S.guilds.length === 1) return loadGuild(S.guilds[0].id);
+  renderServers(want ? "指定されたサーバーを管理する権限がありません。" : "");
+}
+async function boot() {
+  $("#tabs").replaceChildren(...TABS.map(([k, l]) => el("button", {type: "button", role: "tab", "data-k": k, text: l, onclick: () => showTab(k)})));
+  const want = new URLSearchParams(location.search).get("g") || "";
+  let me = null;
+  try { const res = await api("/api/me"); if (res.ok) me = await res.json(); } catch (e) { return fatal("サーバーに接続できませんでした。", location.href); }
+  if (!me || !me.user) return toLogin(want);
+  try { sessionStorage.removeItem("azq_l"); } catch (e) { /* 無視 */ }
+  S.guilds = me.guilds || [];
+  $("#whoName").textContent = me.user.name; $("#logoutBtn").classList.remove("hidden"); $("#serversBtn").classList.toggle("hidden", S.guilds.length < 2);
+  await route();
+}
+window.addEventListener("popstate", () => { route(); });
+$("#serversBtn").onclick = () => { if (!dirtyOk()) return; history.pushState(null, "", "/"); S.guilds.length > 1 ? renderServers("") : route(); };
+$("#logoutBtn").onclick = async () => { try { await post("/api/logout", {}); } catch (e) { /* 無視 */ } S.dirty = {}; location.href = "/bye"; };
+boot();
+</script>
+</body></html>
