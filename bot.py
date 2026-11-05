@@ -831,12 +831,12 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
 def intro_embeds() -> list:
     """導入時・/about で表示する説明(短縮版・機能ごとに分けたフィールド)"""
     e = discord.Embed(title="🛡️ AZQ BOT でできること",
-                      description="サーバー運営をこれ1つで。設定は `/web` からブラウザでも操作できます。", color=BLUE)
+                      description="サーバー運営をこれ1つで。設定は **`/web` 推奨**(またはスラッシュコマンド)で操作できます。", color=BLUE)
     e.add_field(name="🎭 ロールパネル", value="ボタンでロールを付け外し。\n`/rolepanel create`", inline=False)
     e.add_field(name="🛡️ 荒らし検知", value="連投・招待リンク・NGワード・レイドを自動対処。導入後すぐ有効。", inline=False)
     e.add_field(name="🔐 メンバー認証", value="ボタン/計算/画像/Web認証で荒らしを防止。\n`/verify setup`", inline=False)
     e.add_field(name="📜 ログ", value="参加・削除・処罰などを記録。\n`/config log_channel`", inline=False)
-    e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/config log_channel` → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
+    e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/web` 推奨(またはスラッシュコマンド `/config log_channel`) → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
     return [e]
 
 
@@ -7685,26 +7685,47 @@ def web_available() -> bool:
     return OAUTH_READY
 
 
+WEB_HINT_SKIP = {"web", "help", "about"}  # 案内そのものになるコマンドには出さない
+_hint_tasks: set = set()
+
+
+async def _send_web_hint(interaction: discord.Interaction) -> None:
+    """コマンドの返信が終わるのを待ってから、「/web推奨 またはスラッシュコマンド」の案内を本人にだけ表示する"""
+    for _ in range(60):
+        if interaction.response.is_done():
+            break
+        await asyncio.sleep(0.25)
+    else:
+        return
+    view = discord.ui.View()
+    if web_available() and interaction.guild:
+        view.add_item(discord.ui.Button(label="Webで操作する", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
+    text = "💡 **`/web` 推奨** です。(またはこのままスラッシュコマンドでもOK)"
+    try:
+        if view.children:
+            await interaction.followup.send(text, view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(text, ephemeral=True)
+    except discord.HTTPException:
+        pass
+
+
 async def _web_hint_check(interaction: discord.Interaction) -> bool:
-    """設定系スラッシュコマンドの初回実行時に、Webでも操作できることを一度だけ案内する(コマンド自体は通常どおり実行)"""
+    """スラッシュコマンド・右クリックメニューの実行時に、「/web推奨 またはスラッシュコマンド」を案内する(同じ人には一度だけ。保存されるので再起動後も出ない)。
+    /web を使える人(サーバー管理者・役職あり)にだけ表示する。コマンド自体は通常どおり実行する"""
     try:
         cmd = interaction.command
-        root = (getattr(cmd, "root_parent", None) or cmd)
-        if (root and root.name in WEB_HINT_ROOTS and web_available()
-                and not user_prefs.rec(interaction.user.id).get("web_hint")):
-            user_prefs.rec(interaction.user.id)["web_hint"] = True
+        root = getattr(cmd, "root_parent", None) or cmd
+        user = interaction.user
+        rec = user_prefs.rec(user.id)
+        if (root and interaction.guild and root.name not in WEB_HINT_SKIP
+                and not rec.get("web_hint")
+                and (_is_dash_admin(user) or rank_of(user) >= 1)):
+            rec["web_hint"] = True  # 一度出したら、その人にはもう出さない(再起動後も保存)
             user_prefs.save()
-
-            async def hint():
-                await asyncio.sleep(2)
-                v = discord.ui.View()
-                v.add_item(discord.ui.Button(label="Webで操作する", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
-                try:
-                    await interaction.followup.send("💡 設定は **Webダッシュボード**(`/web`)でも簡単に変更できます。"
-                                                    "このままスラッシュコマンドで続けてもOKです。(この案内は一度だけ表示されます)", view=v, ephemeral=True)
-                except discord.HTTPException:
-                    pass
-            asyncio.create_task(hint())
+            t = asyncio.create_task(_send_web_hint(interaction))
+            _hint_tasks.add(t)
+            t.add_done_callback(_hint_tasks.discard)
     except Exception:
         log.exception("Web案内の表示に失敗")
     return True
