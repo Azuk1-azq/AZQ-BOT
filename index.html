@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AZQ BOT - サーバー管理Discord Bot</title>
-<meta name="description" content="荒らし検知・メンバー認証・チケット・過疎診断・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
+<meta name="description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
 <meta name="theme-color" content="#0e2747">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -269,7 +269,7 @@ section{padding:60px 0}
 <main id="main"><div class="wrap" id="top">
 
 <div class="band hband"><div class="hgrid"><div class="hero">
-<a class="pill" href="../patchnote/1.10.html"><b>v1.10</b><span>操作の案内を追加</span><i>→</i></a>
+<a class="pill" href="../patchnote/2.1.html"><b>v2.1</b><span>レベル機能を追加</span><i>→</i></a>
 <h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
 <p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
 <div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
@@ -324,6 +324,20 @@ section{padding:60px 0}
 <div class="emb"><h4>ロールパネル</h4><p>ボタンを押してロールを付与・解除できます。</p><div class="dbtns"><span class="db ok">ゲーム</span><span class="db g">お知らせ</span><span class="db g">イラスト</span></div></div></div></div><figcaption>Fig 4 — ロールパネルのイメージ(ロール名は例)</figcaption></figure>
 </div>
 
+<div class="fb">
+<div class="ft"><span class="k">05 — LEVELS</span><h3>レベルとランキング</h3><p>発言するとXPが貯まり、レベルが上がるとチャンネルでお知らせします。<code>/rank</code> でランクカード、<code>/leaderboard</code> でサーバーのランキングを見られます。XPの追加・削除・設定・移行は、管理者が行えます。</p>
+<div class="chips"><span>ランクカード</span><span>レベル・メッセージ数のランキング</span><span>レベルアップ通知</span><span>獲得XP・間隔を調整</span><span>XP・レベル・ステータスの管理</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>🏆 レベルランキング</h4><p>🥇 ユーザーA — Lv.12 (7,412 XP)<br>🥈 ユーザーB — Lv.9 (3,980 XP)<br>🥉 ユーザーC — Lv.7 (2,540 XP)</p></div></div></div><figcaption>Fig 5 — ランキングのイメージ(名前と数値は例)</figcaption></figure>
+</div>
+
+<div class="fb rev">
+<div class="ft"><span class="k">06 — MIGRATION</span><h3>他のBOTから簡単に移行</h3><p><code>/level migrate</code> で手順を確認し、<code>/level import</code> で取り込みます。取り込む前にプレビューで人数と上位5人を確認でき、取り込んだあとも <code>/level undo_import</code> で元に戻せます。MEE6とは計算式が同じなので、レベルがそのまま一致します。</p>
+<div class="chips"><span>MEE6(自動取得)</span><span>Amari(APIキー)</span><span>CSV・JSONファイル</span><span>取り込み前にプレビュー</span><span>自動バックアップ</span><span>取り込み後も元に戻せる</span></div></div>
+<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>📥 インポートの確認</h4><p>MEE6 から 1,240人分 を読み込みました。まだ何も変更していません。</p><div class="dbtns"><span class="db">上書きして取り込む</span><span class="db ok">高い方を採用して取り込む</span><span class="db g">キャンセル</span></div></div></div></div><figcaption>Fig 6 — 取り込み前の確認画面のイメージ</figcaption></figure>
+</div>
+
 <h3 class="sh">そのほかの機能</h3>
 <div class="grid">
 <div class="tile"><span class="k">DIAGNOSIS</span><h3>過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
@@ -357,6 +371,8 @@ section{padding:60px 0}
 <button class="ci" type="button" data-role="all-user" data-copy="/serverinfo"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/avatar"><code>/avatar</code><span>アイコンを表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/help"><code>/help</code><span>コマンド一覧を確認</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/rank"><code>/rank</code><span>ランクカードを表示(他の人も指定可)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/leaderboard"><code>/leaderboard</code><span>レベル・メッセージ数のランキングを表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/ticket close"><code>/ticket close</code><span>チケットをクローズ(作成者・スタッフも可)</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/config log_channel"><code>/config log_channel</code><span>ログチャンネルを設定</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/config automod_set"><code>/config automod_set</code><span>荒らし検知の厳しさを調整・無効化</span><em class="adm">管理者</em></button>
@@ -365,6 +381,11 @@ section{padding:60px 0}
 <button class="ci" type="button" data-role="admin" data-copy="/ticketconfig setup"><code>/ticketconfig setup</code><span>サポートチケットパネルを設置</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/ticket delete"><code>/ticket delete</code><span>クローズ済みチケットを削除</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/rolepanel create"><code>/rolepanel create</code><span>ロールパネルを作成</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/level migrate"><code>/level migrate</code><span>他のBOTからの移行手順を表示</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/level import"><code>/level import</code><span>MEE6・Amari・ファイルからレベルを取り込み</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/level undo_import"><code>/level undo_import</code><span>直前の取り込みを元に戻す</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/level config"><code>/level config</code><span>獲得XP・間隔・レベルアップ通知を設定</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/xp add"><code>/xp add</code><span>XPを追加(/level・/stats も add・remove・set・transfer が使えます)</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/kick"><code>/kick</code><span>メンバーをキック</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/ban"><code>/ban</code><span>メンバーをBAN</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/unban"><code>/unban</code><span>BANを解除</span><em class="adm">管理者</em></button>
@@ -384,12 +405,11 @@ section{padding:60px 0}
 <h2>最近のアップデート</h2>
 <p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
 <ul class="list">
-<li><a class="item" href="../patchnote/1.10.html"><div class="meta"><span class="ver">v1.10</span><span class="new">最新</span></div><h3>バージョン 1.10 のパッチノート</h3><p>操作の案内を追加(設定は /web 推奨、またはスラッシュコマンド)</p></a></li>
+<li><a class="item" href="../patchnote/2.1.html"><div class="meta"><span class="ver">v2.1</span><span class="new">最新</span></div><h3>バージョン 2.1 のパッチノート</h3><p>レベル機能を追加(ランクカード・ランキング・XPの管理・他のBOTからの移行)</p></a></li>
 <li><a class="item" href="../patchnote/1.9.html"><div class="meta"><span class="ver">v1.9</span></div><h3>バージョン 1.9 のパッチノート</h3><p>サーバー管理機能を追加(役職・参加申請・スタッフ応募・ロール管理・ポイント)</p></a></li>
 <li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>
 <li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
 <li><a class="item" href="../patchnote/1.6.html"><div class="meta"><span class="ver">v1.6</span></div><h3>バージョン 1.6 のパッチノート</h3><p>Web認証にreCAPTCHAを追加</p></a></li>
-<li><a class="item" href="../patchnote/1.5.html"><div class="meta"><span class="ver">v1.5</span></div><h3>バージョン 1.5 のパッチノート</h3><p>このバージョンの変更内容を見る</p></a></li>
 </ul>
 <a class="more" href="../patchnote/index.html">すべてのパッチノートを見る →</a>
 </section>
@@ -399,7 +419,7 @@ section{padding:60px 0}
 <h2>安心して使うための情報</h2>
 <p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
 <div class="two">
-<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
+<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>レベル機能のXPとメッセージ数(ユーザーIDごとの数値のみ。メッセージ本文は保存しません)</li><li>レベルを取り込んだときの、取り込み前のXPのバックアップ(1サーバーに1つ。取り消すと削除されます)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
 <div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
 </div>
 <div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
@@ -414,7 +434,7 @@ section{padding:60px 0}
 <div class="scroll"><table class="perm">
 <tr><th>権限</th><th>使う機能</th></tr>
 <tr><td>チャンネルを見る / メッセージ履歴を読む</td><td>荒らし判定、過疎診断の集計、チケット記録の作成</td></tr>
-<tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像、認証・チケットのパネル、チケット記録(.txt)の送信</td></tr>
+<tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像、認証・チケットのパネル、チケット記録(.txt)の送信、レベルアップの通知</td></tr>
 <tr><td>メッセージの管理</td><td>荒らしメッセージの自動削除、/purge</td></tr>
 <tr><td>メンバーをキック / BAN</td><td>/kick /ban /unban(管理者のみ実行可能)、時間内に認証しなかった人のキック(設定した場合のみ)</td></tr>
 <tr><td>メンバーをタイムアウト</td><td>/timeout、警告上限・荒らし検知時の自動タイムアウト</td></tr>
@@ -448,11 +468,13 @@ section{padding:60px 0}
 <details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
 <details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
 <details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
-<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ousama /ping /userinfo などは誰でも使えます。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
+<details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ousama /ping /userinfo /rank /leaderboard などは誰でも使えます。レベルのXPの変更・取り込み(/level /xp /stats)は、「サーバーの管理」権限を持つ人だけです。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
 <details><summary>チケットは誰が閉じて、誰が削除できますか?</summary><p>クローズは、チケットを作った本人・スタッフロールのメンバー・管理者ができます。クローズすると記録が保存され、チャンネルは閲覧のみになります。チャンネルの削除は管理者だけが行えます(クローズ済みのチケットに付く「削除」ボタン、または /ticket delete)。</p></details>
 <details><summary>自分のアイコンを名言画像に使われたくありません</summary><p>他の人があなたのアイコン・名前で名言画像を作ろうとすると、BOTからあなたにDMが届き、ボタンで「許可する」「許可しない」を選べます。選ぶまでは作成されません。あとから <code>/meigenprivacy</code> でも変更できます。サーバー管理者は <code>/config meigen</code> で、そのサーバー全体の名言画像をOFFにできます。</p></details>
 <details><summary>ロールパネルは誰でも作れますか?</summary><p>パネルの作成・編集は管理者のみです。メンバーはパネルのボタンを押してロールを付与・解除できます。管理者権限などの危険な権限を持つロールはパネルに設定できず、メンバー認証を終えていない人は利用できません。BOTのロールが対象ロールより下にあると付与に失敗するので、ロール順位を確認してください。</p></details>
 <details><summary>Web認証では、IPアドレスを取得しますか?</summary><p>Web認証を使うサーバーでは、認証ページを開いたときにBOTが接続元のIPアドレスを一時的に使います。外部のサービスにIPを送ることはありません。VPN・プロキシ・データセンターの回線かどうかは、公開されているIPアドレスの一覧と照合して、BOTの中だけで判定します。「同じ回線から別のアカウントが認証していないか」の判定を有効にしたサーバーでは、IPアドレスをそのままではなく、元に戻せない値(ハッシュ)にして保存します。いずれも推測による判定なので、学校・会社・家族で同じ回線を使っている場合などに、承認待ちになることがあります。管理者はいつでも保存した値を削除できます。</p></details>
+<details><summary>レベルはどうやって上がりますか?</summary><p>発言するとXPが貯まります。既定では1回の発言で15〜25XPで、同じ人は60秒に1回までです。次のレベルに必要なXPは、レベルが上がるほど増えます。<code>/level config</code> で、獲得量・間隔・通知先・通知の文面を変えたり、XPの獲得そのものをOFFにしたりできます。</p></details>
+<details><summary>他のBOTのレベルを引き継げますか?</summary><p>引き継げます。<code>/level migrate</code> で手順を確認してください。MEE6はリーダーボードを公開にすると自動で取得でき、AmariはAPIキーで取得できます。それ以外のBOTは、<code>id</code> と <code>xp</code>(または <code>level</code>)の列があるCSV・JSONファイルを添付して取り込めます。取り込む前にプレビューが表示され、<code>/level undo_import</code> で元に戻せます(取り込み後に貯まったXPも戻ります)。取り込んだあとは、XPが二重に入らないよう、元のBOTを停止または無効化してください。</p></details>
 <details><summary>メンバー認証とは何ですか?</summary><p>参加したメンバーがボタン・計算・画像CAPTCHAのいずれかを通過すると、認証ロールが付与される機能です。アカウント作成からの日数制限や、時間内に認証しない人のキック、レイド検知時の自動強化も設定できます。認証が必要なチャンネルの権限設定は、設置時のメッセージの案内に沿って行ってください。</p></details>
 <details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
 <p class="empty" id="faqempty">該当する質問が見つかりませんでした。<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でお気軽にご質問ください。</p>
