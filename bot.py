@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import bisect
 import copy
+import csv
 import functools
 import hashlib
 import hmac
@@ -308,6 +309,7 @@ class AzqBot(commands.Bot):
             for _mid, _p in _cfg.get("rolepanel", {}).get("panels", {}).items():
                 self.add_view(RolePanelView(_p["roles"]), message_id=int(_mid))
         srvadm_install()
+        levels_install()
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
             self.tree.copy_global_to(guild=guild)
@@ -331,6 +333,7 @@ class AzqBot(commands.Bot):
         await store.flush_async()
         await act_flush_async()
         await srvadm_flush()
+        await levels.flush_async()
         if self.session:
             await self.session.close()
         if self.web_runner:
@@ -835,6 +838,7 @@ def intro_embeds() -> list:
     e.add_field(name="🎭 ロールパネル", value="ボタンでロールを付け外し。\n`/rolepanel create`", inline=False)
     e.add_field(name="🛡️ 荒らし検知", value="連投・招待リンク・NGワード・レイドを自動対処。導入後すぐ有効。", inline=False)
     e.add_field(name="🔐 メンバー認証", value="ボタン/計算/画像/Web認証で荒らしを防止。\n`/verify setup`", inline=False)
+    e.add_field(name="📈 レベル", value="発言でXPが貯まり、ランクカードやランキングで確認できます。他のBOTからの移行も簡単です。\n`/rank` `/leaderboard` `/level migrate`", inline=False)
     e.add_field(name="📜 ログ", value="参加・削除・処罰などを記録。\n`/config log_channel`", inline=False)
     e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/web` 推奨(またはスラッシュコマンド `/config log_channel`) → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
     return [e]
@@ -7637,6 +7641,716 @@ async def srvadm_do(request):
     return web.json_response({"ok": True, "msg": msg, "snap": srvadm_snapshot(g, m)}, headers={"Cache-Control": "no-store"})
 
 
+# ═════════════════════════ レベル・XP・統計 ═════════════════════════
+# MEE6 と同じ計算式(次のレベルに必要なXP = 5×L² + 50×L + 100)なので、MEE6 / Arcane / Lurkr などから
+# XPをそのまま移行しても、レベルが一致します。データは DATA_DIR/levels.json に保存されます。
+# 「ステータス(stats)」は、サーバーでの累計メッセージ数です。
+
+LV_MAX = 1000
+LV_CFG = {"enabled": True, "announce": True, "channel": None, "xp_min": 15, "xp_max": 25, "cooldown": 60,
+          "message": "🎉 {user} さんが **レベル {level}** になりました!"}
+
+
+def lv_total(level: int) -> int:
+    """そのレベルに到達するために必要な累計XP"""
+    return 5 * level * (2 * level * level + 27 * level + 91) // 6
+
+
+LV_XP_CAP = lv_total(LV_MAX)
+
+
+def lv_from_xp(xp: int) -> int:
+    lo, hi = 0, LV_MAX
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if lv_total(mid) <= xp:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+def lv_progress(xp: int) -> tuple:
+    lvl = lv_from_xp(xp)
+    return lvl, xp - lv_total(lvl), lv_total(lvl + 1) - lv_total(lvl)
+
+
+class LevelStore:
+    SAVE_DELAY = 15.0
+
+    def __init__(self, directory: str):
+        os.makedirs(directory, exist_ok=True)
+        self.path = os.path.join(directory, "levels.json")
+        self.data: dict = {}
+        self._dirty = False
+        self._task: Optional[asyncio.Task] = None
+        self._lock = threading.Lock()
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, encoding="utf-8") as f:
+                    self.data = json.load(f)
+            except Exception:
+                log.exception("levels.json を読み込めませんでした。壊れたファイルを levels.json.broken に退避して空で起動します。")
+                try:
+                    os.replace(self.path, self.path + ".broken")
+                except OSError:
+                    pass
+                self.data = {}
+
+    def guild(self, gid: int) -> dict:
+        g = self.data.setdefault(str(gid), {})
+        g.setdefault("cfg", {})
+        g.setdefault("users", {})
+        return g
+
+    def cfg(self, gid: int) -> dict:
+        c = self.guild(gid)["cfg"]
+        for k, v in LV_CFG.items():
+            c.setdefault(k, v)
+        return c
+
+    def user(self, gid: int, uid: int) -> dict:
+        return self.guild(gid)["users"].setdefault(str(uid), {"xp": 0, "msg": 0})
+
+    def save(self) -> None:
+        self._dirty = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return self.flush()
+        if self._task is None or self._task.done():
+            self._task = loop.create_task(self._later())
+
+    async def _later(self) -> None:
+        while self._dirty:
+            await asyncio.sleep(self.SAVE_DELAY)
+            await self.flush_async()
+
+    def _dump(self) -> str:
+        return json.dumps(self.data, ensure_ascii=False, separators=(",", ":"))
+
+    def _write(self, payload: str) -> None:
+        with self._lock:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, self.path)
+
+    async def flush_async(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            payload = self._dump()
+            await asyncio.get_running_loop().run_in_executor(None, self._write, payload)
+        except Exception:
+            self._dirty = True
+            log.exception("levels.json の保存に失敗しました")
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            self._write(self._dump())
+        except Exception:
+            self._dirty = True
+            log.exception("levels.json の保存に失敗しました")
+
+
+levels = LevelStore(DATA_DIR)
+atexit.register(levels.flush)
+_lv_last: dict = {}
+
+
+def lv_board(g: discord.Guild, key: str) -> list:
+    rows = []
+    for uid, r in levels.guild(g.id)["users"].items():
+        v = r.get(key, 0)
+        if v <= 0:
+            continue
+        m = g.get_member(int(uid))
+        if m and not m.bot:
+            rows.append((m, v))
+    rows.sort(key=lambda x: (-x[1], x[0].id))
+    return rows
+
+
+async def on_message_levels(message: discord.Message) -> None:
+    g, m = message.guild, message.author
+    if g is None or m.bot or not isinstance(m, discord.Member):
+        return
+    cfg = levels.cfg(g.id)
+    if not cfg["enabled"]:
+        return
+    rec = levels.user(g.id, m.id)
+    rec["msg"] += 1
+    now, key = time.time(), (g.id, m.id)
+    if now - _lv_last.get(key, 0) >= cfg["cooldown"]:
+        if len(_lv_last) > 20000:
+            for k in [k for k, t in _lv_last.items() if now - t > 3600]:
+                _lv_last.pop(k, None)
+        _lv_last[key] = now
+        before = lv_from_xp(rec["xp"])
+        rec["xp"] = min(LV_XP_CAP, rec["xp"] + random.randint(cfg["xp_min"], cfg["xp_max"]))
+        after = lv_from_xp(rec["xp"])
+        if after > before and cfg["announce"]:
+            ch = g.get_channel(cfg["channel"]) if cfg["channel"] else message.channel
+            if ch and ch.permissions_for(g.me).send_messages:
+                text = cfg["message"].replace("{user}", m.mention).replace("{level}", str(after)).replace("{server}", g.name)
+                try:
+                    await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[m]))
+                except discord.HTTPException:
+                    pass
+    levels.save()
+
+
+def lv_apply(rec: dict, kind: str, op: str, n: int) -> None:
+    """kind: level / xp / msg、op: add / remove / set(レベルは、レベル内の進捗を保ったまま増減する)"""
+    if kind == "level":
+        lvl = lv_from_xp(rec["xp"])
+        prog = rec["xp"] - lv_total(lvl)
+        if op == "add":
+            new = min(LV_MAX, lvl + n)
+        elif op == "remove":
+            new = max(0, lvl - n)
+        else:
+            new, prog = min(LV_MAX, n), 0
+        size = lv_total(new + 1) - lv_total(new)
+        rec["xp"] = min(LV_XP_CAP, lv_total(new) + min(prog, size - 1))
+        return
+    cap_ = LV_XP_CAP if kind == "xp" else 10 ** 9
+    cur = rec[kind]
+    rec[kind] = min(cap_, cur + n) if op == "add" else max(0, cur - n) if op == "remove" else min(cap_, n)
+
+
+def lv_have(rec: dict, kind: str) -> int:
+    return lv_from_xp(rec["xp"]) if kind == "level" else rec[kind]
+
+
+def lv_state_text(rec: dict) -> str:
+    lvl, cur, need_ = lv_progress(rec["xp"])
+    return f"レベル **{lvl}** / XP **{rec['xp']:,}** ({cur:,}/{need_:,}) / メッセージ **{rec['msg']:,}**"
+
+
+# コマンド名 → (保存キー, 表示名, 上限)
+LV_KINDS = {
+    "level": ("level", "レベル", LV_MAX),
+    "xp": ("xp", "XP", LV_XP_CAP),
+    "stats": ("msg", "ステータス(メッセージ数)", 10 ** 9),
+}
+
+
+def _lv_make_group(name: str):
+    kind, short, vmax = LV_KINDS[name]
+    g = app_commands.Group(name=name, description=f"{short}の管理(サーバー管理者向け)",
+                           default_permissions=discord.Permissions(manage_guild=True), guild_only=True)
+
+    async def done(interaction, title: str, targets: list, note: str):
+        levels.save()
+        lines = "\n".join(f"{m.mention}: {lv_state_text(levels.user(interaction.guild.id, m.id))}" for m in targets)
+        await interaction.response.send_message(f"{title}\n{lines}", allowed_mentions=NONE)
+        await send_log(interaction.guild, make_embed(f"📈 {short}の変更", f"{note}\n実行者: {interaction.user} (`{interaction.user.id}`)", GRAY))
+
+    @g.command(name="add", description=f"ユーザーに{short}を追加します")
+    @app_commands.describe(user="対象ユーザー", amount=f"追加する量")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @lg_guard
+    async def _add(interaction: discord.Interaction, user: discord.Member, amount: app_commands.Range[int, 1, vmax]):
+        if user.bot:
+            raise SrvAdmError("BOTは対象にできません。")
+        lv_apply(levels.user(interaction.guild.id, user.id), kind, "add", amount)
+        await done(interaction, f"➕ {short}を {amount:,} 追加しました。", [user], f"{user} (`{user.id}`) +{amount:,} {short}")
+
+    @g.command(name="remove", description=f"ユーザーから{short}を削除します")
+    @app_commands.describe(user="対象ユーザー", amount="削除する量")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @lg_guard
+    async def _remove(interaction: discord.Interaction, user: discord.Member, amount: app_commands.Range[int, 1, vmax]):
+        if user.bot:
+            raise SrvAdmError("BOTは対象にできません。")
+        lv_apply(levels.user(interaction.guild.id, user.id), kind, "remove", amount)
+        await done(interaction, f"➖ {short}を {amount:,} 削除しました。", [user], f"{user} (`{user.id}`) -{amount:,} {short}")
+
+    @g.command(name="set", description=f"ユーザーの{short}を設定します")
+    @app_commands.describe(user="対象ユーザー", value="設定する値")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @lg_guard
+    async def _set(interaction: discord.Interaction, user: discord.Member, value: app_commands.Range[int, 0, vmax]):
+        if user.bot:
+            raise SrvAdmError("BOTは対象にできません。")
+        lv_apply(levels.user(interaction.guild.id, user.id), kind, "set", value)
+        await done(interaction, f"✏️ {short}を {value:,} に設定しました。", [user], f"{user} (`{user.id}`) = {value:,} {short}")
+
+    @g.command(name="transfer", description=f"ユーザー間で{short}を移行します")
+    @app_commands.describe(from_user="移行元", to_user="移行先", amount="移す量")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @lg_guard
+    async def _transfer(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member,
+                        amount: app_commands.Range[int, 1, vmax]):
+        if from_user.bot or to_user.bot:
+            raise SrvAdmError("BOTは対象にできません。")
+        if from_user.id == to_user.id:
+            raise SrvAdmError("同じユーザーには移行できません。")
+        a, b = levels.user(interaction.guild.id, from_user.id), levels.user(interaction.guild.id, to_user.id)
+        if lv_have(a, kind) < amount:
+            raise SrvAdmError(f"移行元の{short}が足りません。(現在 {lv_have(a, kind):,})")
+        lv_apply(a, kind, "remove", amount)
+        lv_apply(b, kind, "add", amount)
+        await done(interaction, f"🔁 {from_user.mention} → {to_user.mention} へ {short}を {amount:,} 移行しました。", [from_user, to_user],
+                   f"{from_user} (`{from_user.id}`) → {to_user} (`{to_user.id}`) {amount:,} {short}")
+
+    return g
+
+
+level_group = _lv_make_group("level")
+stats_group = _lv_make_group("stats")
+xp_group = _lv_make_group("xp")
+
+
+# ── /level config ──
+
+@level_group.command(name="config", description="レベル機能の設定(指定した項目のみ変更・省略で現在の設定を表示)")
+@app_commands.describe(enabled="XPの獲得をON/OFF", announce="レベルアップを通知する", channel="通知先(省略=発言したチャンネル)",
+                       xp_min="1回の獲得XP(最小)", xp_max="1回の獲得XP(最大)", cooldown="XP獲得の間隔(秒)",
+                       message="通知文({user} {level} {server})")
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = None, announce: Optional[bool] = None,
+                    channel: Optional[discord.TextChannel] = None, xp_min: Optional[app_commands.Range[int, 0, 1000]] = None,
+                    xp_max: Optional[app_commands.Range[int, 0, 1000]] = None, cooldown: Optional[app_commands.Range[int, 0, 3600]] = None,
+                    message: Optional[app_commands.Range[str, 1, 300]] = None):
+    c = levels.cfg(interaction.guild.id)
+    new = {"enabled": enabled, "announce": announce, "xp_min": xp_min, "xp_max": xp_max, "cooldown": cooldown, "message": message,
+           "channel": channel.id if channel else None}
+    lo = new["xp_min"] if new["xp_min"] is not None else c["xp_min"]
+    hi = new["xp_max"] if new["xp_max"] is not None else c["xp_max"]
+    if lo > hi:
+        raise SrvAdmError("XPの最小値が最大値を超えています。")
+    changed = []
+    for k, v in new.items():
+        if v is not None:
+            c[k] = v
+            changed.append(f"`{k}` = `{v}`")
+    if not changed:
+        ch = f"<#{c['channel']}>" if c["channel"] else "発言したチャンネル"
+        return await eph(interaction, f"**現在の設定**\nXP獲得: {'ON' if c['enabled'] else 'OFF'} / 通知: {'ON' if c['announce'] else 'OFF'} ({ch})\n"
+                                      f"獲得XP: {c['xp_min']}〜{c['xp_max']} / 間隔 {c['cooldown']}秒\n通知文: {c['message']}")
+    levels.save()
+    await eph(interaction, "✅ 更新しました:\n" + "\n".join(changed))
+
+
+# ── /level import ──
+
+_lv_import_last: dict = {}
+LV_ID_KEYS = ("id", "user_id", "userid", "discord_id")
+LV_XP_KEYS = ("xp", "exp", "total_xp", "totalxp")
+LV_LV_KEYS = ("level", "lvl")
+LV_MSG_KEYS = ("message_count", "messages", "msgs", "msg", "message")
+
+
+def _pick(row: dict, keys: tuple):
+    low = {str(k).strip().lower(): v for k, v in row.items()}
+    for k in keys:
+        if low.get(k) not in (None, ""):
+            return low[k]
+    return None
+
+
+def parse_level_rows(rows: list) -> dict:
+    out = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        raw = _pick(row, LV_ID_KEYS)
+        if raw is None and isinstance(row.get("user"), dict):
+            raw = row["user"].get("id")
+        if raw is None:
+            raw = row.get("user")
+        try:
+            uid = int(str(raw).strip())
+            xp, lvl, msg = _pick(row, LV_XP_KEYS), _pick(row, LV_LV_KEYS), _pick(row, LV_MSG_KEYS)
+            if xp is not None:
+                xp = int(float(xp))
+            elif lvl is not None:
+                xp = lv_total(max(0, min(LV_MAX, int(float(lvl)))))
+            msg = int(float(msg)) if msg is not None else None
+        except (ValueError, TypeError):
+            continue
+        if xp is None and msg is None:
+            continue
+        out[uid] = {"xp": max(0, min(LV_XP_CAP, xp)) if xp is not None else None,
+                    "msg": max(0, msg) if msg is not None else None}
+    return out
+
+
+def parse_level_file(name: str, data: bytes) -> dict:
+    """CSV / JSON(MEE6形式の {"players": [...]}・{ユーザーID: {...}} 形式にも対応)を {ユーザーID: {xp, msg}} にする"""
+    import csv
+    text = data.decode("utf-8-sig", errors="replace")
+    if name.lower().endswith(".json") or text.lstrip()[:1] in ("[", "{"):
+        j = json.loads(text)
+        if isinstance(j, dict):
+            for k in ("players", "users", "leaderboard", "data", "members"):
+                if isinstance(j.get(k), list):
+                    j = j[k]
+                    break
+            else:
+                j = [{"id": k, **(v if isinstance(v, dict) else {"xp": v})} for k, v in j.items()]
+        return parse_level_rows(j)
+    return parse_level_rows(list(csv.DictReader(io.StringIO(text))))
+
+
+async def fetch_mee6(gid: int) -> dict:
+    out = {}
+    for page in range(300):
+        url = f"https://mee6.xyz/api/plugins/levels/leaderboard/{gid}?limit=1000&page={page}"
+        try:
+            async with bot.session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                if r.status == 401:
+                    raise SrvAdmError("MEE6のリーダーボードが非公開です。MEE6のダッシュボードでリーダーボードを公開にしてから、もう一度実行してください。")
+                if r.status == 404:
+                    raise SrvAdmError("MEE6がこのサーバーに導入されていないか、レベル機能が無効です。")
+                if r.status == 429:
+                    raise SrvAdmError("MEE6側のアクセス制限中です。しばらく待ってから、もう一度実行してください。")
+                if r.status != 200:
+                    raise SrvAdmError(f"MEE6から取得できませんでした。(HTTP {r.status})")
+                j = await r.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            raise SrvAdmError("MEE6に接続できませんでした。しばらくしてからもう一度お試しください。")
+        players = j.get("players") or []
+        for p in players:
+            try:
+                out[int(p["id"])] = {"xp": min(LV_XP_CAP, int(p.get("xp", 0))), "msg": int(p.get("message_count", 0))}
+            except (KeyError, ValueError, TypeError):
+                continue
+        if len(players) < 1000:
+            break
+        await asyncio.sleep(1)
+    return out
+
+
+LV_BACKUP_DIR = os.path.join(DATA_DIR, "level_backup")
+
+
+def _lv_backup_path(gid: int) -> str:
+    return os.path.join(LV_BACKUP_DIR, f"{int(gid)}.json")
+
+
+def _lv_backup_write(gid: int, payload: str) -> None:
+    os.makedirs(LV_BACKUP_DIR, exist_ok=True)
+    tmp = _lv_backup_path(gid) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(payload)
+    os.replace(tmp, _lv_backup_path(gid))
+
+
+def _lv_backup_read(gid: int) -> Optional[dict]:
+    try:
+        with open(_lv_backup_path(gid), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+async def fetch_amari(gid: int, key: str) -> dict:
+    """Amari の公式API(開発者向けAPIキーが必要)から、サーバーのレベル全件を取得する"""
+    url = f"https://amaribot.com/api/v1/guild/raw/leaderboard/{gid}"
+    try:
+        async with bot.session.get(url, headers={"Authorization": key}, timeout=aiohttp.ClientTimeout(total=60)) as r:
+            if r.status in (401, 403):
+                raise SrvAdmError("Amariに拒否されました。APIキーが正しいか確認してください。")
+            if r.status == 404:
+                raise SrvAdmError("Amariにこのサーバーのデータがありません。")
+            if r.status == 429:
+                raise SrvAdmError("Amari側のアクセス制限中です。しばらく待ってからやり直してください。")
+            if r.status != 200:
+                raise SrvAdmError(f"Amariから取得できませんでした。(HTTP {r.status})")
+            j = await r.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        raise SrvAdmError("Amariに接続できませんでした。しばらくしてからもう一度お試しください。")
+    return parse_level_rows(next((j[k] for k in ("data", "members", "leaderboard") if isinstance(j, dict) and isinstance(j.get(k), list)),
+                                 j if isinstance(j, list) else []))
+
+
+def lv_commit_import(g: discord.Guild, data: dict, use_max: bool) -> None:
+    for uid, v in data.items():
+        rec = levels.user(g.id, uid)
+        for k in ("xp", "msg"):
+            if v[k] is None:
+                continue
+            rec[k] = max(rec[k], v[k]) if use_max else v[k]
+    levels.save()
+
+
+def lv_preview_embed(g: discord.Guild, name: str, data: dict) -> discord.Embed:
+    here = [(g.get_member(u), v) for u, v in data.items()]
+    here = [(m, v) for m, v in here if m and not m.bot]
+    users = levels.guild(g.id)["users"]
+    changed = sum(1 for u in data if str(u) in users and users[str(u)]["xp"] > 0)
+    top = sorted(here, key=lambda x: -(x[1]["xp"] or 0))[:5]
+    e = make_embed("📥 インポートの確認", f"**{name}** から **{len(data):,}人分** を読み込みました。\nまだ何も変更していません。内容を確認して、下のボタンを押してください。", YELLOW)
+    e.add_field(name="このサーバーにいる人", value=f"{len(here):,}人")
+    e.add_field(name="すでにXPがある人", value=f"{changed:,}人(「上書き」だとその値が置き換わります)")
+    if top:
+        e.add_field(name="上位5人(プレビュー)", value="\n".join(
+            f"{i}. {m.mention} — Lv.{lv_from_xp(v['xp'] or 0)} ({(v['xp'] or 0):,} XP)" for i, (m, v) in enumerate(top, 1)), inline=False)
+    e.set_footer(text="取り込み前の状態は自動でバックアップされ、/level undo_import で元に戻せます")
+    return e
+
+
+class ImportConfirmView(discord.ui.View):
+    def __init__(self, owner_id: int, guild: discord.Guild, name: str, data: dict):
+        super().__init__(timeout=300)
+        self.owner_id, self.guild, self.name, self.data, self.used = owner_id, guild, name, data, False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("コマンドを実行した本人だけ操作できます。", ephemeral=True)
+            return False
+        return True
+
+    async def _go(self, interaction: discord.Interaction, use_max: bool):
+        if self.used:
+            return await interaction.response.send_message("すでに実行済みです。", ephemeral=True)
+        self.used = True
+        self.stop()
+        await interaction.response.edit_message(content="⏳ 取り込んでいます…", embed=None, view=None)
+        g = self.guild
+        payload = json.dumps(levels.guild(g.id)["users"], separators=(",", ":"))
+        try:
+            await run_heavy(_lv_backup_write, g.id, payload)
+        except OSError:
+            log.exception("レベルのバックアップに失敗")
+            return await interaction.edit_original_response(content="❌ バックアップを保存できなかったため、中止しました。(何も変更していません)")
+        lv_commit_import(g, self.data, use_max)
+        await send_log(g, make_embed("📥 レベルのインポート", f"{self.name}: {len(self.data):,}人分({'高い方を採用' if use_max else '上書き'})\n"
+                                     f"実行者: {interaction.user} (`{interaction.user.id}`)", GREEN))
+        await interaction.edit_original_response(
+            content=f"✅ {len(self.data):,}人分を取り込みました。`/leaderboard` で確認できます。\n"
+                    "・元のBOTは、XPが二重に入らないよう停止または無効化してください。\n"
+                    "・やり直す場合は `/level undo_import`(取り込み後に増えたXPも元に戻ります)")
+
+    @discord.ui.button(label="上書きして取り込む", emoji="📥", style=discord.ButtonStyle.primary)
+    async def overwrite(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._go(interaction, False)
+
+    @discord.ui.button(label="高い方を採用して取り込む", emoji="⬆️", style=discord.ButtonStyle.success)
+    async def keep_max(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._go(interaction, True)
+
+    @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.used = True
+        self.stop()
+        await interaction.response.edit_message(content="キャンセルしました。(何も変更していません)", embed=None, view=None)
+
+
+@level_group.command(name="import", description="別のBOT(MEE6・Amari・Lurkr など)からレベルを移行します(確認してから取り込み)")
+@app_commands.describe(source="MEE6・AmariはAPIから自動取得 / それ以外はCSV・JSONを添付", file="CSVまたはJSON(列: id, xp または level, messages)",
+                       api_key="Amariの場合のみ: AmariのAPIキー(本人にしか見えません)")
+@app_commands.choices(source=[app_commands.Choice(name="MEE6(自動取得)", value="mee6"),
+                              app_commands.Choice(name="Amari(APIキーで自動取得)", value="amari"),
+                              app_commands.Choice(name="ファイル(Lurkrなど・CSV/JSON)", value="file")])
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def lv_import(interaction: discord.Interaction, source: app_commands.Choice[str],
+                    file: Optional[discord.Attachment] = None, api_key: Optional[str] = None):
+    g = interaction.guild
+    now = time.time()
+    if now - _lv_import_last.get(g.id, 0) < 30:
+        raise SrvAdmError("インポートは30秒に1回までです。")
+    if source.value == "file":
+        if not file:
+            raise SrvAdmError("`file` にCSVまたはJSONを添付してください。やり方は `/level migrate` で確認できます。")
+        if file.size > 5 * 1024 * 1024:
+            raise SrvAdmError("ファイルが大きすぎます。(5MBまで)")
+    if source.value == "amari" and not api_key:
+        raise SrvAdmError("`api_key` にAmariのAPIキーを入力してください。やり方は `/level migrate` で確認できます。")
+    _lv_import_last[g.id] = now
+    await interaction.response.defer(ephemeral=True)
+    try:
+        if source.value == "mee6":
+            data = await fetch_mee6(g.id)
+        elif source.value == "amari":
+            data = await fetch_amari(g.id, api_key.strip())
+        else:
+            raw = await file.read()
+            try:
+                data = await run_heavy(parse_level_file, file.filename, raw)
+            except (ValueError, UnicodeError, csv.Error):
+                raise SrvAdmError("ファイルを読み取れませんでした。CSV(1行目に列名)またはJSONで、id と xp(または level)の列が必要です。")
+    except SrvAdmError as e:
+        _lv_import_last.pop(g.id, None)
+        return await interaction.followup.send(f"❌ {e}", ephemeral=True)
+    if not data:
+        _lv_import_last.pop(g.id, None)
+        return await interaction.followup.send("❌ 取り込めるデータがありませんでした。列名(`id`, `xp` または `level`)を確認してください。", ephemeral=True)
+    await interaction.followup.send(embed=lv_preview_embed(g, source.name, data), view=ImportConfirmView(interaction.user.id, g, source.name, data),
+                                    ephemeral=True, allowed_mentions=NONE)
+
+
+@level_group.command(name="undo_import", description="直前のインポートを取り消し、取り込み前の状態に戻します")
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def lv_undo_import(interaction: discord.Interaction):
+    g = interaction.guild
+    users = await run_heavy(_lv_backup_read, g.id)
+    if users is None:
+        raise SrvAdmError("戻せるバックアップがありません。(インポートの実行前に自動で保存されます)")
+    levels.guild(g.id)["users"] = users
+    levels.save()
+    try:
+        os.remove(_lv_backup_path(g.id))
+    except OSError:
+        pass
+    await send_log(g, make_embed("↩️ レベルのインポートを取り消し", f"実行者: {interaction.user} (`{interaction.user.id}`)", YELLOW))
+    await eph(interaction, f"✅ 取り込み前の状態({len(users):,}人分)に戻しました。")
+
+
+@level_group.command(name="migrate", description="別のBOTからレベルを移行する手順を表示します")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def lv_migrate(interaction: discord.Interaction):
+    e = make_embed("🚚 レベルの移行ガイド", "移行元のBOTに合わせて、いちばん簡単な方法を選んでください。\n"
+                   "どの方法でも、**取り込む前にプレビューが出て**、取り込み後も `/level undo_import` で元に戻せます。", BLUE)
+    e.add_field(name="① MEE6(いちばん簡単)", value="1. MEE6のダッシュボードで、レベルのリーダーボードを**公開**にする\n"
+                "2. `/level import source:MEE6`\n3. プレビューを確認して「取り込む」\n計算式が同じなので、レベルはそのまま一致します。", inline=False)
+    e.add_field(name="② Amari", value="1. Amariの開発者向けAPIキーを用意する\n2. `/level import source:Amari api_key:(キー)`\n"
+                "※ キーはあなたにしか見えません。取り込み後に再発行することをおすすめします。", inline=False)
+    e.add_field(name="③ Lurkr・その他(ファイル)", value="1. 移行元のBOTがデータのエクスポートに対応していれば、ダッシュボードからダウンロード\n"
+                "(Lurkrは、ダッシュボードの「Danger Zone」→「Download Leveling Data」)\n"
+                "2. `/level import source:ファイル file:(ダウンロードしたファイル)`\n"
+                "CSV・JSONに対応。列名は `id`(ユーザーID)と `xp`(または `level`)、任意で `messages`。ほかの列は無視します。", inline=False)
+    e.add_field(name="④ エクスポートできないBOT", value="`id,xp` の2列だけのCSVを自作して、③の方法で取り込めます。\n"
+                "例:\n```\nid,level\n123456789012345678,12\n```", inline=False)
+    e.add_field(name="取り込んだあと", value="・元のBOTは、XPが二重に入らないよう**停止または無効化**\n・`/leaderboard` で順位を確認\n"
+                "・獲得XPや通知は `/level config` で調整", inline=False)
+    await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+# ── /rank ──
+
+def render_rank(avatar_bytes: bytes, name: str, rank: Optional[int], level: int, cur: int, need_: int, total: int, msgs: int,
+                font_path: str) -> io.BytesIO:
+    W, H = 934, 282
+    accent, fg, sub = (88, 101, 242), (245, 246, 250), (160, 166, 190)
+    img = Image.new("RGB", (W, H), (24, 26, 34))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((12, 12, W - 12, H - 12), radius=24, fill=(34, 37, 48))
+    S = 170
+    ax, ay = 44, (H - S) // 2
+    av = ImageOps.fit(Image.open(io.BytesIO(avatar_bytes)).convert("RGB"), (S, S), Image.Resampling.LANCZOS)
+    m = Image.new("L", (S * 4, S * 4), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, S * 4 - 1, S * 4 - 1), fill=255)
+    img.paste(av, (ax, ay), m.resize((S, S), Image.Resampling.LANCZOS))
+    left, right = ax + S + 40, W - 48
+    nf, lf, sf = (ImageFont.truetype(font_path, z) for z in (38, 52, 24))
+    d.text((left, 76), f"RANK {('#' + str(rank)) if rank else '-'}", font=sf, fill=sub, anchor="ls")
+    d.text((right, 80), f"LEVEL {level}", font=lf, fill=accent, anchor="rs")
+    d.text((left, 135), _ellipsize(name, nf, right - left), font=nf, fill=fg, anchor="ls")
+    d.text((right, 168), f"{cur:,} / {need_:,} XP", font=sf, fill=sub, anchor="rs")
+    by, bh = 180, 30
+    d.rounded_rectangle((left, by, right, by + bh), radius=bh // 2, fill=(54, 58, 74))
+    ratio = max(0.0, min(1.0, cur / need_ if need_ else 0))
+    if ratio > 0:
+        d.rounded_rectangle((left, by, left + max(bh, int((right - left) * ratio)), by + bh), radius=bh // 2, fill=accent)
+    d.text((left, 248), f"累計 {total:,} XP  ・  メッセージ {msgs:,}", font=sf, fill=sub, anchor="ls")
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return buf
+
+
+@bot.tree.command(name="rank", description="ランクカードを表示します")
+@app_commands.describe(user="対象ユーザー(省略すると自分)")
+@app_commands.guild_only()
+@app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
+async def rank_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    g, m = interaction.guild, user or interaction.user
+    if m.bot:
+        return await interaction.response.send_message("❌ BOTにはランクがありません。", ephemeral=True)
+    await interaction.response.defer()
+    rec = levels.user(g.id, m.id)
+    rows = lv_board(g, "xp")
+    pos = next((i for i, (x, _) in enumerate(rows, 1) if x.id == m.id), None)
+    lvl, cur, need_ = lv_progress(rec["xp"])
+    try:
+        font_path = await ensure_font()
+        avatar = await m.display_avatar.replace(size=512, format="png").read()
+        buf = await run_heavy(render_rank, avatar, m.display_name, pos, lvl, cur, need_, rec["xp"], rec["msg"], font_path)
+    except Exception:
+        log.exception("ランクカードの生成に失敗")
+        e = make_embed(f"🏅 {m.display_name} のランク", lv_state_text(rec) + (f"\n順位: **{pos}位**" if pos else ""), BLUE)
+        return await interaction.followup.send(embed=e)
+    await interaction.followup.send(file=discord.File(buf, filename="rank.png"))
+
+
+# ── /leaderboard ──
+
+LB_PER = 10
+
+
+class LeaderboardView(discord.ui.View):
+    def __init__(self, owner_id: int, guild: discord.Guild, key: str, rows: list):
+        super().__init__(timeout=180)
+        self.owner_id, self.guild, self.key, self.rows, self.page = owner_id, guild, key, rows, 0
+        self.pages = max(1, (len(rows) + LB_PER - 1) // LB_PER)
+        self._sync()
+
+    def _sync(self) -> None:
+        self.prev.disabled = self.page <= 0
+        self.next.disabled = self.page >= self.pages - 1
+
+    def embed(self) -> discord.Embed:
+        start = self.page * LB_PER
+        lines = []
+        for i, (m, v) in enumerate(self.rows[start:start + LB_PER], start + 1):
+            medal = MEDALS.get(i, f"`{i}.`")
+            lines.append(f"{medal} {m.mention} — Lv.**{lv_from_xp(v)}** ({v:,} XP)" if self.key == "xp" else f"{medal} {m.mention} — **{v:,}** 件")
+        title = "🏆 レベルランキング" if self.key == "xp" else "📊 メッセージ数ランキング"
+        e = make_embed(f"{title} - {self.guild.name}", "\n".join(lines) or "まだデータがありません。", BLUE)
+        e.set_footer(text=f"{self.page + 1}/{self.pages} ページ / {len(self.rows):,}人")
+        return e
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("コマンドを実行した本人だけ操作できます。`/leaderboard` で自分用に開いてください。", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="前へ", emoji="◀️", style=discord.ButtonStyle.secondary)
+    async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page -= 1
+        self._sync()
+        await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
+
+    @discord.ui.button(label="次へ", emoji="▶️", style=discord.ButtonStyle.secondary)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.page += 1
+        self._sync()
+        await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
+
+
+@bot.tree.command(name="leaderboard", description="サーバーのレベルランキングを表示します")
+@app_commands.describe(type="ランキングの種類", page="開始ページ")
+@app_commands.choices(type=[app_commands.Choice(name="レベル(XP)", value="xp"), app_commands.Choice(name="メッセージ数", value="msg")])
+@app_commands.guild_only()
+@app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
+async def leaderboard_cmd(interaction: discord.Interaction, type: Optional[app_commands.Choice[str]] = None,
+                          page: app_commands.Range[int, 1, 10000] = 1):
+    key = type.value if type else "xp"
+    view = LeaderboardView(interaction.user.id, interaction.guild, key, lv_board(interaction.guild, key))
+    view.page = min(page, view.pages) - 1
+    view._sync()
+    await interaction.response.send_message(embed=view.embed(), view=view, allowed_mentions=NONE)
+
+
+def levels_install() -> None:
+    for cmd in (level_group, stats_group, xp_group):
+        bot.tree.add_command(cmd)
+    bot.add_listener(on_message_levels, "on_message")
+
+
 def add_dashboard_routes(app: web.Application) -> None:
     for path in ("/", "/web", "/dashboard"):
         app.router.add_get(path, dash_index)
@@ -7753,6 +8467,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
     e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking` 週間・月間・累計\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
+    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/leaderboard` ランキング(レベル・メッセージ数)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
