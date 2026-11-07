@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>AZQ BOT パッチノート: レベル機能を追加</title>
+<style>
+:root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
+--fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Noto Sans JP','Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius:1px;width:4px}article,.todo,.wrap{border-radius:6px}code{color:#134a8e}
+</style>
+</head>
+<body>
+<main>
+<h1>レベル機能を追加</h1>
+<p class="meta">AZQ BOT v2.1 パッチノート / 2026年11月7日</p>
+<p class="lead">サーバーに、レベルとランキングの機能を追加しました。発言するとXPが貯まり、ランクカードやランキングで確認できます。MEE6などの別のBOTからのレベルの移行にも対応していて、取り込む前の確認と、取り込み後の取り消しができます。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>レベルとランキング <code>/rank</code> <code>/leaderboard</code></h3>
+<p>発言するとXPが貯まり、レベルが上がるとチャンネルでお知らせします。<code>/rank</code> では、順位・レベル・次のレベルまでのXPをランクカードの画像で見られます。他の人を指定して見ることもできます。</p>
+<p><code>/leaderboard</code> では、レベル(XP)かメッセージ数のランキングを10人ずつ表示し、前へ・次へのボタンでページを切り替えられます。</p>
+<p>XPは、既定では1回の発言で15〜25XPが貯まり、同じ人は60秒に1回までです。次のレベルに必要なXPの計算式はMEE6と同じです。</p>
+</article>
+<article class="new">
+<h3>XP・レベル・ステータスの管理 <code>/xp</code> <code>/level</code> <code>/stats</code></h3>
+<p>3つのコマンドに、それぞれ <code>add</code>(追加)<code>remove</code>(削除)<code>set</code>(設定)<code>transfer</code>(ユーザー間の移行)があります。ステータスは、サーバーでの累計メッセージ数です。</p>
+<p>使えるのは「サーバーの管理」権限を持つ人だけです。変更はログチャンネルに記録されます。</p>
+</article>
+<article class="new">
+<h3>他のBOTからの移行 <code>/level migrate</code> <code>/level import</code></h3>
+<p><code>/level migrate</code> で、移行元のBOTごとの手順を確認できます。取り込みは <code>/level import</code> で行い、実行すると人数と上位5人のプレビューが表示されます。内容を確認してから、「上書き」か「高い方を採用」を選んで取り込みます。</p>
+<p>移行元は、<b>MEE6</b>(リーダーボードを公開にしておくと自動で取得)、<b>Amari</b>(APIキーが必要)、<b>CSV・JSONファイル</b>(Lurkrなどのエクスポートに使えます)から選べます。ファイルは <code>id</code> の列と、<code>xp</code> または <code>level</code> の列があれば読み込めます。</p>
+<p>取り込む前の状態は自動でバックアップされ、<code>/level undo_import</code> で元に戻せます。取り込み後に貯まったXPも、一緒に元へ戻ります。</p>
+</article>
+<article class="new">
+<h3>レベルの設定 <code>/level config</code></h3>
+<p>XPの獲得そのもののON/OFF、レベルアップの通知とその送信先、1回の獲得XP(最小・最大)、獲得の間隔、通知の文面を変更できます。通知の文面では <code>{user}</code> <code>{level}</code> <code>{server}</code> が使えます。項目を指定しないで実行すると、現在の設定を表示します。</p>
+</article>
+
+<h2 class="chg">変更</h2>
+<article class="chg">
+<h3><code>/help</code> と <code>/about</code> の表記</h3>
+<p>レベルとランキング、XPの管理、他のBOTからの移行の説明を追加しました。</p>
+</article>
+
+<h2 class="fix">サーバー管理者への注意</h2>
+<ul class="todo">
+<li><b>導入直後は、全員のXPが0から始まります。</b>以前のレベルBOTのデータを引き継ぐ場合は、<code>/level migrate</code> の手順で取り込んでください。</li>
+<li><b>元のBOTは、取り込みのあとに停止または無効化してください。</b>動かしたままだと、2つのBOTからXPが入り、数字が食い違います。</li>
+<li><b>MEE6から取り込むには、MEE6側でリーダーボードの公開が必要です。</b>非公開のままだと、取り込めません。</li>
+<li><b>レベルアップの通知には、送信先のチャンネルで「メッセージを送信」の権限が必要です。</b>権限がない場合、通知は送られません(XPは貯まります)。</li>
+<li><b>XPと一緒に保存するのはメッセージの件数だけです。</b>メッセージの本文は保存しません。</li>
+</ul>
+
+<h2 class="fix">自分でbotをホスティングする人向け</h2>
+<ul class="todo">
+<li><b><code>bot.py</code> を入れ替えてください。</b><code>dashboard.html</code> の入れ替えは不要です。入れ替えたあとは、BOTを再起動してください。</li>
+<li><b>データは <code>levels.json</code> に保存されます。</b>取り込み前のバックアップは <code>level_backup</code> フォルダに入ります。データの保存先(<code>DATA_DIR</code>)を消さないように注意してください。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+</ul>
+</main>
+</body>
+</html>
