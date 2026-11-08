@@ -213,6 +213,7 @@ const BASIC = [
     {k: "welcome_image_title", t: "txt", l: "画像のタイトル", max: 24, h: "使える変数: {user} {server} {count}", g: "wi"}, {k: "welcome_image_subtitle", t: "txt", l: "画像のサブタイトル", max: 60, h: "使える変数: {user} {server} {count}", g: "wi"},
     {k: "welcome_image_style", t: "sel", l: "画像のデザイン", opts: [{v: "black", t: "ブラック"}, {v: "white", t: "ホワイト"}, {v: "blue", t: "ブルー"}], g: "wi"},
     {...C("welcome_image_color", "アイコンをカラーにする", "オフでモノクロになります。"), g: "wi"}, {...C("welcome_image_count", "「◯人目のメンバー」を表示する"), g: "wi"}]},
+  {t: "退出メッセージ", d: "メンバーがサーバーから退出したときに送るメッセージです。", f: [C("leave_enabled", "退出メッセージを送る", "既定でオンです。オフにすると送りません。"), {k: "leave_channel", t: "ch", l: "送信先チャンネル", empty: "(ようこそメッセージと同じチャンネル)"}, {k: "leave_message", t: "area", l: "メッセージ(空欄なら標準の退出カード)", max: 500, h: "使える変数: {user} {server} {count}(退出した人は名前で表示されます)"}]},
   {t: "自動ロール", d: "参加したメンバーに自動で付けるロールです。", f: [{k: "autorole", t: "role", l: "ロール", empty: "(付けない)", h: "強い権限のロール・BOTより上のロール・管理ロールは選べません。"}]},
   {t: "警告(/warn)", f: [N("warn_limit", "警告の上限回数", 1, 20), N("warn_timeout_minutes", "到達時のタイムアウト(分)", 1, 40320)]},
   {t: "過疎アラート", d: "活発度がしきい値を下回ると通知します。", f: [C("kaso_enabled", "自動アラートを有効にする"), {k: "kaso_channel", t: "ch", l: "通知先チャンネル", empty: "(通知しない)"}, N("kaso_threshold", "しきい値(24時間のメッセージ数)", 1, 100000)]},
