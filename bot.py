@@ -7464,7 +7464,7 @@ ECO_WEB_NUM = {"start_balance": (0, 10 ** 9, "初期所持金"), "debt_max": (0,
                "daily_amount": (0, 10 ** 9, "デイリーの基本報酬"), "daily_streak_bonus": (0, 10 ** 9, "連続ボーナス(1日あたり)"),
                "daily_streak_cap": (0, 3650, "ボーナスが増える最大日数"), "work_min": (0, 10 ** 9, "/work の最小報酬"),
                "work_max": (0, 10 ** 9, "/work の最大報酬"), "work_cooldown": (0, 604800, "/work の間隔(秒)"),
-               "pay_fee": (0, 100, "送金手数料(%)"), "max_bet": (0, ECO_MAX, "1回の賭け金の上限")}
+               "pay_fee": (0, 100, "送金手数料(%)"), "max_bet": (0, 10 ** 15, "1回の賭け金の上限")}  # 10 ** 15 = ECO_MAX(経済セクションで定義。ここではまだ参照できないため直値)
 
 
 async def act_eco_save(g, m, d):
