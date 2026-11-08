@@ -9221,7 +9221,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
     e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking`(ポイントは週間・月間・累計)\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
-    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`", inline=False)
+    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`(獲得XP・通知文のほか、`copy_channel` でレベルアップ通知を別のチャンネルにもコピー送信、`copy_only` でコピー先のみに通知)", inline=False)
     e.add_field(name="📌 固定メッセージ", value="`/sticky set` 入力フォームで設定(常にチャンネルの一番下に表示) / `/sticky remove` 解除 / `/sticky list` 一覧\n管理者向け(「メッセージの管理」権限が必要)", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
