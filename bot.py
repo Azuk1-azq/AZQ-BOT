@@ -988,7 +988,7 @@ def intro_embeds() -> list:
     e.add_field(name="🎭 ロールパネル", value="ボタンでロールを付け外し。\n`/rolepanel create`", inline=False)
     e.add_field(name="🛡️ 荒らし検知", value="連投・招待リンク・NGワード・レイドを自動対処。導入後すぐ有効。", inline=False)
     e.add_field(name="🔐 メンバー認証", value="ボタン/計算/画像/Web認証で荒らしを防止。\n`/verify setup`", inline=False)
-    e.add_field(name="📈 レベル", value="発言でXPが貯まり、ランクカードやランキングで確認できます。他のBOTからの移行も簡単です。\n`/rank` `/ranking` `/level migrate`", inline=False)
+    e.add_field(name="📈 レベル", value="発言とVC滞在でXPが貯まり、ランクカードやランキングで確認できます。他のBOTからの移行も簡単です。\n`/rank` `/ranking` `/level migrate`", inline=False)
     e.add_field(name="📜 ログ", value="参加・削除・処罰などを記録。\n`/config log_channel`", inline=False)
     e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/web` 推奨(またはスラッシュコマンド `/config log_channel`) → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
     return [e]
@@ -8204,6 +8204,7 @@ async def srvadm_do(request):
 
 LV_MAX = 1000
 LV_CFG = {"enabled": True, "announce": True, "channel": None, "copy_channel": None, "copy_only": False, "xp_min": 15, "xp_max": 25, "cooldown": 60,
+          "vc_enabled": True, "vc_xp_min": 5, "vc_xp_max": 10, "vc_need_others": True,
           "message": "🎉 {user} さんが **レベル {level}** になりました!"}
 
 
@@ -8382,6 +8383,60 @@ async def on_message_levels(message: discord.Message) -> None:
     levels.save()
 
 
+# ── ボイスチャンネル(VC)の滞在時間でもXPが貯まる ──
+# 1分ごとにVCを見回り、条件を満たしている人に1分ぶんのXP(vc_xp_min〜vc_xp_max)と、VC滞在時間(rec["vc"]=分)を加える。
+# 対象外: BOT / AFKチャンネル / スピーカーミュート(聞こえない状態)の人 / (vc_need_others が ON のとき)対象者が1人しかいないVC
+VC_TICK_SECONDS = 60
+
+
+def vc_fmt(minutes: int) -> str:
+    h, mi = divmod(int(minutes), 60)
+    return f"{h:,}時間{mi}分" if h else f"{mi}分"
+
+
+def vc_eligible(m: discord.Member) -> bool:
+    vs = m.voice
+    if m.bot or vs is None or vs.channel is None:
+        return False
+    return not (vs.deaf or vs.self_deaf or vs.afk)
+
+
+@tasks.loop(seconds=VC_TICK_SECONDS)
+async def vc_xp_watch():
+    async def one(g: discord.Guild):
+        cfg = levels.cfg(g.id)
+        if not (cfg["enabled"] and cfg["vc_enabled"]):
+            return
+        changed = False
+        afk_id = g.afk_channel.id if g.afk_channel else None
+        for ch in list(g.voice_channels):
+            if ch.id == afk_id:
+                continue
+            members = [m for m in ch.members if vc_eligible(m)]
+            if not members or (cfg["vc_need_others"] and len(members) < 2):
+                continue
+            for m in members:
+                rec = levels.user(g.id, m.id)
+                rec["vc"] = rec.get("vc", 0) + 1
+                before = lv_from_xp(rec["xp"])
+                rec["xp"] = min(LV_XP_CAP, rec["xp"] + random.randint(cfg["vc_xp_min"], cfg["vc_xp_max"]))
+                after = lv_from_xp(rec["xp"])
+                changed = True
+                if after > before:
+                    text = cfg["message"].replace("{user}", m.mention).replace("{level}", str(after)).replace("{server}", g.name)
+                    # 通知先を指定していないときは、そのVCのチャット欄へ(送れなければサーバーのシステムチャンネルへ)
+                    here = ch if ch.permissions_for(g.me).send_messages else g.system_channel
+                    await lv_send_levelup(g, m, here, cfg, text)
+        if changed:
+            levels.save()
+    await run_for_guilds("vc_xp_watch", one)
+
+
+@vc_xp_watch.before_loop
+async def _vc_xp_before():
+    await bot.wait_until_ready()
+
+
 def lv_apply(rec: dict, kind: str, op: str, n: int) -> None:
     """kind: level / xp / msg、op: add / remove / set(レベルは、レベル内の進捗を保ったまま増減する)"""
     if kind == "level":
@@ -8407,7 +8462,7 @@ def lv_have(rec: dict, kind: str) -> int:
 
 def lv_state_text(rec: dict) -> str:
     lvl, cur, need_ = lv_progress(rec["xp"])
-    return f"レベル **{lvl}** / XP **{rec['xp']:,}** ({cur:,}/{need_:,}) / メッセージ **{rec['msg']:,}**"
+    return f"レベル **{lvl}** / XP **{rec['xp']:,}** ({cur:,}/{need_:,}) / メッセージ **{rec['msg']:,}**" + (f" / VC **{vc_fmt(rec['vc'])}**" if rec.get("vc") else "")
 
 
 # コマンド名 → (保存キー, 表示名, 上限)
@@ -8492,6 +8547,8 @@ xp_group = _lv_make_group("xp")
                        copy_channel="レベルアップ通知のコピーを送るチャンネル", copy_off="コピー送信をやめる(Trueで解除)",
                        copy_only="通知をコピー先のみに出す(Trueで元のチャンネルには出さない / Falseで通常に戻す)",
                        xp_min="1回の獲得XP(最小)", xp_max="1回の獲得XP(最大)", cooldown="XP獲得の間隔(秒)",
+                       vc_enabled="VC滞在でXPを獲得する(ON/OFF)", vc_xp_min="VC 1分あたりの獲得XP(最小)", vc_xp_max="VC 1分あたりの獲得XP(最大)",
+                       vc_need_others="VCに2人以上いるときだけXPを付ける(ひとりVCでの放置対策)",
                        message="通知文({user} {level} {server})")
 @app_commands.checks.has_permissions(manage_guild=True)
 @lg_guard
@@ -8499,11 +8556,14 @@ async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = 
                     channel: Optional[discord.TextChannel] = None, copy_channel: Optional[discord.TextChannel] = None,
                     copy_off: Optional[bool] = None, copy_only: Optional[bool] = None, xp_min: Optional[app_commands.Range[int, 0, 1000]] = None,
                     xp_max: Optional[app_commands.Range[int, 0, 1000]] = None, cooldown: Optional[app_commands.Range[int, 0, 3600]] = None,
+                    vc_enabled: Optional[bool] = None, vc_xp_min: Optional[app_commands.Range[int, 0, 1000]] = None,
+                    vc_xp_max: Optional[app_commands.Range[int, 0, 1000]] = None, vc_need_others: Optional[bool] = None,
                     message: Optional[app_commands.Range[str, 1, 300]] = None):
     c = levels.cfg(interaction.guild.id)
     if copy_channel and not copy_channel.permissions_for(interaction.guild.me).send_messages:
         raise SrvAdmError(f"BOTが {copy_channel.mention} に送信できません。チャンネル権限を確認してください。")
     new = {"enabled": enabled, "announce": announce, "xp_min": xp_min, "xp_max": xp_max, "cooldown": cooldown, "message": message,
+           "vc_enabled": vc_enabled, "vc_xp_min": vc_xp_min, "vc_xp_max": vc_xp_max, "vc_need_others": vc_need_others,
            "channel": channel.id if channel else None, "copy_channel": copy_channel.id if copy_channel else None, "copy_only": copy_only}
     eff_copy = copy_channel.id if copy_channel else (None if copy_off else c.get("copy_channel"))
     if copy_only and not eff_copy:
@@ -8512,6 +8572,10 @@ async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = 
     hi = new["xp_max"] if new["xp_max"] is not None else c["xp_max"]
     if lo > hi:
         raise SrvAdmError("XPの最小値が最大値を超えています。")
+    vlo = new["vc_xp_min"] if new["vc_xp_min"] is not None else c["vc_xp_min"]
+    vhi = new["vc_xp_max"] if new["vc_xp_max"] is not None else c["vc_xp_max"]
+    if vlo > vhi:
+        raise SrvAdmError("VCのXP最小値が最大値を超えています。")
     changed = []
     for k, v in new.items():
         if v is not None:
@@ -8526,7 +8590,8 @@ async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = 
         cp = (f"<#{c['copy_channel']}>" + ("(コピー先のみに通知)" if c.get("copy_only") else "")) if c.get("copy_channel") else "なし"
         return await eph(interaction, f"**現在の設定**\nXP獲得: {'ON' if c['enabled'] else 'OFF'} / 通知: {'ON' if c['announce'] else 'OFF'} ({ch})\n"
                                       f"通知のコピー先: {cp}\n"
-                                      f"獲得XP: {c['xp_min']}〜{c['xp_max']} / 間隔 {c['cooldown']}秒\n通知文: {c['message']}")
+                                      f"獲得XP: {c['xp_min']}〜{c['xp_max']} / 間隔 {c['cooldown']}秒\n"
+                                      f"VC: {'ON' if c['vc_enabled'] else 'OFF'} / 1分あたり {c['vc_xp_min']}〜{c['vc_xp_max']} XP / 2人以上のときのみ: {'ON' if c['vc_need_others'] else 'OFF'}\n通知文: {c['message']}")
     levels.save()
     await eph(interaction, "✅ 更新しました:\n" + "\n".join(changed))
 
@@ -8822,7 +8887,7 @@ async def lv_migrate(interaction: discord.Interaction):
 # ── /rank ──
 
 def render_rank(avatar_bytes: bytes, name: str, rank: Optional[int], level: int, cur: int, need_: int, total: int, msgs: int,
-                font_path: str) -> io.BytesIO:
+                font_path: str, vc: int = 0) -> io.BytesIO:
     W, H = 934, 282
     accent, fg, sub = (88, 101, 242), (245, 246, 250), (160, 166, 190)
     img = Image.new("RGB", (W, H), (24, 26, 34))
@@ -8845,7 +8910,7 @@ def render_rank(avatar_bytes: bytes, name: str, rank: Optional[int], level: int,
     ratio = max(0.0, min(1.0, cur / need_ if need_ else 0))
     if ratio > 0:
         d.rounded_rectangle((left, by, left + max(bh, int((right - left) * ratio)), by + bh), radius=bh // 2, fill=accent)
-    d.text((left, 248), f"累計 {total:,} XP  ・  メッセージ {msgs:,}", font=sf, fill=sub, anchor="ls")
+    d.text((left, 248), f"累計 {total:,} XP  ・  メッセージ {msgs:,}" + (f"  ・  VC {vc_fmt(vc)}" if vc else ""), font=sf, fill=sub, anchor="ls")
     buf = io.BytesIO()
     img.save(buf, "PNG")
     buf.seek(0)
@@ -8869,7 +8934,7 @@ async def rank_cmd(interaction: discord.Interaction, user: Optional[discord.Memb
     try:
         font_path = await ensure_font()
         avatar = await m.display_avatar.replace(size=512, format="png").read()
-        buf = await run_heavy(render_rank, avatar, m.display_name, pos, lvl, cur, need_, rec["xp"], rec["msg"], font_path)
+        buf = await run_heavy(render_rank, avatar, m.display_name, pos, lvl, cur, need_, rec["xp"], rec["msg"], font_path, rec.get("vc", 0))
     except Exception:
         log.exception("ランクカードの生成に失敗")
         e = make_embed(f"🏅 {m.display_name} のランク", lv_state_text(rec) + (f"\n順位: **{pos}位**" if pos else ""), BLUE)
@@ -8880,15 +8945,15 @@ async def rank_cmd(interaction: discord.Interaction, user: Optional[discord.Memb
 # ── /ranking(レベル・メッセージ数・ポイントを1つにまとめたランキング) ──
 
 LB_PER = 10
-RK_LABELS = {"xp": "🏆 レベル(XP)", "msg": "📊 メッセージ数", "week": "🗓️ ポイント 週間(月曜〜)",
+RK_LABELS = {"xp": "🏆 レベル(XP)", "msg": "📊 メッセージ数", "vc": "🎙️ VC滞在時間", "week": "🗓️ ポイント 週間(月曜〜)",
              "month": "📅 ポイント 月間", "total": "💎 ポイント 累計(貢献度)"}
-RK_TITLES = {"xp": "🏆 レベルランキング", "msg": "📊 メッセージ数ランキング", "week": "🏆 週間ポイントランキング",
+RK_TITLES = {"xp": "🏆 レベルランキング", "msg": "📊 メッセージ数ランキング", "vc": "🎙️ VC滞在時間ランキング", "week": "🏆 週間ポイントランキング",
              "month": "🏆 月間ポイントランキング", "total": "🏆 累計(貢献度)ポイントランキング"}
 
 
 def rk_rows(g: discord.Guild, key: str) -> list:
     """key: xp / msg(レベル機能) か、week / month / total(ポイント機能)。どれも [(メンバー, 数値)] の順位表にそろえる"""
-    if key in ("xp", "msg"):
+    if key in ("xp", "msg", "vc"):
         return lv_board(g, key)
     return ranked(g, period_totals(g.id, key))
 
@@ -8924,6 +8989,8 @@ class RankingView(discord.ui.View):
                 tail = f"Lv.**{lv_from_xp(v)}** ({v:,} XP)"
             elif self.key == "msg":
                 tail = f"**{v:,}** 件"
+            elif self.key == "vc":
+                tail = f"**{vc_fmt(v)}**"
             else:
                 tail = f"**{v:,}** pt"
             lines.append(f"{medal} {m.mention} — {tail}")
@@ -9145,6 +9212,8 @@ def levels_install() -> None:
     for cmd in (level_group, stats_group, xp_group):
         bot.tree.add_command(cmd)
     bot.add_listener(on_message_levels, "on_message")
+    if not vc_xp_watch.is_running():
+        vc_xp_watch.start()
 
 
 def add_dashboard_routes(app: web.Application) -> None:
@@ -9276,7 +9345,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
     e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking`(ポイントは週間・月間・累計)\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
-    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`(獲得XP・通知文のほか、`copy_channel` でレベルアップ通知を別のチャンネルにもコピー送信、`copy_only` でコピー先のみに通知)", inline=False)
+    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・VC滞在時間・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`(獲得XP・VCのXP(`vc_*`)・通知文のほか、`copy_channel` でレベルアップ通知を別のチャンネルにもコピー送信、`copy_only` でコピー先のみに通知)", inline=False)
     e.add_field(name="📌 固定メッセージ", value="`/sticky set` 入力フォームで設定(常にチャンネルの一番下に表示) / `/sticky remove` 解除 / `/sticky list` 一覧\n管理者向け(「メッセージの管理」権限が必要)", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
