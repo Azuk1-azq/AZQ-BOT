@@ -91,6 +91,7 @@ DEFAULTS = {
     "welcome": {"channel": None, "style": "join", "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)",
                 "image": {"enabled": False, "title": "WELCOME", "subtitle": "{server} へようこそ!", "style": "black",
                           "color": True, "show_count": True, "bg": False}},
+    "leave": {"enabled": True, "channel": None, "message": ""},
     "autorole": None,
     "warn_limit": 3,
     "warn_timeout_minutes": 60,
@@ -747,6 +748,48 @@ async def send_welcome(member: discord.Member, test: bool = False) -> tuple:
     return True, note or None
 
 
+async def send_leave(member, test: bool = False) -> tuple:
+    """退出メッセージを送る。戻り値: (送れたか, 理由・補足)。メッセージ未設定なら赤いカード形式、設定済みならその文章を埋め込みで送る"""
+    guild = member.guild
+    cfg = store.get(guild.id)
+    lc = cfg["leave"]
+    if not lc.get("enabled", True):
+        return False, "退出メッセージが無効になっています。"
+    cid = lc["channel"] or cfg["welcome"]["channel"]  # 未指定のときは、ようこそチャンネルに送る
+    ch = guild.get_channel(cid) if cid else None
+    if not ch:
+        return False, "送信先チャンネルが設定されていません(または削除されています)。"
+    p = ch.permissions_for(guild.me)
+    if not (p.view_channel and p.send_messages):
+        log.warning("退出メッセージを送れません: BOTに #%s での「チャンネルを見る・メッセージを送信」権限がありません guild=%s", ch.name, guild.id)
+        return False, f"BOTが #{ch.name} で「チャンネルを見る・メッセージを送信」を行えません。"
+    name = member.display_name
+    left = discord.utils.utcnow().astimezone(JST).strftime("%Y-%m-%d %H:%M:%S")
+    prefix = "🧪 **テスト送信**(メンバーが退出したときは、この内容が送られます)" if test else ""
+    note = ""
+    try:
+        if lc["message"]:
+            text = (lc["message"].replace("{user}", name).replace("{server}", guild.name).replace("{count}", str(guild.member_count)))
+            if p.embed_links:
+                await ch.send(prefix or None, embed=discord.Embed(description=text[:4000], color=RED), allowed_mentions=NONE)
+            else:
+                await ch.send(((prefix + "\n") if prefix else "") + text[:1900], allowed_mentions=NONE)
+        else:
+            title, desc = f"【-】{name}さんが退出しました", (f"**{name}** さんがサーバーから退出しました。\n\n（退出日時: {left}）\n現在のサーバー人数: {guild.member_count}")
+            if p.embed_links:
+                e = discord.Embed(title=title[:256], description=desc, color=RED)
+                e.set_thumbnail(url=member.display_avatar.url)
+                await ch.send(prefix or None, embed=e, allowed_mentions=NONE)
+            else:
+                await ch.send(((prefix + "\n") if prefix else "") + f"**{title}**\n{desc}", allowed_mentions=NONE)
+        if not p.embed_links:
+            note = f"BOTに #{ch.name} での「埋め込みリンク」権限がないため、通常のメッセージで送りました。"
+    except discord.HTTPException as e:
+        log.warning("退出メッセージの送信に失敗 guild=%s channel=%s: %s", guild.id, ch.id, e)
+        return False, f"Discordに送信を拒否されました({e.status})。BOTの権限を確認してください。"
+    return True, note or None
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
     guild = member.guild
@@ -817,6 +860,11 @@ async def on_member_remove(member: discord.Member):
                     await tch.send(f"⚠️ チケット作成者 ({member}) がサーバーから退出しました。不要なら `/ticket close` で閉じてください。")
                 except discord.HTTPException:
                     pass
+    if not member.bot:
+        try:
+            await send_leave(member)
+        except Exception:
+            log.exception("退出メッセージの送信で想定外のエラー guild=%s", member.guild.id)
     e = make_embed("📤 メンバー退出", f"{member} (`{member.id}`)", GRAY)
     await send_log(member.guild, e)
 
@@ -6871,6 +6919,7 @@ def dash_snapshot(g: discord.Guild) -> dict:
         "categories": [{"id": str(x.id), "name": x.name} for x in g.categories],
         "roles": [{"id": str(r.id), "name": r.name} for r in g.roles if not r.is_default() and not r.managed],
         "cfg": {"log_channel": _s(c["log_channel"]), "welcome_channel": _s(c["welcome"]["channel"]), "welcome_message": c["welcome"]["message"], "welcome_style": c["welcome"].get("style", "join"),
+                "leave_enabled": c["leave"].get("enabled", True), "leave_channel": _s(c["leave"]["channel"]), "leave_message": c["leave"]["message"],
                 **{"welcome_image_" + k: v for k, v in {**DEFAULTS["welcome"]["image"], **c["welcome"].get("image", {})}.items()
                    if k in ("enabled", "title", "subtitle", "style", "color")},
                 "welcome_image_count": c["welcome"].get("image", {}).get("show_count", True),
@@ -6983,6 +7032,12 @@ def apply_settings(g: discord.Guild, d: dict) -> None:
     if new["wi"]["enabled"] and not new["wch"]:
         raise SettingsError("ウェルカム画像を使うには、ウェルカムメッセージの送信先チャンネルを選んでください")
     c["welcome"]["image"] = new["wi"]
+    if "leave_enabled" in d:
+        c["leave"]["enabled"] = bool(d["leave_enabled"])
+    if "leave_channel" in d:
+        lch = _chan(g, d.get("leave_channel"), label="退出メッセージの送信先")
+        c["leave"]["channel"] = lch.id if lch else None
+        c["leave"]["message"] = str(d.get("leave_message") or "").strip()[:500]
     if d.get("welcome_style") is not None:
         if d["welcome_style"] not in ("join", "classic"):
             raise SettingsError("ウェルカムの表示形式が正しくありません")
@@ -9216,7 +9271,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🌐 Webダッシュボード", value="`/web` でブラウザから設定を編集(設定不要・管理者のみ)", inline=False)
     e.add_field(name="🎭 ロールパネル", value="`/rolepanel create` 作成 / `/rolepanel text` 文面を編集 / `/rolepanel add` `remove` `delete` `list`\nボタンを押すとロールを付与・もう一度押すと解除。「1つだけ選択」モードあり\n(管理者のみ設定可)", inline=False)
     e.add_field(name="🔨 モデレーション", value="`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/warn` `/warnings` `/unwarn` `/clearwarns` `/purge` `/slowmode` `/lock` `/unlock` `/role_add` `/role_remove`", inline=False)
-    e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config welcome_image`(Webで設定) `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
+    e.add_field(name="⚙️ 設定", value="`/config log_channel` `/config welcome` `/config leave`(退出メッセージ) `/config welcome_image`(Webで設定) `/config autorole` `/config warn_limit` `/config automod_ignore` `/config show`", inline=False)
     e.add_field(name="🎖️ 役職・権限", value="`/manage rank_set` 役職とロールを対応づけ / `/manage rank_show` / `/manage perm_list` `perm_set`\n管理者>副管理者>幹部>モデレーター>一般スタッフ。機能ごとの必要役職を変更できます(Discord管理者・オーナーは常に管理者扱い)", inline=False)
     e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
@@ -9284,6 +9339,31 @@ async def cfg_welcome(interaction: discord.Interaction, channel: Optional[discor
     await interaction.response.send_message(
         f"✅ ウェルカム: {channel.mention if channel else '無効'} / 形式: {'参加通知カード' if wc.get('style', 'join') == 'join' else 'カスタムメッセージ'}\n{wc['message']}\n🖼️ 画像を付けるオプションは `/web` で設定できます。", ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none())
+
+
+@config_group.command(name="leave", description="退出メッセージを設定(既定で有効・送信先はようこそチャンネル)")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(enabled="ON/OFF(既定はON)", channel="送信先(省略するとようこそチャンネル)",
+                       message="カスタム文({user} {server} {count} が使えます)。省略すると標準の退出カード",
+                       reset_message="カスタム文を消して標準カードに戻す", reset_channel="送信先をようこそチャンネルに戻す")
+async def cfg_leave(interaction: discord.Interaction, enabled: Optional[bool] = None, channel: Optional[discord.TextChannel] = None,
+                    message: Optional[app_commands.Range[str, 1, 500]] = None, reset_message: bool = False, reset_channel: bool = False):
+    cfg = store.get(interaction.guild.id)
+    lc = cfg["leave"]
+    if enabled is not None:
+        lc["enabled"] = enabled
+    if channel:
+        lc["channel"] = channel.id
+    elif reset_channel:
+        lc["channel"] = None
+    if message:
+        lc["message"] = message
+    elif reset_message:
+        lc["message"] = ""
+    store.save()
+    await interaction.response.send_message(
+        f"✅ 退出メッセージ: {'ON' if lc['enabled'] else 'OFF'} / 送信先: " + (f"<#{lc['channel']}>" if lc["channel"] else (f"ようこそチャンネル(<#{cfg['welcome']['channel']}>)" if cfg["welcome"]["channel"] else "未設定(ようこそチャンネルを設定してください)")) + f" / 形式: {'カスタム: ' + lc['message'] if lc['message'] else '標準の退出カード'}",
+        ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 @config_group.command(name="welcome_image", description="ウェルカムメッセージの画像オプション(Webダッシュボード専用)")
