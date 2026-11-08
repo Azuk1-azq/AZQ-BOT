@@ -6,16 +6,17 @@ import csv
 import functools
 import hashlib
 import hmac
-import ipaddress
 import io
 import ipaddress
 import json
 import logging
+import math
 import os
 import platform
 import random
 import re
 import secrets
+import shutil
 import signal
 import threading
 import time
@@ -191,7 +192,19 @@ class Store:
                 for gid, cfg in raw.items():
                     self.data[gid] = deep_merge(copy.deepcopy(DEFAULTS), cfg)
             except Exception:
-                log.exception("設定ファイルの読み込みに失敗しました。空の設定で起動します。")
+                log.exception("設定ファイルの読み込みに失敗しました")
+                bak = self.path + ".bak"
+                if os.path.exists(bak):
+                    try:
+                        with open(bak, encoding="utf-8") as f:
+                            raw = json.load(f)
+                        for gid, cfg in raw.items():
+                            self.data[gid] = deep_merge(copy.deepcopy(DEFAULTS), cfg)
+                        log.warning("バックアップ(%s)から設定を復旧しました", os.path.basename(bak))
+                    except Exception:
+                        log.exception("バックアップからの復旧にも失敗しました。空の設定で起動します。")
+                else:
+                    log.warning("空の設定で起動します。")
 
     def get(self, guild_id: int) -> dict:
         key = str(guild_id)
@@ -222,6 +235,12 @@ class Store:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(payload)
+            # 直前の正常な内容をバックアップとして残す(ディスク故障・中断などで新ファイルが壊れたときの復旧用)
+            try:
+                if os.path.exists(self.path) and os.path.getsize(self.path) > 0:
+                    shutil.copyfile(self.path, self.path + ".bak")
+            except OSError:
+                log.warning("設定のバックアップ(guilds.json.bak)を作成できませんでした")
             os.replace(tmp, self.path)
 
     async def flush_async(self) -> None:
@@ -310,6 +329,7 @@ class AzqBot(commands.Bot):
                 self.add_view(RolePanelView(_p["roles"]), message_id=int(_mid))
         srvadm_install()
         levels_install()
+        self.tree.add_command(remind_group)
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
             self.tree.copy_global_to(guild=guild)
@@ -324,6 +344,7 @@ class AzqBot(commands.Bot):
         verify_watch.start()
         ticket_watch.start()
         activity_save.start()
+        remind_watch.start()
         self._lag_task = asyncio.create_task(loop_lag_monitor())
 
     async def close(self):
@@ -334,6 +355,7 @@ class AzqBot(commands.Bot):
         await act_flush_async()
         await srvadm_flush()
         await levels.flush_async()
+        await reminders.flush_async()
         if self.session:
             await self.session.close()
         if self.web_runner:
@@ -478,9 +500,61 @@ async def try_dm(user: discord.abc.User, text: str) -> None:
     except discord.HTTPException:
         pass
 
+
+class AzqCheckError(app_commands.CheckFailure):
+    """コマンド実行前のガード(連投制限・二重実行制限)で止めたときのエラー(メッセージをそのままユーザーに見せる)"""
+
+
+# ═════════════════════════ 連投・二重実行ガード(低コア向けの負荷対策) ═════════════════════════
+# 連投しても、コマンド本体は一切実行せず「残り秒数」だけを返す。処理はガード側だけで完結するため負荷がほぼゼロ。
+# ・全コマンド共通: 1人あたりコマンドごとに CMD_COOLDOWN 秒の間隔(既定3秒)
+# ・重めのコマンド(/rank /ranking /leaderboard /kaso /ping など): 同じサーバーで同時に1つだけ実行
+
+CMD_COOLDOWN = max(0.0, float(os.getenv("CMD_COOLDOWN") or 3))
+_cmd_cd: dict = {}          # {(ユーザーID, コマンド名): 再実行できる時刻(monotonic)}
+_inflight: dict = {}        # {(サーバーID, コマンド名): 実行中フラグ}
+
+
+def one_at_a_time(cmd_name: str):
+    """同じサーバーで同じコマンドを同時に1つしか実行しない。前の処理が残っているときは待つように案内して中断する。"""
+    def deco(fn):
+        @functools.wraps(fn)
+        async def wrapper(interaction: discord.Interaction, *args, **kwargs):
+            key = (interaction.guild_id or 0, cmd_name)
+            if _inflight.get(key):
+                raise AzqCheckError(f"⏳ 前の `/{cmd_name}` がまだ処理中です。完了してからもう一度お試しください。")
+            _inflight[key] = True
+            try:
+                return await fn(interaction, *args, **kwargs)
+            finally:
+                _inflight.pop(key, None)
+        return wrapper
+    return deco
+
+
+def _spam_guard_check(interaction: discord.Interaction) -> None:
+    """全スラッシュコマンド共通の連投ガード。コマンド本体を実行する前に判定し、残り秒数を返して中断する。"""
+    if CMD_COOLDOWN <= 0:
+        return
+    cmd = interaction.command
+    # 自動補完(autocomplete)は弾かない
+    if cmd is None or interaction.type is discord.InteractionType.autocomplete:
+        return
+    root = getattr(cmd, "root_parent", None) or cmd
+    name = getattr(root, "name", str(root))
+    key = (interaction.user.id, name)
+    now = time.monotonic()
+    nxt = _cmd_cd.get(key, 0)
+    if nxt > now:
+        wait = math.ceil(nxt - now)
+        raise AzqCheckError(f"⏳ 連投を防ぐため、あと **{wait}秒** 待ってから実行してください。(`/{name}`)")
+    _cmd_cd[key] = now + CMD_COOLDOWN
+
 @bot.tree.error
 async def on_app_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, RankError):
+        msg = str(error)
+    elif isinstance(error, AzqCheckError):
         msg = str(error)
     elif isinstance(error, app_commands.MissingPermissions):
         msg = "❌ このコマンドを実行する権限がありません。"
@@ -582,7 +656,10 @@ async def on_message(message: discord.Message):
             return await punish(message, "NGワード")
     if am["block_invites"] and INVITE_RE.search(content):
         return await punish(message, "招待リンクの投稿")
-    if len(message.mentions) + len(message.role_mentions) >= am["mention_limit"]:
+    # 重複メンションは1つとして数え、@everyone / @here もカウントする(同一ユーザーへの連続メンションで誤検知しない)
+    mention_total = (len({m.id for m in message.mentions}) + len({r.id for r in message.role_mentions})
+                     + (1 if message.mention_everyone else 0))
+    if mention_total >= am["mention_limit"]:
         return await punish(message, "メンション過多", heavy=True)
 
     dq = recent_msgs[key]
@@ -782,10 +859,10 @@ async def _panel_gone(guild: discord.Guild, channel_id, message_id) -> Optional[
 
 
 async def restore_panels() -> None:
-    for guild in list(bot.guilds):
+    async def one(guild: discord.Guild):
         cfg = store.data.get(str(guild.id))
-        if not cfg or guild.unavailable:
-            continue
+        if not cfg:
+            return
         v, tc = cfg["verify"], cfg["ticket"]
         jobs = []
         if verify_active(cfg):
@@ -813,6 +890,8 @@ async def restore_panels() -> None:
                 store.save()
                 bot.add_view(RolePanelView(p["roles"]), message_id=msg.id)
                 log.info("ロールパネルを自動復元しました guild=%s", guild.id)
+    # 1サーバーの復元に失敗しても、他のサーバーのパネルは復元する
+    await run_for_guilds("restore_panels", one)
 
 
 @bot.event
@@ -894,26 +973,69 @@ async def on_guild_remove(guild: discord.Guild):
         pass
 
 
+# ═════════════════════════ 複数サーバー運用のための安定化 ═════════════════════════
+# 1サーバーでのエラーや重い処理が、他のサーバーの処理や定期ループ全体を止めないようにする。
+# ・定期ループは「サーバーごとに隔離」して実行し、1サーバーで失敗しても他は続行
+# ・同時実行数を LOOP_CONCURRENCY に制限し、Discord API にも優しくする
+# ・CPUを使う画像処理は HEAVY_WORKERS 分のスレッドプールで実行(イベントループを塞がない)
+
+LOOP_CONCURRENCY = max(2, min(16, int(os.getenv("LOOP_CONCURRENCY") or 8)))
+_loop_sem: Optional[asyncio.Semaphore] = None
+
+
+def _loop_semaphore() -> asyncio.Semaphore:
+    global _loop_sem
+    if _loop_sem is None:  # イベントループ内で最初に使われたときに作る
+        _loop_sem = asyncio.Semaphore(LOOP_CONCURRENCY)
+    return _loop_sem
+
+
+async def guard_guild(label: str, guild, coro_fn, *args) -> None:
+    """1サーバー分の定期処理を隔離して実行する。そのサーバーでエラーが起きても、ログに残して他のサーバーは続行する。"""
+    try:
+        async with _loop_semaphore():
+            await coro_fn(*args)
+    except Exception:
+        gid = getattr(guild, "id", guild)
+        log.exception("定期処理でエラーが発生しました(%s) guild=%s。他のサーバーは続行します", label, gid)
+
+
+async def run_for_guilds(label: str, fn) -> None:
+    """全サーバーに対して、同時実行数を制限しながら fn(guild) を実行する(サーバーごとに隔離)。"""
+    guilds = [g for g in list(bot.guilds) if not g.unavailable]
+    if not guilds:
+        return
+    await asyncio.gather(*(guard_guild(label, g, fn, g) for g in guilds))
+
+
 @tasks.loop(minutes=10)
 async def cleanup_trackers():
-    now = time.time()
-    for tracker in (recent_msgs, recent_dups):
-        for k in [k for k, dq in tracker.items() if not dq or now - dq[-1][0] > 120]:
-            tracker.pop(k, None)
-    for k in [k for k, dq in strikes.items() if not dq or now - dq[-1] > 300]:
-        strikes.pop(k, None)
-    for k in [k for k, (_, exp) in verify_challenges.items() if exp < now]:
-        verify_challenges.pop(k, None)
-    for k in [k for k, rec in verify_fails.items() if now - rec[1] > 900]:
-        verify_fails.pop(k, None)
-    for k in [k for k, until in verify_lock.items() if until < now]:
-        verify_lock.pop(k, None)
-    for k in [k for k, t in verify_last.items() if now - t > 60]:
-        verify_last.pop(k, None)
-    for k in [k for k, until in raid_until.items() if until < now]:
-        raid_until.pop(k, None)
-    for k in [k for k, t in ticket_last.items() if now - t > TICKET_COOLDOWN]:
-        ticket_last.pop(k, None)
+    try:
+        now = time.time()
+        for tracker in (recent_msgs, recent_dups):
+            for k in [k for k, dq in tracker.items() if not dq or now - dq[-1][0] > 120]:
+                tracker.pop(k, None)
+        for k in [k for k, dq in strikes.items() if not dq or now - dq[-1] > 300]:
+            strikes.pop(k, None)
+        for k in [k for k, (_, exp) in verify_challenges.items() if exp < now]:
+            verify_challenges.pop(k, None)
+        for k in [k for k, rec in verify_fails.items() if now - rec[1] > 900]:
+            verify_fails.pop(k, None)
+        for k in [k for k, until in verify_lock.items() if until < now]:
+            verify_lock.pop(k, None)
+        for k in [k for k, t in verify_last.items() if now - t > 60]:
+            verify_last.pop(k, None)
+        for k in [k for k, until in raid_until.items() if until < now]:
+            raid_until.pop(k, None)
+        for k in [k for k, t in ticket_last.items() if now - t > TICKET_COOLDOWN]:
+            ticket_last.pop(k, None)
+        # 連投ガードの記録が大きくなりすぎたら整理(有効期限が切れた分を削除)
+        if len(_cmd_cd) > 20000:
+            mono = time.monotonic()
+            for k in [k for k, v in _cmd_cd.items() if v <= mono]:
+                _cmd_cd.pop(k, None)
+    except Exception:
+        log.exception("定期クリーンアップでエラーが発生しました。次回の実行で続行します")
 
 
 ACT_BUCKET = 900
@@ -1110,8 +1232,11 @@ atexit.register(act_flush_sync)
 
 @tasks.loop(minutes=ACT_SAVE_MINUTES)
 async def activity_save():
-    prune_activity()
-    await act_flush_async()
+    try:
+        prune_activity()
+        await act_flush_async()
+    except Exception:
+        log.exception("アクティビティの保存でエラーが発生しました。次回の実行で続行します")
 
 
 @activity_save.before_loop
@@ -1136,6 +1261,7 @@ def kaso_level(total: int, hours: int, ratio: float):
 @app_commands.describe(hours="集計する時間(1〜168、既定24)")
 @app_commands.guild_only()
 @app_commands.checks.cooldown(1, 60, key=lambda i: i.guild_id)
+@one_at_a_time("kaso")
 async def kaso(interaction: discord.Interaction, hours: app_commands.Range[int, 1, 168] = 24):
     await interaction.response.defer()
     total, active, humans, per = await measure_activity(interaction.guild, hours)
@@ -1154,13 +1280,13 @@ async def kaso(interaction: discord.Interaction, hours: app_commands.Range[int, 
 
 @tasks.loop(hours=6)
 async def kaso_watch():
-    for guild in bot.guilds:
+    async def one(guild: discord.Guild):
         k = store.get(guild.id)["kaso"]
         if not k["enabled"] or not k["channel"] or time.time() - k["last_alert"] < 86400:
-            continue
+            return
         ch = guild.get_channel(k["channel"])
         if not ch:
-            continue
+            return
         total, active, humans, _ = await measure_activity(guild, 24)
         if total < k["threshold"]:
             k["last_alert"] = time.time()
@@ -1171,6 +1297,8 @@ async def kaso_watch():
                 await ch.send(embed=e)
             except discord.HTTPException:
                 pass
+    # 1サーバーの診断(アクティビティの集計)は重いことがあるため、サーバーごとに隔離・並行実行する
+    await run_for_guilds("kaso_watch", one)
 
 
 @kaso_watch.before_loop
@@ -1238,8 +1366,9 @@ try:
     HEAVY_WORKERS = int(os.getenv("HEAVY_WORKERS") or 0)
 except ValueError:
     HEAVY_WORKERS = 0
+# 低コアのサーバーでも安定するよう、既定は最大3スレッドに抑える(増やしたい場合は HEAVY_WORKERS を設定)
 if HEAVY_WORKERS < 1:
-    HEAVY_WORKERS = max(2, min(4, os.cpu_count() or 2))
+    HEAVY_WORKERS = max(2, min(3, os.cpu_count() or 2))
 HEAVY_POOL = ThreadPoolExecutor(max_workers=HEAVY_WORKERS, thread_name_prefix="heavy")
 CAPTCHA_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="captcha")
 
@@ -1668,6 +1797,7 @@ async def is_public_host(host: str) -> bool:
 
 @bot.tree.command(name="ping", description="BOTの応答速度、またはWebサイトのpingを測定します")
 @app_commands.describe(target="Webサイトのドメイン/URL(省略するとBOTの速度)")
+@one_at_a_time("ping")
 async def ping(interaction: discord.Interaction, target: Optional[str] = None):
     if not target:
         start = time.perf_counter()
@@ -1705,6 +1835,337 @@ async def ping(interaction: discord.Interaction, target: Optional[str] = None):
     except aiohttp.ClientError as err:
         e = make_embed(f"🌐 ping: {parsed.hostname}", f"❌ 接続エラー: {type(err).__name__}", RED)
     await interaction.followup.send(embed=e)
+
+
+# ═════════════════════════ 投票・リマインダー ═════════════════════════
+# 誰でも使える便利コマンド。/poll はボタン投票(自動締め切りつき)、/remind は指定時間にDMで通知。
+# リマインダーは DATA_DIR/reminders.json に保存され、再起動後も消えません。
+
+POLL_MAX_OPTIONS = 10
+POLL_COLORS = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+REMIND_MAX_PER_USER = 20
+REMIND_MAX_SECONDS = 60 * 60 * 24 * 30  # 最長30日
+
+
+def _fmt_seconds(sec: float) -> str:
+    d, rem = divmod(int(sec), 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    parts = []
+    if d:
+        parts.append(f"{d}日")
+    if h:
+        parts.append(f"{h}時間")
+    if m:
+        parts.append(f"{m}分")
+    if s and not d:
+        parts.append(f"{s}秒")
+    return "".join(parts) or "0秒"
+
+
+class PollView(discord.ui.View):
+    """ボタン投票。単一選択は投票先の変更・取り消しが可能。作成者はいつでも締め切れる。"""
+
+    def __init__(self, question: str, options: list, multi: bool, hide: bool, owner_id: int):
+        super().__init__(timeout=None)
+        self.question = question
+        self.options = options
+        self.multi = multi
+        self.hide = hide
+        self.owner_id = owner_id
+        self.closed = False
+        self.votes: dict = {i: set() for i in range(len(options))}  # {選択肢番号: {user_id,...}}
+        for i, label in enumerate(options):
+            self.add_item(PollButton(i, label, len(options)))
+        close_btn = discord.ui.Button(label="締め切る", emoji="🔒", style=discord.ButtonStyle.secondary)
+        close_btn.callback = self.close_poll
+        self.add_item(close_btn)
+
+    def _result_text(self, show_counts: bool) -> str:
+        lines = []
+        for i, label in enumerate(self.options):
+            n = len(self.votes[i])
+            bar = ""
+            if show_counts:
+                total = sum(len(v) for v in self.votes.values()) or 1
+                filled = round(n * 10 / total)
+                bar = "\u2588" * filled + "\u2591" * (10 - filled) + " "
+            lines.append(f"{POLL_COLORS[i]} {label[:80]}  {bar}{n if show_counts else '?'}票")
+        return "\n".join(lines)
+
+    async def _summary(self, interaction: discord.Interaction, closed: bool = False) -> None:
+        total = sum(len(v) for v in self.votes.values())
+        voters = len({u for v in self.votes.values() for u in v})
+        e = make_embed("📊 投票" + ("(締め切り)" if closed else ""), color=YELLOW if closed else BLUE)
+        e.add_field(name=self.question[:200],
+                    value=self._result_text(show_counts=not self.hide or closed), inline=False)
+        status = f"投票者: {voters}人 / 票数: {total}" if self.multi else f"投票者: {voters}人"
+        if closed:
+            e.set_footer(text=f"締め切りました。{status}")
+        elif self.hide:
+            e.set_footer(text=f"結果は締め切りまで非表示です。{status}")
+        else:
+            e.set_footer(text=status)
+        await interaction.response.edit_message(embed=e, view=None if closed else self)
+        if closed:
+            self.closed = True
+            self.stop()
+
+    async def close_poll(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            return await eph(interaction, "⚠️ 投票の作成者だけが締め切れます。")
+        await self._summary(interaction, closed=True)
+
+
+class PollButton(discord.ui.Button):
+    def __init__(self, index: int, label: str, count: int):
+        super().__init__(label=f"{POLL_COLORS[index]} {label[:60]}", style=discord.ButtonStyle.secondary,
+                         row=index // 5 if count > 5 else index)
+        self.index = index
+
+    async def callback(self, interaction: discord.Interaction):
+        view: PollView = self.view
+        if view.closed:
+            return await eph(interaction, "⚠️ この投票は締め切られました。")
+        uid = interaction.user.id
+        if view.multi:
+            votes = view.votes[self.index]
+            if uid in votes:
+                votes.discard(uid)
+            else:
+                votes.add(uid)
+        else:
+            already = uid in view.votes[self.index]
+            for v in view.votes.values():
+                v.discard(uid)
+            if not already:  # 同じ選択肢をもう一度押したら取り消し
+                view.votes[self.index].add(uid)
+        await view._summary(interaction)
+
+
+@bot.tree.command(name="poll", description="投票を作成します(ボタンで投票、自動締め切り)")
+@app_commands.describe(
+    question="質問",
+    options="選択肢(スペース区切りで最大10個)。空白を含む選択肢は ダブルクォートで囲ってください",
+    multi="複数選択を許可するか(既定: 1つだけ選択)",
+    minutes="投票期間(分)。最大7日。0で無期限(作成者が締め切る)",
+    hide="途中経過を隠す(締め切りまで票数を表示しない)",
+)
+@app_commands.checks.cooldown(2, 300)
+async def poll_cmd(interaction: discord.Interaction, question: app_commands.Range[str, 1, 200],
+                   options: str, multi: bool = False, minutes: app_commands.Range[int, 0, 10080] = 0,
+                   hide: bool = False):
+    opts = [o for o in (s.strip() for s in options.split()) if o]
+    if len(opts) < 2:
+        return await interaction.response.send_message(
+            "❌ 選択肢は2つ以上指定してください。例: `/poll question:昼食は? options:\"ラーメン\" \"カレー\"",
+            ephemeral=True)
+    opts = opts[:POLL_MAX_OPTIONS]
+    view = PollView(question, opts, multi, hide, interaction.user.id)
+    e = make_embed("📊 投票", color=BLUE)
+    e.add_field(name=question[:200], value=view._result_text(show_counts=not hide), inline=False)
+    dur = f"約{_fmt_seconds(minutes * 60)}後に自動で締め切ります" if minutes else "作成者が締め切るまで投票できます"
+    e.set_footer(text=("複数選択可 / " if multi else "1つだけ選択 / ") + dur + (" / 結果は締め切りまで非表示" if hide else ""))
+    await interaction.response.send_message(embed=e, view=view)
+    if minutes:
+        async def _auto_close():
+            await asyncio.sleep(minutes * 60)
+            if view.closed:
+                return
+            view.closed = True
+            try:
+                msg = await interaction.channel.fetch_message((await interaction.original_response()).id)
+                voters = len({u for v in view.votes.values() for u in v})
+                e2 = make_embed("📊 投票(締め切り)", color=YELLOW)
+                e2.add_field(name=question[:200], value=view._result_text(show_counts=True), inline=False)
+                e2.set_footer(text=f"締め切りました。投票者: {voters}人")
+                await msg.edit(embed=e2, view=None)
+            except discord.HTTPException:
+                pass
+            view.stop()
+        asyncio.create_task(_auto_close())
+
+
+# ---- リマインダー ----
+
+class Reminders:
+    """リマインダーの保存と通知。{id: {user, channel, text, due}} をJSONに保存し、再起動後も届ける。"""
+
+    def __init__(self, directory: str):
+        self.path = os.path.join(directory, "reminders.json")
+        self.data: dict = {}
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, encoding="utf-8") as f:
+                    self.data = json.load(f)
+            except Exception:
+                log.exception("リマインダーの読み込みに失敗しました")
+        self._dirty = False
+        self._task: Optional[asyncio.Task] = None
+
+    def save(self) -> None:
+        self._dirty = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return self.flush()
+        if self._task is None or self._task.done():
+            self._task = loop.create_task(self._later())
+
+    async def _later(self) -> None:
+        while self._dirty:
+            await asyncio.sleep(1.5)
+            await self.flush_async()
+
+    async def flush_async(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, self._write)
+        except Exception:
+            self._dirty = True
+            log.exception("リマインダーの保存に失敗しました")
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        self._dirty = False
+        try:
+            self._write()
+        except Exception:
+            self._dirty = True
+            log.exception("リマインダーの保存に失敗しました")
+
+    def _write(self) -> None:
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, self.path)
+
+    def add(self, user_id: int, channel_id: int, text: str, due: float) -> str:
+        rid = secrets.token_urlsafe(4)
+        self.data[rid] = {"user": user_id, "channel": channel_id, "text": text, "due": due}
+        self.save()
+        return rid
+
+    def remove(self, rid: str) -> Optional[dict]:
+        rec = self.data.pop(rid, None)
+        if rec:
+            self.save()
+        return rec
+
+    def of_user(self, user_id: int) -> list:
+        now = time.time()
+        return sorted([(rid, r) for rid, r in self.data.items() if r["user"] == user_id and r["due"] > now],
+                      key=lambda x: x[1]["due"])
+
+    def due(self) -> list:
+        now = time.time()
+        return [(rid, r) for rid, r in self.data.items() if r["due"] <= now]
+
+
+reminders = Reminders(DATA_DIR)
+atexit.register(reminders.flush)
+
+
+def _parse_remind_time(s: str) -> Optional[int]:
+    """"30m" "2h" "1d" "90" "1h30m" を秒に変換。無効なら None。"""
+    s = (s or "").strip().lower().replace("分", "m").replace("時間", "h").replace("日", "d").replace(" ", "")
+    if not s:
+        return None
+    if s.isdigit():
+        return int(s) * 60
+    total, pos = 0, 0
+    for m in re.finditer(r"(\d+)([mhd])", s):
+        if m.start() != pos:
+            return None
+        pos = m.end()
+        n, unit = int(m.group(1)), m.group(2).lower()
+        total += n * (60 if unit == "m" else 3600 if unit == "h" else 86400)
+    return total if pos == len(s) and total > 0 else None
+
+
+async def _deliver_reminder(rid: str, rec: dict, late: bool = False) -> None:
+    user = bot.get_user(rec["user"]) or await bot.fetch_user(rec["user"])
+    e = make_embed("⏰ リマインダー", color=YELLOW)
+    e.add_field(name="内容", value=rec["text"][:1000] or "(内容なし)", inline=False)
+    if late:
+        e.set_footer(text=f"BOTのオフライン中に予定時刻を過ぎていました(予定: {jst(rec['due'])})")
+    if rec.get("channel"):
+        e.add_field(name="元のチャンネル", value=f"<#{rec['channel']}>", inline=False)
+    await try_dm(user, embed=e)
+    reminders.remove(rid)
+
+
+@tasks.loop(seconds=30)
+async def remind_watch():
+    for rid, rec in reminders.due():
+        try:
+            await _deliver_reminder(rid, rec)
+        except Exception:
+            log.exception("リマインダーの送信に失敗しました(id=%s)", rid)
+            rec["due"] = time.time() + 300  # 再送は5分後。失敗が続く場合は本人が /remind cancel で削除
+            reminders.save()
+
+
+@remind_watch.before_loop
+async def _before_remind_watch():
+    await bot.wait_until_ready()
+    # オフライン中に予定を過ぎた分も届ける
+    for rid, rec in reminders.due():
+        try:
+            await _deliver_reminder(rid, rec, late=True)
+        except Exception:
+            log.exception("遅延リマインダーの送信に失敗しました(id=%s)", rid)
+            rec["due"] = time.time() + 300
+            reminders.save()
+
+
+remind_group = app_commands.Group(name="remind", description="リマインダー(指定時間にDMでお知らせ)")
+
+
+@remind_group.command(name="set", description="リマインダーを設定(指定時間後、DMで通知)")
+@app_commands.describe(when="いつまで(例: 30m / 2h / 1d / 1h30m / 分数のみも可。最長30日)",
+                       text="リマインドの内容")
+async def remind_set(interaction: discord.Interaction, when: str, text: app_commands.Range[str, 1, 1000]):
+    sec = _parse_remind_time(when)
+    if not sec:
+        return await interaction.response.send_message(
+            "❌ 時間の指定が正しくありません。`30m` `2h` `1d` `1h30m` のように指定してください(分数だけ `90` も可)。",
+            ephemeral=True)
+    if sec > REMIND_MAX_SECONDS:
+        return await interaction.response.send_message("❌ 最長は30日です。", ephemeral=True)
+    if len(reminders.of_user(interaction.user.id)) >= REMIND_MAX_PER_USER:
+        return await interaction.response.send_message(
+            f"❌ リマインダーは1人あたり{REMIND_MAX_PER_USER}件までです。`/remind list` で確認し、`/remind cancel` で不要なものを消してください。",
+            ephemeral=True)
+    due = time.time() + sec
+    rid = reminders.add(interaction.user.id, interaction.channel.id if interaction.channel else 0, text, due)
+    await interaction.response.send_message(
+        f"⏰ リマインダーを設定しました(ID: `{rid}`)\n**{_fmt_seconds(sec)}後** にDMでお知らせします。\n内容: {text[:500]}",
+        ephemeral=True)
+
+
+@remind_group.command(name="list", description="自分のリマインダー一覧")
+async def remind_list(interaction: discord.Interaction):
+    items = reminders.of_user(interaction.user.id)
+    if not items:
+        return await interaction.response.send_message("📭 設定中のリマインダーはありません。`/remind set` で追加できます。", ephemeral=True)
+    lines = [f"`{rid}` — <t:{int(r['due'])}:R> / {r['text'][:60]}" for rid, r in items[:15]]
+    if len(items) > 15:
+        lines.append(f"ほか {len(items) - 15}件")
+    await interaction.response.send_message("⏰ 設定中のリマインダー:\n" + "\n".join(lines), ephemeral=True)
+
+
+@remind_group.command(name="cancel", description="リマインダーを取り消し")
+@app_commands.describe(id="取り消すリマインダーのID(/remind list で確認)")
+async def remind_cancel(interaction: discord.Interaction, id: str):
+    rec = reminders.data.get(id.strip())
+    if not rec or rec["user"] != interaction.user.id:
+        return await interaction.response.send_message("❌ そのIDのリマインダーが見つかりません。`/remind list` で確認してください。", ephemeral=True)
+    reminders.remove(id.strip())
+    await interaction.response.send_message("✅ 取り消しました。", ephemeral=True)
 
 
 # ═════════════════════════ サーバー運営(役職・申請・応募・ロール・ポイント) ═════════════════════════
@@ -3398,6 +3859,7 @@ MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
                               app_commands.Choice(name="累計(貢献度)", value="total")])
 @app_commands.guild_only()
 @app_commands.checks.cooldown(1, 10, key=lambda i: i.user.id)
+@one_at_a_time("ranking")
 async def ranking_cmd(interaction: discord.Interaction, period: Optional[app_commands.Choice[str]] = None):
     g, per = interaction.guild, (period.value if period else "week")
     rows = ranked(g, period_totals(g.id, per))
@@ -3587,10 +4049,10 @@ async def on_raw_delete(payload: discord.RawMessageDeleteEvent) -> None:
 @tasks.loop(minutes=1)
 async def temp_role_watch():
     now = time.time()
-    for g in list(bot.guilds):
+    async def one(g: discord.Guild):
         c = lg.data.get(str(g.id))
         if not c or not c["temp_roles"]:
-            continue
+            return
         keep, changed = [], False
         for t in c["temp_roles"]:
             if t["exp"] > now:
@@ -3606,6 +4068,7 @@ async def temp_role_watch():
         if changed:
             c["temp_roles"] = keep
             lg.save()
+    await run_for_guilds("temp_role_watch", one)
     for k in [k for k, (t, _) in _auto_last.items() if now - t > 3600]:
         _auto_last.pop(k, None)
     for k in [k for k, dq in _heavy.items() if not dq or now - dq[-1] > HEAVY_WINDOW]:
@@ -3616,17 +4079,18 @@ async def temp_role_watch():
 async def mvp_watch():
     first = datetime.now(JST).replace(day=1)
     ym = (first - timedelta(days=1)).strftime("%Y-%m")
-    for g in list(bot.guilds):
+    async def one(g: discord.Guild):
         c = lg.data.get(str(g.id))
         if not c:
-            continue
+            return
         p = c["points"]
         if not p["mvp_auto"] or not p["mvp_channel"] or p["mvp_last"] == ym:
-            continue
+            return
         try:
             await announce_mvp(g, ym)
         except Exception:
             log.exception("月間MVPの自動発表に失敗 guild=%s", g.id)
+    await run_for_guilds("mvp_watch", one)
 
 
 @temp_role_watch.before_loop
@@ -4880,35 +5344,40 @@ async def verify_watch():
     now = time.time()
     for k in [k for k, t in verify_issued.items() if now - t > CHALLENGE_TTL * 2]:
         verify_issued.pop(k, None)
-    for guild in list(bot.guilds):
-        if guild.unavailable:
-            continue
+
+    async def one(guild: discord.Guild):
         v = store.get(guild.id)["verify"]
         if not v["pending"]:
-            continue
+            return
         role = guild.get_role(v["role"]) if v["role"] else None
         changed = False
         for uid, ts in list(v["pending"].items()):
-            member = guild.get_member(int(uid))
-            if member is None or not v["enabled"] or (role and role in member.roles):
-                v["pending"].pop(uid, None)
-                changed = True
-                continue
-            if v["kick_minutes"] and now - ts >= v["kick_minutes"] * 60:
-                v["pending"].pop(uid, None)
-                changed = True
-                if member.guild_permissions.administrator:
+            try:
+                member = guild.get_member(int(uid))
+                if member is None or not v["enabled"] or (role and role in member.roles):
+                    v["pending"].pop(uid, None)
+                    changed = True
                     continue
-                await try_dm(member, f"**{guild.name}** で {v['kick_minutes']}分以内に認証が完了しなかったためキックされました。\n再参加後、認証パネルから認証してください。")
-                try:
-                    await member.kick(reason=f"[AZQ BOT 認証] {v['kick_minutes']}分以内に未認証")
-                    v["stats"]["kicked"] += 1
-                    flag_member(v, member.id)
-                    await send_log(guild, make_embed("⏰ 未認証キック", f"{member} (`{member.id}`)\n{v['kick_minutes']}分以内に認証されませんでした。", YELLOW))
-                except discord.HTTPException:
-                    log.warning("未認証キックに失敗 guild=%s member=%s", guild.id, uid)
+                if v["kick_minutes"] and now - ts >= v["kick_minutes"] * 60:
+                    v["pending"].pop(uid, None)
+                    changed = True
+                    if member.guild_permissions.administrator:
+                        continue
+                    await try_dm(member, f"**{guild.name}** で {v['kick_minutes']}分以内に認証が完了しなかったためキックされました。\n再参加後、認証パネルから認証してください。")
+                    try:
+                        await member.kick(reason=f"[AZQ BOT 認証] {v['kick_minutes']}分以内に未認証")
+                        v["stats"]["kicked"] += 1
+                        flag_member(v, member.id)
+                        await send_log(guild, make_embed("⏰ 未認証キック", f"{member} (`{member.id}`)\n{v['kick_minutes']}分以内に認証されませんでした。", YELLOW))
+                    except discord.HTTPException:
+                        log.warning("未認証キックに失敗 guild=%s member=%s", guild.id, uid)
+            except Exception:
+                # 1人の処理が失敗しても、同じサーバーの他の人・他サーバーの処理は続ける
+                log.exception("認証待ちメンバーの処理に失敗 guild=%s member=%s", guild.id, uid)
         if changed:
             store.save()
+    # DM・キックなどの待ち時間が長い処理のため、サーバーごとに隔離・並行実行する
+    await run_for_guilds("verify_watch", one)
 
 
 @verify_watch.before_loop
@@ -5537,12 +6006,10 @@ async def post_ticket_panel(guild: discord.Guild, channel: discord.TextChannel) 
 @tasks.loop(minutes=15)
 async def ticket_watch():
     now = discord.utils.utcnow()
-    for guild in list(bot.guilds):
-        if guild.unavailable:
-            continue
+    async def one(guild: discord.Guild):
         tc = store.get(guild.id)["ticket"]
         if not tc["enabled"] or not tc["auto_close_hours"]:
-            continue
+            return
         for cid, info in list(tc["open"].items()):
             ch = guild.get_channel(int(cid))
             if ch is None:
@@ -5554,7 +6021,12 @@ async def ticket_watch():
             last = (discord.utils.snowflake_time(ch.last_message_id) if ch.last_message_id
                     else datetime.fromtimestamp(info["created"], timezone.utc))
             if (now - last).total_seconds() >= tc["auto_close_hours"] * 3600:
-                await close_ticket(ch, None, f"{tc['auto_close_hours']}時間操作がなかったため自動クローズ")
+                try:
+                    await close_ticket(ch, None, f"{tc['auto_close_hours']}時間操作がなかったため自動クローズ")
+                except Exception:
+                    # 1チケットのクローズに失敗しても、他のチケット・他サーバーの処理は続ける
+                    log.exception("チケットの自動クローズに失敗 guild=%s channel=%s", guild.id, cid)
+    await run_for_guilds("ticket_watch", one)
 
 
 @ticket_watch.before_loop
@@ -8265,6 +8737,7 @@ def render_rank(avatar_bytes: bytes, name: str, rank: Optional[int], level: int,
 @app_commands.describe(user="対象ユーザー(省略すると自分)")
 @app_commands.guild_only()
 @app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
+@one_at_a_time("rank")
 async def rank_cmd(interaction: discord.Interaction, user: Optional[discord.Member] = None):
     g, m = interaction.guild, user or interaction.user
     if m.bot:
@@ -8336,6 +8809,7 @@ class LeaderboardView(discord.ui.View):
 @app_commands.choices(type=[app_commands.Choice(name="レベル(XP)", value="xp"), app_commands.Choice(name="メッセージ数", value="msg")])
 @app_commands.guild_only()
 @app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
+@one_at_a_time("leaderboard")
 async def leaderboard_cmd(interaction: discord.Interaction, type: Optional[app_commands.Choice[str]] = None,
                           page: app_commands.Range[int, 1, 10000] = 1):
     key = type.value if type else "xp"
@@ -8445,7 +8919,19 @@ async def _web_hint_check(interaction: discord.Interaction) -> bool:
     return True
 
 
-bot.tree.interaction_check = _web_hint_check
+async def _global_check(interaction: discord.Interaction) -> bool:
+    """全スラッシュコマンド・右クリックメニュー共通のチェック。
+    1) 連投ガード(コマンド本体を実行する前に弾く) → 2) /web案内。"""
+    try:
+        _spam_guard_check(interaction)
+    except AzqCheckError:
+        raise
+    except Exception:
+        log.exception("連投ガードの判定でエラーが発生しました(コマンドは続行します)")
+    return await _web_hint_check(interaction)
+
+
+bot.tree.interaction_check = _global_check
 
 
 @bot.tree.command(name="help", description="AZQ BOTのコマンド一覧")
@@ -8456,6 +8942,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🧠 脳内メーカー", value="`/nounai [name]` / ユーザーを右クリック→アプリ→脳内メーカー", inline=False)
     e.add_field(name="🖼️ 名言画像", value="`/meigen text:名言` / メッセージを右クリック→アプリ→名言画像にする\n他の人のアイコン・名前を使うには本人の許可が必要(未設定の人にはDMで確認)。`/meigenprivacy` で自分の許可設定を変更\n管理者は `/config meigen enabled:False` でサーバー内を無効化できます", inline=False)
     e.add_field(name="👑 王様ゲーム", value="`/ousama [max_players]` 参加者を募集 → 開始で王様と番号が自動で決まる\nチャンネルに王様と参加者を表示し、各自の番号はDMで届きます(命令は自由)", inline=False)
+    e.add_field(name="📊 投票・⏰ リマインダー", value="`/poll question:質問 options:選択肢...` ボタン投票(期間指定・複数選択・経過非表示にも対応。作成者は🔒で締め切り)\n`/remind set` `/remind list` `/remind cancel` 指定時間にDMで通知(再起動後も保持)", inline=False)
     e.add_field(name="🏓 ping", value="`/ping` BOT速度 / `/ping target:example.com` Webサイト", inline=False)
     e.add_field(name="🔐 認証", value="`/verify setup` 設置 / `/verify set` 詳細設定 / `/verify text` パネルの文面を編集 / `/verify status` 状態\n`/verify approve` `/verify revoke` `/verify bulk_approve` `/verify raid` `/verify panel` `/verify disable`\n方式: ボタン・計算・画像CAPTCHA・Web認証(VPN/サブ垢の判定つき)、未認証ロール、アカウント年齢制限、未認証キック、レイド時の自動強化\nロボット確認の強化、疑わしいアカウント対策(デフォルトアイコン・再参加・集団参加 → 承認待ち/キック)は `/verify set` から", inline=False)
     e.add_field(name="🎫 チケット", value="`/ticketconfig setup` 設置 / `/ticketconfig set` `staff` `panel` `block` `unblock` `status` `disable`\nチケット内: `/ticket close` `/ticket add` `/ticket remove` `/ticket rename` `/ticket delete`\nクローズは作成者・スタッフ・管理者、**削除は管理者のみ**(クローズ後は閲覧のみ)\n機能: 非公開chの自動作成、担当者、記録(.txt)の保存/DM、無操作の自動クローズ、認証連携", inline=False)

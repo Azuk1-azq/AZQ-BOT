@@ -2,8 +2,16 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>AZQ BOT - サーバー管理Discord Bot</title>
-<meta name="description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
+<meta name="description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・投票・リマインダー・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
 <meta name="theme-color" content="#0e2747">
+<link rel="canonical" href="https://bot.azuk1.com/">
+<meta property="og:site_name" content="AZQ BOT">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AZQ BOT - サーバー管理Discord Bot">
+<meta property="og:description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・投票・リマインダーなど、サーバー管理に必要な機能を1つのBotで。">
+<meta property="og:url" content="https://bot.azuk1.com/">
+<meta name="twitter:card" content="summary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -269,7 +277,7 @@ section{padding:60px 0}
 <main id="main"><div class="wrap" id="top">
 
 <div class="band hband"><div class="hgrid"><div class="hero">
-<a class="pill" href="../patchnote/2.1.html"><b>v2.1</b><span>レベル機能を追加</span><i>→</i></a>
+<a class="pill" href="../patchnote/2.2.html"><b>v2.2</b><span>投票・リマインダーを追加</span><i>→</i></a>
 <h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
 <p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
 <div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
@@ -344,6 +352,8 @@ section{padding:60px 0}
 <div class="tile"><span class="k">FUN</span><h3>脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
 <div class="tile"><span class="k">FUN</span><h3>名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
 <div class="tile"><span class="k">FUN</span><h3>王様ゲーム</h3><p><code>/ousama</code> で参加者を募集して開始すると、王様と番号が自動で決まります。チャンネルには王様と参加者を表示し、各自の番号はDMで届きます。命令は自由に出せます。</p></div>
+<div class="tile"><span class="k">UTILITY</span><h3>投票</h3><p><code>/poll</code> でボタン投票を作成。1つだけ選択と複数選択に対応し、期間を指定すると自動で締め切ります。締め切りまでの結果を隠すこともできます。</p></div>
+<div class="tile"><span class="k">UTILITY</span><h3>リマインダー</h3><p><code>/remind set</code> で指定時間にDMでお知らせ。<code>30m</code> <code>2h</code> <code>1d</code> のような指定ができ、再起動後も消えません。一覧と取り消しもコマンドで。</p></div>
 <div class="tile"><span class="k">UTILITY</span><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
 <div class="tile"><span class="k">RELIABILITY</span><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
 <div class="tile" style="grid-column:1/-1"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
@@ -367,6 +377,10 @@ section{padding:60px 0}
 <button class="ci" type="button" data-role="all-user" data-copy="/meigenprivacy"><code>/meigenprivacy</code><span>自分のアイコン・名前の使用許可を変更</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/ousama"><code>/ousama</code><span>王様ゲームを開始(王様と番号を自動で決定)</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/ping"><code>/ping</code><span>BOT・Webサイトの応答速度を測定</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/poll"><code>/poll</code><span>ボタン投票を作成(期間指定・複数選択にも対応)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/remind set"><code>/remind set</code><span>指定時間にDMでリマインド(例: 30m / 2h / 1d)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/remind list"><code>/remind list</code><span>自分のリマインダー一覧</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/remind cancel"><code>/remind cancel</code><span>リマインダーを取り消し</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/userinfo"><code>/userinfo</code><span>ユーザー情報を表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/serverinfo"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/avatar"><code>/avatar</code><span>アイコンを表示</span><em>誰でも</em></button>
@@ -405,7 +419,8 @@ section{padding:60px 0}
 <h2>最近のアップデート</h2>
 <p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
 <ul class="list">
-<li><a class="item" href="../patchnote/2.1.html"><div class="meta"><span class="ver">v2.1</span><span class="new">最新</span></div><h3>バージョン 2.1 のパッチノート</h3><p>レベル機能を追加(ランクカード・ランキング・XPの管理・他のBOTからの移行)</p></a></li>
+<li><a class="item" href="../patchnote/2.2.html"><div class="meta"><span class="ver">v2.2</span><span class="new">最新</span></div><h3>バージョン 2.2 のパッチノート</h3><p>投票・リマインダーを追加。安定性の修正(複数サーバーでの隔離実行・設定ファイルのバックアップ・メンション検知の精度向上)</p></a></li>
+<li><a class="item" href="../patchnote/2.1.html"><div class="meta"><span class="ver">v2.1</span></div><h3>バージョン 2.1 のパッチノート</h3><p>レベル機能を追加(ランクカード・ランキング・XPの管理・他のBOTからの移行)</p></a></li>
 <li><a class="item" href="../patchnote/1.9.html"><div class="meta"><span class="ver">v1.9</span></div><h3>バージョン 1.9 のパッチノート</h3><p>サーバー管理機能を追加(役職・参加申請・スタッフ応募・ロール管理・ポイント)</p></a></li>
 <li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>
 <li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
@@ -419,7 +434,7 @@ section{padding:60px 0}
 <h2>安心して使うための情報</h2>
 <p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
 <div class="two">
-<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>レベル機能のXPとメッセージ数(ユーザーIDごとの数値のみ。メッセージ本文は保存しません)</li><li>レベルを取り込んだときの、取り込み前のXPのバックアップ(1サーバーに1つ。取り消すと削除されます)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li></ul></div>
+<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>レベル機能のXPとメッセージ数(ユーザーIDごとの数値のみ。メッセージ本文は保存しません)</li><li>レベルを取り込んだときの、取り込み前のXPのバックアップ(1サーバーに1つ。取り消すと削除されます)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li><li>リマインダー(/remind を使った場合のみ。設定者のユーザーID・通知予定日時・通知内容。通知・取消後に削除)</li></ul></div>
 <div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
 </div>
 <div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
