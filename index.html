@@ -277,7 +277,7 @@ section{padding:60px 0}
 <main id="main"><div class="wrap" id="top">
 
 <div class="band hband"><div class="hgrid"><div class="hero">
-<a class="pill" href="../patchnote/2.2.html"><b>v2.2</b><span>投票・リマインダーを追加</span><i>→</i></a>
+<a class="pill" href="../patchnote/2.3.html"><b>v2.3</b><span>経済機能を大幅強化(借金・仮想株・Web設定)</span><i>→</i></a>
 <h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
 <p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
 <div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
@@ -356,6 +356,7 @@ section{padding:60px 0}
 <div class="tile"><span class="k">UTILITY</span><h3>リマインダー</h3><p><code>/remind set</code> で指定時間にDMでお知らせ。<code>30m</code> <code>2h</code> <code>1d</code> のような指定ができ、再起動後も消えません。一覧と取り消しもコマンドで。</p></div>
 <div class="tile"><span class="k">UTILITY</span><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
 <div class="tile"><span class="k">RELIABILITY</span><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
+<div class="tile"><span class="k">ECONOMY</span><h3>経済(コイン)</h3><p><code>/daily</code> <code>/work</code> でコインを稼ぎ、<code>/shop</code> でアイテムを売買。所持金が0になっても上限まで借金できる <code>/loan</code> や、価格が1分ごとに変動する仮想株の売買 <code>/stock</code> もあります。初期所持金や報酬額はサーバーごとに設定でき、他の経済BOTからの移行も <code>/money import</code> で行えます。</p></div>
 <div class="tile" style="grid-column:1/-1"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
 <div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
 </div>
@@ -388,6 +389,27 @@ section{padding:60px 0}
 <button class="ci" type="button" data-role="all-user" data-copy="/rank"><code>/rank</code><span>ランクカードを表示(他の人も指定可)</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/leaderboard"><code>/leaderboard</code><span>レベル・メッセージ数のランキングを表示</span><em>誰でも</em></button>
 <button class="ci" type="button" data-role="all-user" data-copy="/ticket close"><code>/ticket close</code><span>チケットをクローズ(作成者・スタッフも可)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/economyinfo"><code>/economyinfo</code><span>経済機能のすべてを一覧表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/balance"><code>/balance</code><span>所持金の残高を表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/daily"><code>/daily</code><span>1日1回のデイリー報酬を受け取る(連続ボーナスつき)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/work"><code>/work</code><span>お仕事をしてコインを稼ぐ</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/loan borrow"><code>/loan borrow</code><span>借金する(上限まで。収入で自動返済)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/loan repay"><code>/loan repay</code><span>借金を返済(all で全額)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/stock"><code>/stock</code><span>仮想株の市場一覧を表示(価格は1分ごとに変動)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/stock buy"><code>/stock buy</code><span>仮想株を購入</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/stock sell"><code>/stock sell</code><span>仮想株を売却(all で全株式)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/stock portfolio"><code>/stock portfolio</code><span>保有株と損益を表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/shop"><code>/shop</code><span>アイテムの売買ができるショップを表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/pay"><code>/pay</code><span>他のユーザーにコインを送金</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/moneytop"><code>/moneytop</code><span>所持金ランキングを表示</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/coinflip"><code>/coinflip</code><span>コイン投げに賭ける</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="all-user" data-copy="/blackjack"><code>/blackjack</code><span>ブラックジャックをプレイ(1人・マルチ)</span><em>誰でも</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/economy config"><code>/economy config</code><span>経済機能の設定(通貨・報酬・借金上限など)</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/economy stock_add"><code>/economy stock_add</code><span>仮想株の銘柄を追加・変更</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/economy item_set"><code>/economy item_set</code><span>ショップのアイテムを追加・編集</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/economyweb"><code>/economyweb</code><span>Webダッシュボードで経済の設定を開く</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/money import"><code>/money import</code><span>他の経済BOTから所持金を取り込み(プレビュー確認つき)</span><em class="adm">管理者</em></button>
+<button class="ci" type="button" data-role="admin" data-copy="/money plus"><code>/money plus</code><span>ユーザーの所持金を増やす(plus / minus / set / history)</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/config log_channel"><code>/config log_channel</code><span>ログチャンネルを設定</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/config automod_set"><code>/config automod_set</code><span>荒らし検知の厳しさを調整・無効化</span><em class="adm">管理者</em></button>
 <button class="ci" type="button" data-role="admin" data-copy="/config meigen"><code>/config meigen</code><span>サーバー内の名言画像をON/OFF</span><em class="adm">管理者</em></button>
@@ -419,7 +441,8 @@ section{padding:60px 0}
 <h2>最近のアップデート</h2>
 <p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
 <ul class="list">
-<li><a class="item" href="../patchnote/2.2.html"><div class="meta"><span class="ver">v2.2</span><span class="new">最新</span></div><h3>バージョン 2.2 のパッチノート</h3><p>投票・リマインダーを追加。安定性の修正(複数サーバーでの隔離実行・設定ファイルのバックアップ・メンション検知の精度向上)</p></a></li>
+<li><a class="item" href="../patchnote/2.3.html"><div class="meta"><span class="ver">v2.3</span><span class="new">最新</span></div><h3>バージョン 2.3 のパッチノート</h3><p>経済機能を大幅強化。借金(/loan)、仮想株の売買(/stock)、経済ガイド(/economyinfo)、Webダッシュボードに経済タブ(/economyweb)を追加。初期所持金を100に変更</p></a></li>
+<li><a class="item" href="../patchnote/2.2.html"><div class="meta"><span class="ver">v2.2</span></div><h3>バージョン 2.2 のパッチノート</h3><p>投票・リマインダーを追加。安定性の修正(複数サーバーでの隔離実行・設定ファイルのバックアップ・メンション検知の精度向上)</p></a></li>
 <li><a class="item" href="../patchnote/2.1.html"><div class="meta"><span class="ver">v2.1</span></div><h3>バージョン 2.1 のパッチノート</h3><p>レベル機能を追加(ランクカード・ランキング・XPの管理・他のBOTからの移行)</p></a></li>
 <li><a class="item" href="../patchnote/1.9.html"><div class="meta"><span class="ver">v1.9</span></div><h3>バージョン 1.9 のパッチノート</h3><p>サーバー管理機能を追加(役職・参加申請・スタッフ応募・ロール管理・ポイント)</p></a></li>
 <li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>

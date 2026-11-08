@@ -132,7 +132,7 @@ code{background:var(--surface2);border:1px solid var(--line);padding:1px 7px;bor
 <section id="vLoading" class="card"><p style="margin:0;color:var(--mute)">読み込み中…</p></section>
 <section id="vServers" class="hidden"><div id="serverList"></div></section>
 <section id="vApp" class="hidden">
-<div id="tab-basic"></div><div id="tab-mod" class="hidden"></div><div id="tab-verify" class="hidden"></div><div id="tab-ticket" class="hidden"></div><div id="tab-role" class="hidden"></div><div id="tab-member" class="hidden"></div>
+<div id="tab-basic"></div><div id="tab-mod" class="hidden"></div><div id="tab-verify" class="hidden"></div><div id="tab-ticket" class="hidden"></div><div id="tab-eco" class="hidden"></div><div id="tab-role" class="hidden"></div><div id="tab-member" class="hidden"></div>
 </section>
 <footer>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</footer>
 </main></div>
@@ -249,6 +249,14 @@ const TICKET = [
   {t: "詳細", f: [N("max_open", "1人が同時に開けるチケット数", 1, 5), N("auto_close_hours", "無操作で自動クローズ(時間・0=しない)", 0, 720), C("ping_staff", "作成時にスタッフロールへメンションする"), C("dm_transcript", "クローズ時に作成者へ記録をDMする")]},
   {t: "作成を禁止するユーザー", f: [{k: "blocked", t: "lines", l: "ユーザーID(1行に1つ)", h: "Discordの開発者モードで、ユーザーを右クリック→「IDをコピー」。"}]},
 ];
+const ECO = [
+  {t: "通貨", d: "コインの見た目と名前です。(/economyinfo などの表示に使われます)", f: [{k: "symbol", t: "txt", l: "記号(絵文字など)", max: 10, half: 1}, {k: "name", t: "txt", l: "名前", max: 10, half: 1}]},
+  {t: "所持金と借金", f: [N("start_balance", "初期所持金", 0, 1000000000, "初めて経済を使う人に付く所持金です。(既定100)"), N("debt_max", "借金の上限", 0, 1000000000, "`/loan borrow` で借りられる上限。(既定2000・0=借金禁止)")]},
+  {t: "デイリー(/daily)", f: [N("daily_amount", "基本報酬", 0, 1000000000), N("daily_streak_bonus", "連続ボーナス(1日あたり)", 0, 1000000000), N("daily_streak_cap", "ボーナスが増える最大日数", 0, 3650)]},
+  {t: "お仕事(/work)", f: [N("work_min", "最小報酬", 0, 1000000000), N("work_max", "最大報酬", 0, 1000000000, "最小報酬を上回る値にしてください。"), N("work_cooldown", "間隔(秒)", 0, 604800, "3600で1時間に1回。")]},
+  {t: "送金・ギャンブル・仮想株", f: [C("pay_enabled", "送金(/pay)を許可する"), N("pay_fee", "送金手数料(%)", 0, 100), C("gamble_enabled", "ギャンブルを許可する"),
+    N("max_bet", "1回の賭け金の上限", 0, 1000000000000000, "0=無制限。"), C("stock_enabled", "仮想株(/stock)を許可する")]},
+];
 
 /* ---- 画面 ---- */
 function info(parent, text) { parent.append(el("p", {class: "desc", text})); }
@@ -320,6 +328,22 @@ function renderTicket(snap) {
     el("div", {class: "acts"}, el("button", {type: "button", class: "btn sub", text: "パネルを再設置", onclick: () => saveCard("ticket", {repost: true})}))));
   $("#tab-ticket").replaceChildren(f.el);
 }
+function renderEco(snap) {
+  const e = snap.eco || {}, f = form(ECO, e.cfg || {}, "eco"); S.forms.eco = () => f.get();
+  const pct = v => (v > 0 ? "🟢 +" : v < 0 ? "🔴 " : "⚪ ") + Number(v || 0).toFixed(2) + "%";
+  const num = v => Number(v || 0).toLocaleString("ja-JP");
+  const mk = el("div", {class: "card"}, el("h2", {text: "株市場(閲覧のみ)"}), el("p", {class: "desc", text: "メンバーはDiscordの /stock で売買します。価格は1分ごとに変動します。銘柄の追加・削除は /economy stock_add / stock_remove で行えます。"}));
+  (e.stocks || []).forEach(s => mk.append(el("div", {class: "rr2"}, el("span", {text: `${s.sym} ${s.name} — ${num(s.price)}`}), el("span", {text: pct(s.chg)}))));
+  if (!e.stocks || !e.stocks.length) mk.append(el("p", {class: "desc", text: "銘柄がありません。"}));
+  const top = el("div", {class: "card"}, el("h2", {text: "所持金ランキング(上位10)"}));
+  (e.top || []).forEach((u, i) => top.append(el("div", {class: "rr2"}, el("span", {text: `${i + 1}. ${u.name}`}), el("span", {text: num(u.bal)}))));
+  if (!e.top || !e.top.length) top.append(el("p", {class: "desc", text: "まだデータがありません。"}));
+  const items = el("div", {class: "card"}, el("h2", {text: `アイテム(${(e.items || []).length}種類)`}));
+  (e.items || []).forEach(it => items.append(el("div", {class: "rr2"}, el("span", {text: `${it.emoji} ${it.name}`}), el("span", {text: `購入 ${num(it.price)} / 売却 ${num(it.sell)}`}))));
+  if (!e.items || !e.items.length) items.append(el("p", {class: "desc", text: "ありません。アイテムの追加・編集・削除は、Discordの /economy item_set / item_remove で行えます。"}));
+  f.el.append(mk, top, items);
+  $("#tab-eco").replaceChildren(f.el);
+}
 function roleEditor(p, snap) {   // p が null なら新規
   const ro = nm(snap.roles, "@ "), rows = el("div"), ch = p ? null : selectBox(nm(snap.channels, "# "), "", "(選んでください)");
   const title = el("input", {type: "text", maxlength: 100}), text = el("textarea"), ex = el("input", {type: "checkbox"});
@@ -352,7 +376,7 @@ function renderRoles(snap) {
   root.append(nw); $("#tab-role").replaceChildren(root);
 }
 function renderAll(snap) {
-  S.snap = snap; renderGeneral(snap); renderVerify(snap); renderTicket(snap); renderRoles(snap); renderMember(snap); S.dirty = {};
+  S.snap = snap; renderGeneral(snap); renderVerify(snap); renderTicket(snap); renderEco(snap); renderRoles(snap); renderMember(snap); S.dirty = {};
 }
 
 
@@ -448,10 +472,10 @@ async function saveGeneral() {
     clean("gen"); setStatus("保存しました", "ok");
   } catch (e) { setStatus("通信に失敗しました。", "err"); }
 }
-$("#saveBtn").onclick = async () => { $("#saveBtn").disabled = true; try { await (S.tab === "verify" || S.tab === "ticket" ? saveCard(S.tab) : saveGeneral()); } finally { $("#saveBtn").disabled = false; } };
+$("#saveBtn").onclick = async () => { $("#saveBtn").disabled = true; try { await (["verify", "ticket", "eco"].includes(S.tab) ? saveCard(S.tab) : saveGeneral()); } finally { $("#saveBtn").disabled = false; } };
 
 /* ---- タブ・起動 ---- */
-const TABS = [["basic", "基本"], ["mod", "荒らし対策"], ["verify", "認証"], ["ticket", "チケット"], ["role", "ロールパネル"], ["member", "メンバー"]];
+const TABS = [["basic", "基本"], ["mod", "荒らし対策"], ["verify", "認証"], ["ticket", "チケット"], ["eco", "経済"], ["role", "ロールパネル"], ["member", "メンバー"]];
 function showTab(id) {
   S.tab = id;
   TABS.forEach(([k]) => { $("#tab-" + k).classList.toggle("hidden", k !== id); });
@@ -493,7 +517,10 @@ async function loadGuild(gid) {
     if (res.status === 401) return toLogin(gid);
     if (res.status === 403 || res.status === 404) return renderServers("このサーバーを管理する権限がありません。(BOTが参加していて、あなたが管理者・サーバー管理権限を持つサーバーだけ開けます)");
     if (!res.ok) return setStatus("設定を読み込めませんでした(" + res.status + ")", "err");
-    S.dirty = {}; notice(""); renderAll(await res.json()); $("#title").textContent = "設定 — " + gname(gid); show("vApp"); showTab(S.tab); setStatus("");
+    S.dirty = {}; notice(""); renderAll(await res.json());
+    const tb = new URLSearchParams(location.search).get("tab");   // /economyweb からの ?tab=eco に対応
+    if (tb && TABS.some(([k]) => k === tb)) S.tab = tb;
+    $("#title").textContent = "設定 — " + gname(gid); show("vApp"); showTab(S.tab); setStatus("");
   } catch (e) { setStatus("通信に失敗しました。", "err"); }
 }
 async function route() {   // URLの ?g=サーバーID があれば、そのサーバーの画面を直接開く(/web から入った場合)
