@@ -206,7 +206,9 @@ const N = (k, l, min, max, h) => ({k, t: "num", l, min, max, h, half: 1});
 const C = (k, l, h) => ({k, t: "chk", l, h});
 const BASIC = [
   {t: "ログ", d: "削除・編集されたメッセージや、モデレーションの記録を送るチャンネルです。管理者だけが見られる場所にしてください。", f: [{k: "log_channel", t: "ch", l: "ログチャンネル", empty: "(使わない)"}]},
-  {t: "ウェルカムメッセージ", d: "メンバーが参加したときに送るメッセージです。画像を付けるオプションもあります。", f: [{k: "welcome_channel", t: "ch", l: "送信先チャンネル", empty: "(送らない)"}, {k: "welcome_message", t: "area", l: "メッセージ", max: 1500, h: "使える変数: {user} {server} {count}"},
+  {t: "ウェルカムメッセージ", d: "メンバーが参加したときに送るメッセージです。画像を付けるオプションもあります。", f: [{k: "welcome_channel", t: "ch", l: "送信先チャンネル", empty: "(送らない)"},
+    {k: "welcome_style", t: "sel", l: "表示形式", opts: [{v: "join", t: "参加通知カード(既定)"}, {v: "classic", t: "カスタムメッセージ(埋め込み)"}], h: "参加通知カード: 「【+】ようこそ◯◯へ！ @ユーザー さんがサーバーに参加しました！」の形式で送ります。カスタム: 下のメッセージを埋め込みで送ります。"},
+    {k: "welcome_message", t: "area", l: "メッセージ(カスタム形式のとき使用)", max: 1500, h: "使える変数: {user} {server} {count}"},
     C("welcome_image_enabled", "メッセージに画像を付ける(オプション)", "参加した人のアイコンと名前の画像を添付します。BOTに「ファイルを添付」権限が必要です。"),
     {k: "welcome_image_title", t: "txt", l: "画像のタイトル", max: 24, h: "使える変数: {user} {server} {count}", g: "wi"}, {k: "welcome_image_subtitle", t: "txt", l: "画像のサブタイトル", max: 60, h: "使える変数: {user} {server} {count}", g: "wi"},
     {k: "welcome_image_style", t: "sel", l: "画像のデザイン", opts: [{v: "black", t: "ブラック"}, {v: "white", t: "ホワイト"}, {v: "blue", t: "ブルー"}], g: "wi"},
