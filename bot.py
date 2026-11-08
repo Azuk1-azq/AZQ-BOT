@@ -161,6 +161,7 @@ DEFAULTS = {
         "panels": {},
     },
     "meigen": {"enabled": True},
+    "sticky": {},
 }
 
 
@@ -329,6 +330,7 @@ class AzqBot(commands.Bot):
                 self.add_view(RolePanelView(_p["roles"]), message_id=int(_mid))
         srvadm_install()
         levels_install()
+        sticky_install()
         self.tree.add_command(remind_group)
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
@@ -508,7 +510,7 @@ class AzqCheckError(app_commands.CheckFailure):
 # ═════════════════════════ 連投・二重実行ガード(低コア向けの負荷対策) ═════════════════════════
 # 連投しても、コマンド本体は一切実行せず「残り秒数」だけを返す。処理はガード側だけで完結するため負荷がほぼゼロ。
 # ・全コマンド共通: 1人あたりコマンドごとに CMD_COOLDOWN 秒の間隔(既定3秒)
-# ・重めのコマンド(/rank /ranking /leaderboard /kaso /ping など): 同じサーバーで同時に1つだけ実行
+# ・重めのコマンド(/rank /ranking /kaso /ping など): 同じサーバーで同時に1つだけ実行
 
 CMD_COOLDOWN = max(0.0, float(os.getenv("CMD_COOLDOWN") or 3))
 _cmd_cd: dict = {}          # {(ユーザーID, コマンド名): 再実行できる時刻(monotonic)}
@@ -917,7 +919,7 @@ def intro_embeds() -> list:
     e.add_field(name="🎭 ロールパネル", value="ボタンでロールを付け外し。\n`/rolepanel create`", inline=False)
     e.add_field(name="🛡️ 荒らし検知", value="連投・招待リンク・NGワード・レイドを自動対処。導入後すぐ有効。", inline=False)
     e.add_field(name="🔐 メンバー認証", value="ボタン/計算/画像/Web認証で荒らしを防止。\n`/verify setup`", inline=False)
-    e.add_field(name="📈 レベル", value="発言でXPが貯まり、ランクカードやランキングで確認できます。他のBOTからの移行も簡単です。\n`/rank` `/leaderboard` `/level migrate`", inline=False)
+    e.add_field(name="📈 レベル", value="発言でXPが貯まり、ランクカードやランキングで確認できます。他のBOTからの移行も簡単です。\n`/rank` `/ranking` `/level migrate`", inline=False)
     e.add_field(name="📜 ログ", value="参加・削除・処罰などを記録。\n`/config log_channel`", inline=False)
     e.add_field(name="🚀 まずは", value=f"BOTのロールを上に移動 → `/web` 推奨(またはスラッシュコマンド `/config log_channel`) → `/help`\n📢 お知らせはサポートサーバーのみ: {SUPPORT_URL}", inline=False)
     return [e]
@@ -3853,25 +3855,6 @@ def ranked(g: discord.Guild, totals: dict) -> list:
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
 
-@app_commands.command(name="ranking", description="ポイントランキングを表示します")
-@app_commands.describe(period="期間")
-@app_commands.choices(period=[app_commands.Choice(name="週間(月曜〜)", value="week"), app_commands.Choice(name="月間", value="month"),
-                              app_commands.Choice(name="累計(貢献度)", value="total")])
-@app_commands.guild_only()
-@app_commands.checks.cooldown(1, 10, key=lambda i: i.user.id)
-@one_at_a_time("ranking")
-async def ranking_cmd(interaction: discord.Interaction, period: Optional[app_commands.Choice[str]] = None):
-    g, per = interaction.guild, (period.value if period else "week")
-    rows = ranked(g, period_totals(g.id, per))
-    name = {"week": "週間", "month": "月間", "total": "累計(貢献度)"}[per]
-    lines = [f"{MEDALS.get(i, f'`{i}.`')} {m.mention} — **{n:,}** pt" for i, (m, n) in enumerate(rows[:10], 1)]
-    e = make_embed(f"🏆 {name}ランキング", "\n".join(lines) or "まだポイントがありません。", BLUE)
-    mine = next(((i, n) for i, (m, n) in enumerate(rows, 1) if m.id == interaction.user.id), None)
-    if mine:
-        e.set_footer(text=f"あなたの順位: {mine[0]}位 ({mine[1]:,}pt)")
-    await interaction.response.send_message(embed=e, allowed_mentions=NONE)
-
-
 @points_group.command(name="show", description="ポイントと順位を表示します")
 async def pt_show(interaction: discord.Interaction, member: Optional[discord.Member] = None):
     g, m = interaction.guild, member or interaction.user
@@ -4105,7 +4088,7 @@ async def _b2():
 
 
 def srvadm_install() -> None:
-    for cmd in (srvadm_group, apply_group, staff_group, points_group, region_group, ranking_cmd):
+    for cmd in (srvadm_group, apply_group, staff_group, points_group, region_group):
         bot.tree.add_command(cmd)
     bot.add_view(ApplyPanelView())
     bot.add_view(StaffPanelView())
@@ -8119,7 +8102,7 @@ async def srvadm_do(request):
 # 「ステータス(stats)」は、サーバーでの累計メッセージ数です。
 
 LV_MAX = 1000
-LV_CFG = {"enabled": True, "announce": True, "channel": None, "xp_min": 15, "xp_max": 25, "cooldown": 60,
+LV_CFG = {"enabled": True, "announce": True, "channel": None, "copy_channel": None, "copy_only": False, "xp_min": 15, "xp_max": 25, "cooldown": 60,
           "message": "🎉 {user} さんが **レベル {level}** になりました!"}
 
 
@@ -8248,6 +8231,32 @@ def lv_board(g: discord.Guild, key: str) -> list:
     return rows
 
 
+async def lv_send_levelup(g: discord.Guild, m: discord.Member, here, cfg: dict, text: str) -> None:
+    """レベルアップ通知を送る。コピー先(copy_channel)があれば同じ内容を送り、copy_only なら元のチャンネルには出さない。"""
+    cc = g.get_channel(cfg["copy_channel"]) if cfg.get("copy_channel") else None
+    cc_ok = bool(cc and cc.permissions_for(g.me).send_messages)
+    # コピー先のみにするのは、コピー先に送れるときだけ(送れないときは、通知が消えないよう通常どおり元のチャンネルに出す)
+    skip_main = bool(cfg.get("copy_only")) and cc_ok
+    main_id, main_sent = None, False
+    if cfg["announce"] and not skip_main:
+        ch = g.get_channel(cfg["channel"]) if cfg["channel"] else here
+        if ch:
+            main_id = ch.id
+        if ch and ch.permissions_for(g.me).send_messages:
+            try:
+                await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[m]))
+                main_sent = True
+            except discord.HTTPException:
+                pass
+    if cc_ok and cc.id != main_id:
+        # 元のチャンネルに通知を出したときは二重に通知しない。出していないときは、コピー先の通知でメンションも飛ばす
+        mentions = discord.AllowedMentions.none() if main_sent else discord.AllowedMentions(users=[m])
+        try:
+            await cc.send(text[:2000], allowed_mentions=mentions)
+        except discord.HTTPException:
+            pass
+
+
 async def on_message_levels(message: discord.Message) -> None:
     g, m = message.guild, message.author
     if g is None or m.bot or not isinstance(m, discord.Member):
@@ -8266,14 +8275,9 @@ async def on_message_levels(message: discord.Message) -> None:
         before = lv_from_xp(rec["xp"])
         rec["xp"] = min(LV_XP_CAP, rec["xp"] + random.randint(cfg["xp_min"], cfg["xp_max"]))
         after = lv_from_xp(rec["xp"])
-        if after > before and cfg["announce"]:
-            ch = g.get_channel(cfg["channel"]) if cfg["channel"] else message.channel
-            if ch and ch.permissions_for(g.me).send_messages:
-                text = cfg["message"].replace("{user}", m.mention).replace("{level}", str(after)).replace("{server}", g.name)
-                try:
-                    await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[m]))
-                except discord.HTTPException:
-                    pass
+        if after > before:
+            text = cfg["message"].replace("{user}", m.mention).replace("{level}", str(after)).replace("{server}", g.name)
+            await lv_send_levelup(g, m, message.channel, cfg, text)
     levels.save()
 
 
@@ -8384,17 +8388,25 @@ xp_group = _lv_make_group("xp")
 
 @level_group.command(name="config", description="レベル機能の設定(指定した項目のみ変更・省略で現在の設定を表示)")
 @app_commands.describe(enabled="XPの獲得をON/OFF", announce="レベルアップを通知する", channel="通知先(省略=発言したチャンネル)",
+                       copy_channel="レベルアップ通知のコピーを送るチャンネル", copy_off="コピー送信をやめる(Trueで解除)",
+                       copy_only="通知をコピー先のみに出す(Trueで元のチャンネルには出さない / Falseで通常に戻す)",
                        xp_min="1回の獲得XP(最小)", xp_max="1回の獲得XP(最大)", cooldown="XP獲得の間隔(秒)",
                        message="通知文({user} {level} {server})")
 @app_commands.checks.has_permissions(manage_guild=True)
 @lg_guard
 async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = None, announce: Optional[bool] = None,
-                    channel: Optional[discord.TextChannel] = None, xp_min: Optional[app_commands.Range[int, 0, 1000]] = None,
+                    channel: Optional[discord.TextChannel] = None, copy_channel: Optional[discord.TextChannel] = None,
+                    copy_off: Optional[bool] = None, copy_only: Optional[bool] = None, xp_min: Optional[app_commands.Range[int, 0, 1000]] = None,
                     xp_max: Optional[app_commands.Range[int, 0, 1000]] = None, cooldown: Optional[app_commands.Range[int, 0, 3600]] = None,
                     message: Optional[app_commands.Range[str, 1, 300]] = None):
     c = levels.cfg(interaction.guild.id)
+    if copy_channel and not copy_channel.permissions_for(interaction.guild.me).send_messages:
+        raise SrvAdmError(f"BOTが {copy_channel.mention} に送信できません。チャンネル権限を確認してください。")
     new = {"enabled": enabled, "announce": announce, "xp_min": xp_min, "xp_max": xp_max, "cooldown": cooldown, "message": message,
-           "channel": channel.id if channel else None}
+           "channel": channel.id if channel else None, "copy_channel": copy_channel.id if copy_channel else None, "copy_only": copy_only}
+    eff_copy = copy_channel.id if copy_channel else (None if copy_off else c.get("copy_channel"))
+    if copy_only and not eff_copy:
+        raise SrvAdmError("先に copy_channel でコピー先のチャンネルを指定してください。")
     lo = new["xp_min"] if new["xp_min"] is not None else c["xp_min"]
     hi = new["xp_max"] if new["xp_max"] is not None else c["xp_max"]
     if lo > hi:
@@ -8404,9 +8416,15 @@ async def lv_config(interaction: discord.Interaction, enabled: Optional[bool] = 
         if v is not None:
             c[k] = v
             changed.append(f"`{k}` = `{v}`")
+    if copy_off and not copy_channel:
+        c["copy_channel"] = None
+        c["copy_only"] = False
+        changed.append("`copy_channel` = 解除")
     if not changed:
         ch = f"<#{c['channel']}>" if c["channel"] else "発言したチャンネル"
+        cp = (f"<#{c['copy_channel']}>" + ("(コピー先のみに通知)" if c.get("copy_only") else "")) if c.get("copy_channel") else "なし"
         return await eph(interaction, f"**現在の設定**\nXP獲得: {'ON' if c['enabled'] else 'OFF'} / 通知: {'ON' if c['announce'] else 'OFF'} ({ch})\n"
+                                      f"通知のコピー先: {cp}\n"
                                       f"獲得XP: {c['xp_min']}〜{c['xp_max']} / 間隔 {c['cooldown']}秒\n通知文: {c['message']}")
     levels.save()
     await eph(interaction, "✅ 更新しました:\n" + "\n".join(changed))
@@ -8599,7 +8617,7 @@ class ImportConfirmView(discord.ui.View):
         await send_log(g, make_embed("📥 レベルのインポート", f"{self.name}: {len(self.data):,}人分({'高い方を採用' if use_max else '上書き'})\n"
                                      f"実行者: {interaction.user} (`{interaction.user.id}`)", GREEN))
         await interaction.edit_original_response(
-            content=f"✅ {len(self.data):,}人分を取り込みました。`/leaderboard` で確認できます。\n"
+            content=f"✅ {len(self.data):,}人分を取り込みました。`/ranking` で確認できます。\n"
                     "・元のBOTは、XPが二重に入らないよう停止または無効化してください。\n"
                     "・やり直す場合は `/level undo_import`(取り込み後に増えたXPも元に戻ります)")
 
@@ -8695,7 +8713,7 @@ async def lv_migrate(interaction: discord.Interaction):
                 "CSV・JSONに対応。列名は `id`(ユーザーID)と `xp`(または `level`)、任意で `messages`。ほかの列は無視します。", inline=False)
     e.add_field(name="④ エクスポートできないBOT", value="`id,xp` の2列だけのCSVを自作して、③の方法で取り込めます。\n"
                 "例:\n```\nid,level\n123456789012345678,12\n```", inline=False)
-    e.add_field(name="取り込んだあと", value="・元のBOTは、XPが二重に入らないよう**停止または無効化**\n・`/leaderboard` で順位を確認\n"
+    e.add_field(name="取り込んだあと", value="・元のBOTは、XPが二重に入らないよう**停止または無効化**\n・`/ranking` で順位を確認\n"
                 "・獲得XPや通知は `/level config` で調整", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
 
@@ -8758,65 +8776,268 @@ async def rank_cmd(interaction: discord.Interaction, user: Optional[discord.Memb
     await interaction.followup.send(file=discord.File(buf, filename="rank.png"))
 
 
-# ── /leaderboard ──
+# ── /ranking(レベル・メッセージ数・ポイントを1つにまとめたランキング) ──
 
 LB_PER = 10
+RK_LABELS = {"xp": "🏆 レベル(XP)", "msg": "📊 メッセージ数", "week": "🗓️ ポイント 週間(月曜〜)",
+             "month": "📅 ポイント 月間", "total": "💎 ポイント 累計(貢献度)"}
+RK_TITLES = {"xp": "🏆 レベルランキング", "msg": "📊 メッセージ数ランキング", "week": "🏆 週間ポイントランキング",
+             "month": "🏆 月間ポイントランキング", "total": "🏆 累計(貢献度)ポイントランキング"}
 
 
-class LeaderboardView(discord.ui.View):
-    def __init__(self, owner_id: int, guild: discord.Guild, key: str, rows: list):
+def rk_rows(g: discord.Guild, key: str) -> list:
+    """key: xp / msg(レベル機能) か、week / month / total(ポイント機能)。どれも [(メンバー, 数値)] の順位表にそろえる"""
+    if key in ("xp", "msg"):
+        return lv_board(g, key)
+    return ranked(g, period_totals(g.id, key))
+
+
+class RankingView(discord.ui.View):
+    def __init__(self, owner_id: int, guild: discord.Guild, key: str, page: int = 0):
         super().__init__(timeout=180)
-        self.owner_id, self.guild, self.key, self.rows, self.page = owner_id, guild, key, rows, 0
-        self.pages = max(1, (len(rows) + LB_PER - 1) // LB_PER)
+        self.owner_id, self.guild, self.key, self.page = owner_id, guild, key, page
+        self.rows: list = []
+        self.pages = 1
+        self.pick.options = [discord.SelectOption(label=RK_LABELS[k], value=k) for k in RK_LABELS]
+        self.reload_rows()
+
+    def reload_rows(self) -> None:
+        """操作のたびに最新の順位を取り直す(開いた時点の古い順位のままにしない)"""
+        self.rows = rk_rows(self.guild, self.key)
+        self.pages = max(1, (len(self.rows) + LB_PER - 1) // LB_PER)
+        self.page = max(0, min(self.page, self.pages - 1))
         self._sync()
 
     def _sync(self) -> None:
         self.prev.disabled = self.page <= 0
         self.next.disabled = self.page >= self.pages - 1
+        for o in self.pick.options:
+            o.default = (o.value == self.key)
 
     def embed(self) -> discord.Embed:
         start = self.page * LB_PER
         lines = []
         for i, (m, v) in enumerate(self.rows[start:start + LB_PER], start + 1):
             medal = MEDALS.get(i, f"`{i}.`")
-            lines.append(f"{medal} {m.mention} — Lv.**{lv_from_xp(v)}** ({v:,} XP)" if self.key == "xp" else f"{medal} {m.mention} — **{v:,}** 件")
-        title = "🏆 レベルランキング" if self.key == "xp" else "📊 メッセージ数ランキング"
-        e = make_embed(f"{title} - {self.guild.name}", "\n".join(lines) or "まだデータがありません。", BLUE)
-        e.set_footer(text=f"{self.page + 1}/{self.pages} ページ / {len(self.rows):,}人")
+            if self.key == "xp":
+                tail = f"Lv.**{lv_from_xp(v)}** ({v:,} XP)"
+            elif self.key == "msg":
+                tail = f"**{v:,}** 件"
+            else:
+                tail = f"**{v:,}** pt"
+            lines.append(f"{medal} {m.mention} — {tail}")
+        e = make_embed(f"{RK_TITLES[self.key]} - {self.guild.name}", "\n".join(lines) or "まだデータがありません。", BLUE)
+        mine = next((i for i, (m, _) in enumerate(self.rows, 1) if m.id == self.owner_id), None)
+        foot = f"{self.page + 1}/{self.pages} ページ / {len(self.rows):,}人"
+        if mine:
+            foot += f" ・ あなた: {mine}位"
+        e.set_footer(text=foot + " ・ 最終更新")
+        e.timestamp = discord.utils.utcnow()
         return e
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("コマンドを実行した本人だけ操作できます。`/leaderboard` で自分用に開いてください。", ephemeral=True)
+            await interaction.response.send_message("コマンドを実行した本人だけ操作できます。`/ranking` で自分用に開いてください。", ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="前へ", emoji="◀️", style=discord.ButtonStyle.secondary)
+    @discord.ui.select(placeholder="ランキングの種類を選ぶ", row=0,
+                       options=[discord.SelectOption(label=RK_LABELS[k], value=k) for k in RK_LABELS])
+    async def pick(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.key = select.values[0]
+        self.page = 0
+        self.reload_rows()
+        await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
+
+    @discord.ui.button(label="前へ", emoji="◀️", style=discord.ButtonStyle.secondary, row=1)
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page -= 1
-        self._sync()
+        self.reload_rows()
         await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
 
-    @discord.ui.button(label="次へ", emoji="▶️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="更新", emoji="🔄", style=discord.ButtonStyle.primary, row=1)
+    async def reload_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.reload_rows()
+        await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
+
+    @discord.ui.button(label="次へ", emoji="▶️", style=discord.ButtonStyle.secondary, row=1)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page += 1
-        self._sync()
+        self.reload_rows()
         await interaction.response.edit_message(embed=self.embed(), view=self, allowed_mentions=NONE)
 
 
-@bot.tree.command(name="leaderboard", description="サーバーのレベルランキングを表示します")
-@app_commands.describe(type="ランキングの種類", page="開始ページ")
-@app_commands.choices(type=[app_commands.Choice(name="レベル(XP)", value="xp"), app_commands.Choice(name="メッセージ数", value="msg")])
+@bot.tree.command(name="ranking", description="サーバーのランキングを表示します(レベル・メッセージ数・ポイント)")
+@app_commands.describe(type="ランキングの種類(省略=レベル)", page="開始ページ")
+@app_commands.choices(type=[app_commands.Choice(name=RK_LABELS[k], value=k) for k in RK_LABELS])
 @app_commands.guild_only()
 @app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
-@one_at_a_time("leaderboard")
-async def leaderboard_cmd(interaction: discord.Interaction, type: Optional[app_commands.Choice[str]] = None,
-                          page: app_commands.Range[int, 1, 10000] = 1):
-    key = type.value if type else "xp"
-    view = LeaderboardView(interaction.user.id, interaction.guild, key, lv_board(interaction.guild, key))
-    view.page = min(page, view.pages) - 1
-    view._sync()
+@one_at_a_time("ranking")
+async def ranking_cmd(interaction: discord.Interaction, type: Optional[app_commands.Choice[str]] = None,
+                      page: app_commands.Range[int, 1, 10000] = 1):
+    view = RankingView(interaction.user.id, interaction.guild, type.value if type else "xp", page - 1)
     await interaction.response.send_message(embed=view.embed(), view=view, allowed_mentions=NONE)
+
+
+# ───────────────────────── 固定メッセージ(sticky) ─────────────────────────
+# 指定したチャンネルで誰かが発言するたびに、BOTが固定メッセージを投稿し直し、常に一番下に表示します。
+# 短時間に発言が続いても、投稿し直すのは数秒に1回だけです(API制限の対策)。
+# 設定は guilds.json の "sticky" に {チャンネルID: {"title", "text", "mid"(いま表示中のメッセージID)}} で保存します。
+
+STICKY_MAX = 10
+STICKY_DELAY = 3.0
+_sticky_state: dict = {}
+
+
+def sticky_embed(s: dict) -> discord.Embed:
+    return discord.Embed(title=f"📌 {s.get('title') or '固定メッセージ'}", description=s["text"], color=YELLOW)
+
+
+async def sticky_repost(ch: discord.TextChannel) -> bool:
+    """固定メッセージを一番下に投稿し直す。先に新しい方を投稿してから古い方を消すので、一瞬でも無くなることはない"""
+    s = store.get(ch.guild.id)["sticky"].get(str(ch.id))
+    if not s or not can_post(ch, ch.guild.me):
+        return False
+    old = s.get("mid")
+    try:
+        msg = await ch.send(embed=sticky_embed(s), allowed_mentions=NONE)
+    except discord.HTTPException:
+        log.warning("固定メッセージを投稿できませんでした(ch=%s)", ch.id)
+        return False
+    s["mid"] = msg.id
+    store.save()
+    if old:
+        try:
+            await ch.get_partial_message(old).delete()
+        except discord.HTTPException:
+            pass
+    return True
+
+
+async def _sticky_worker(ch: discord.TextChannel) -> None:
+    st = _sticky_state[ch.id]
+    try:
+        while st["dirty"]:
+            await asyncio.sleep(STICKY_DELAY)
+            st["dirty"] = False
+            await sticky_repost(ch)
+    except Exception:
+        log.exception("固定メッセージの更新でエラー")
+
+
+async def on_message_sticky(message: discord.Message) -> None:
+    g = message.guild
+    if g is None or (bot.user and message.author.id == bot.user.id):
+        return
+    cfg = store.data.get(str(g.id))
+    if not cfg or str(message.channel.id) not in cfg.get("sticky", {}):
+        return
+    if not isinstance(message.channel, discord.TextChannel):
+        return
+    st = _sticky_state.setdefault(message.channel.id, {"task": None, "dirty": False})
+    st["dirty"] = True
+    if st["task"] is None or st["task"].done():
+        st["task"] = asyncio.create_task(_sticky_worker(message.channel))
+
+
+async def on_channel_delete_sticky(channel) -> None:
+    cfg = store.data.get(str(channel.guild.id))
+    if cfg and cfg.get("sticky", {}).pop(str(channel.id), None) is not None:
+        _sticky_state.pop(channel.id, None)
+        store.save()
+
+
+sticky_group = app_commands.Group(
+    name="sticky", description="固定メッセージ(チャンネルの一番下に常に表示)の管理",
+    default_permissions=discord.Permissions(manage_messages=True), guild_only=True,
+)
+
+
+class StickyModal(discord.ui.Modal, title="固定メッセージの内容"):
+    def __init__(self, channel: discord.TextChannel, cur: Optional[dict]):
+        super().__init__()
+        self.channel = channel
+        cur = cur or {}
+        self.t = discord.ui.TextInput(label="タイトル(省略すると「固定メッセージ」)", required=False,
+                                      default=cur.get("title", "")[:100], max_length=100)
+        self.d = discord.ui.TextInput(label="本文", style=discord.TextStyle.paragraph,
+                                      default=cur.get("text", "")[:3500], max_length=3500)
+        for item in (self.t, self.d):
+            self.add_item(item)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        g = interaction.guild
+        text = self.d.value.strip()
+        if not text:
+            return await _eph(interaction, "❌ 本文が空です。")
+        sticky = store.get(g.id)["sticky"]
+        key = str(self.channel.id)
+        old = sticky.get(key)
+        if not old and len(sticky) >= STICKY_MAX:
+            return await _eph(interaction, f"❌ 固定メッセージを設定できるチャンネルは、1サーバーにつき{STICKY_MAX}個までです。")
+        sticky[key] = {"title": self.t.value.strip(), "text": text, "mid": (old or {}).get("mid")}
+        store.save()
+        await interaction.response.defer(ephemeral=True)
+        if await sticky_repost(self.channel):
+            await interaction.followup.send(f"✅ {self.channel.mention} に固定メッセージを設定しました。")
+        else:
+            await interaction.followup.send("⚠️ 設定は保存しましたが、投稿できませんでした。BOTの「メッセージを送信」「埋め込みリンク」権限を確認してください。")
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("固定メッセージの設定でエラー", exc_info=error)
+        await _eph(interaction, "⚠️ 設定に失敗しました。もう一度お試しください。")
+
+
+@sticky_group.command(name="set", description="チャンネルに固定メッセージを設定します(入力フォームが開きます。もう一度実行すると編集)")
+@app_commands.describe(channel="固定するチャンネル(省略=このチャンネル)")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def sticky_set(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    ch = channel or interaction.channel
+    if not isinstance(ch, discord.TextChannel):
+        return await interaction.response.send_message("❌ テキストチャンネルを指定してください。", ephemeral=True)
+    if not can_post(ch, interaction.guild.me):
+        return await interaction.response.send_message(
+            f"❌ BOTが {ch.mention} に投稿できません。「チャンネルを見る」「メッセージを送信」「埋め込みリンク」権限を付けてください。", ephemeral=True)
+    await interaction.response.send_modal(StickyModal(ch, store.get(interaction.guild.id)["sticky"].get(str(ch.id))))
+
+
+@sticky_group.command(name="remove", description="チャンネルの固定メッセージを解除します")
+@app_commands.describe(channel="解除するチャンネル(省略=このチャンネル)")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def sticky_remove(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+    ch = channel or interaction.channel
+    s = store.get(interaction.guild.id)["sticky"].pop(str(ch.id), None)
+    if not s:
+        return await interaction.response.send_message("❌ このチャンネルには固定メッセージが設定されていません。", ephemeral=True)
+    store.save()
+    _sticky_state.pop(ch.id, None)
+    await interaction.response.defer(ephemeral=True)
+    if s.get("mid"):
+        try:
+            await ch.get_partial_message(s["mid"]).delete()
+        except discord.HTTPException:
+            pass
+    await interaction.followup.send(f"✅ {ch.mention} の固定メッセージを解除しました。", allowed_mentions=NONE)
+
+
+@sticky_group.command(name="list", description="固定メッセージを設定しているチャンネルの一覧")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def sticky_list(interaction: discord.Interaction):
+    sticky = store.get(interaction.guild.id)["sticky"]
+    if not sticky:
+        return await interaction.response.send_message("固定メッセージはまだ設定されていません。`/sticky set` で設定できます。", ephemeral=True)
+    lines = []
+    for cid, s in sticky.items():
+        ch = interaction.guild.get_channel(int(cid))
+        prev = (s.get("title") or s["text"]).replace("\n", " ")[:40]
+        lines.append(f"{ch.mention if ch else '(見つからないチャンネル)'} — {prev}")
+    await interaction.response.send_message(embed=make_embed("📌 固定メッセージ一覧", "\n".join(lines)), ephemeral=True, allowed_mentions=NONE)
+
+
+def sticky_install() -> None:
+    bot.tree.add_command(sticky_group)
+    bot.add_listener(on_message_sticky, "on_message")
+    bot.add_listener(on_channel_delete_sticky, "on_guild_channel_delete")
 
 
 def levels_install() -> None:
@@ -8953,8 +9174,9 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="🎖️ 役職・権限", value="`/manage rank_set` 役職とロールを対応づけ / `/manage rank_show` / `/manage perm_list` `perm_set`\n管理者>副管理者>幹部>モデレーター>一般スタッフ。機能ごとの必要役職を変更できます(Discord管理者・オーナーは常に管理者扱い)", inline=False)
     e.add_field(name="📝 申請・応募", value="`/apply setup` 参加申請 / `/staffapp setup` スタッフ応募 / `/staffapp position` 役職ごとのロール\n承認・却下はボタン(却下は理由つき)。結果はDM、承認でロール自動付与。履歴は `/apply history` `/staffapp history`", inline=False)
     e.add_field(name="🏷️ ロール管理", value="`/manage role_set` 登録 / `role_grant`(日数で自動解除) / `role_revoke` / `role_list` / `role_history`(変更履歴)\n`/region create` `/region panel` 都道府県ロール", inline=False)
-    e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking` 週間・月間・累計\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
-    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/leaderboard` ランキング(レベル・メッセージ数)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`", inline=False)
+    e.add_field(name="💰 ポイント", value="`/points add` `remove` `undo` `show` `history` `config` `mvp` / `/ranking`(ポイントは週間・月間・累計)\n付与上限・二重/相互付与の防止・自動付与(情報共有chのみ)つき", inline=False)
+    e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`", inline=False)
+    e.add_field(name="📌 固定メッセージ", value="`/sticky set` 入力フォームで設定(常にチャンネルの一番下に表示) / `/sticky remove` 解除 / `/sticky list` 一覧\n管理者向け(「メッセージの管理」権限が必要)", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
