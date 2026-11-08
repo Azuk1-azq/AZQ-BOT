@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>AZQ BOT パッチノート: 経済機能を大幅強化(借金・仮想株・Web設定)</title>
+<title>AZQ BOT パッチノート: 経済機能を大幅強化(借金・仮想株・ロールショップ・コインドロップ)</title>
 <style>
 :root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
 --fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
@@ -37,9 +37,9 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 </head>
 <body>
 <main>
-<h1>経済機能を大幅強化(借金・仮想株・Web設定)</h1>
+<h1>経済機能を大幅強化(借金・仮想株・ロールショップ・コインドロップ)</h1>
 <p class="meta">AZQ BOT v2.3 パッチノート / 2026年11月8日</p>
-<p class="lead">経済(コイン)機能を大きく拡張しました。所持金が0になっても上限まで<strong>借金</strong>できる <code>/loan</code>、価格が1分ごとに変動する<strong>仮想株</strong>の売買ができる <code>/stock</code>、経済機能のすべてを一覧できる <code>/economyinfo</code> を追加しました。さらに、Webダッシュボードに<strong>「経済」タブ</strong>を追加し、ブラウザから経済の設定ができる <code>/economyweb</code> も用意しました。初期所持金も 0 → 100 に引き上げています。</p>
+<p class="lead">経済(コイン)機能を大きく拡張しました。所持金が0になっても上限まで<strong>借金</strong>できる <code>/loan</code>、価格が1分ごとに変動する<strong>仮想株</strong>の売買ができる <code>/stock</code>、<strong>コインでロールを買える</strong>ロールショップ <code>/roles</code>、経済機能のすべてを一覧できる <code>/economyinfo</code> を追加しました。さらに、<b>発言すると一定確率で約300コインがドロップ</b>し、先着1人がゲットできる機能を追加 — 過疎対策にもなります(管理者は <code>/coindrop</code> で手動ドロップもできます)。Webダッシュボード(<code>/economyweb</code>)でも、<b>株の売買やギャンブルが誰でもできます</b>(管理者は設定変更や所持金の操作も)。お仕事(<code>/work</code>)はクイズに正答して稼ぐ方式に変わり、間隔も3分ごとになりました。</p>
 
 <h2 class="new">新機能</h2>
 <article class="new">
@@ -47,6 +47,19 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 <p>所持金が0になっても、<code>/loan borrow amount:</code> で上限(既定 <b>2,000</b>)までお金を借りられるようになりました。借金はサーバーごとに設定できる上限までで、それ以上は借りられません。</p>
 <p>返し方は2通り。<code>/loan repay amount:</code>(<code>all</code> で全額)で手動で返すか、<code>/daily</code> <code>/work</code> などでコインを得たときに<b>自動で返済</b>に回ります(返済が終わるまで、入ってきたコインから順に充当されます)。現在の借金は <code>/loan status</code> や <code>/balance</code> <code>/profile</code> でも確認できます。</p>
 <p>借金の上限は <code>/economy config debt_max:</code> で変更でき、<b>0にすると借金禁止</b>になります。</p>
+</article>
+<article class="new">
+<h3>ロールショップ <code>/roles</code>(コインでロールを購入)</h3>
+<p>コインで<b>ロールを買える</b>ようになりました。管理者が <code>/economy role_add role: price:</code> でロールを商品登録すると、メンバーは <code>/roles</code> でロールショップを開き、一覧から選んでその場で購入できます(支払いは所持金から)。</p>
+<p><code>duration:</code> を指定すると<b>期限つきロール</b>になり、期限が来ると自動で外れます(例: 30日で1,000コインの VIP ロール)。すでにロールを持っている人は永久ロールを再購入できません(期限つきは再購入可)。在庫(<code>stock:</code>)も設定でき、売り切れで販売終了になります。強い権限を持つロール・BOTより上位のロールは登録できません。</p>
+<p>登録した商品は通常のアイテムとしても機能するため、<code>/shop</code> や <code>/item</code> からも買えます。削除・編集は <code>/economy item_remove</code> <code>/economy item_set</code> から。</p>
+</article>
+<article class="new">
+<h3>コインドロップ(発言 → 先着1人がゲット) <code>/coindrop</code></h3>
+<p>メンバーが発言すると、<b>一定確率(既定 0.5%)で約300コインがチャンネルにドロップ</b>します(既定 <b>250〜350コイン</b>のランダム)。「💰 コインを拾う」ボタンを<b>先着1人</b>が押すと、その金額がもらえます。60秒間誰も拾わないと消えます。</p>
+<p><b>管理者は <code>/coindrop</code> で、いつでもコインを手動で落とせます</b>(金額の指定も可能。チャンネルを指定して別の部屋に落とすこともできます)。イベントや配信中の盛り上げに便利です。</p>
+<p>設定はすべて <code>/economy config</code> か Webダッシュボードの「経済」タブから変更できます。<code>drop_enabled:</code>(ON/OFF)<code>drop_rate:</code>(確率。パーミル指定で、5なら0.5%)<code>drop_min:</code> <code>drop_max:</code>(落ちる金額の範囲)<code>drop_cooldown:</code>(次に落ちるまでの最短間隔。既定5分)。ボタンを連打しても1人しか取れず、BOTは対象外です。</p>
+<p>「発言したらたまにお金が落ちる」ので、チャットを見てくれる人が増え、<b>過疎対策にもなります</b>。</p>
 </article>
 <article class="new">
 <h3>仮想株 <code>/stock list</code> <code>/stock buy</code> <code>/stock sell</code> <code>/stock portfolio</code></h3>
@@ -57,31 +70,39 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 </article>
 <article class="new">
 <h3>経済ガイド <code>/economyinfo</code></h3>
-<p>そのサーバーの経済機能を<b>すべて一覧</b>できるコマンドです。現在の設定値つきで、収入(<code>/daily</code> <code>/work</code> <code>/loan</code>)、ショップ・アイテム・送金、仮想株の市況、ミニゲーム、管理者向けコマンド、他の経済BOTからの移行ガイドへの案内を表示します。「経済で何ができるんだっけ?」がこれ1つで分かります。</p>
+<p>そのサーバーの経済機能を<b>すべて一覧</b>できるコマンドです。現在の設定値つきで、収入(<code>/daily</code> <code>/work</code> <code>/loan</code>・コインドロップ)、ショップ・アイテム・ロールショップ・送金、仮想株の市況、ミニゲーム、管理者向けコマンド、他の経済BOTからの移行ガイドへの案内を表示します。「経済で何ができるんだっけ?」がこれ1つで分かります。</p>
 </article>
 <article class="new">
 <h3>Webダッシュボードに「経済」タブ <code>/economyweb</code></h3>
-<p><code>/economyweb</code> を実行すると、Webダッシュボードの新しい<b>「経済」タブ</b>を開けます(サーバー管理者のみ)。ブラウザから次の設定ができます。</p>
-<p>・通貨の記号・名前 / 初期所持金 / 借金の上限<br>
-・<code>/daily</code> の報酬・連続ボーナス / <code>/work</code> の報酬と間隔<br>
-・送金(<code>/pay</code>)の許可と手数料 / ギャンブルの許可と賭け金上限 / 仮想株の許可</p>
-<p>設定のほか、<b>株市場・所持金ランキング(上位10)・アイテム一覧の確認</b>もタブから行えます(アイテムの追加・編集はDiscordの <code>/economy item_set</code> から)。従来どおり <code>/economy config</code> でも変更でき、どちらで変更しても即座に反映されます。ダッシュボードは <code>/web</code> からも、管理者用ボタン「経済の設定を開く」で直接開けます。</p>
+<p><code>/economyweb</code> を実行すると、Webダッシュボードの新しい<b>「経済」タブ</b>を開けます。<b>メンバーのだれでも</b>、次のことがブラウザからできます(すべて自分のアカウントに対する操作です)。</p>
+<p>・<b>株の売買</b>: 一覧から選んで購入、保有株の全売却。評価額と含み損益も表示<br>
+・<b>ギャンブル</b>: コインフリップ(2倍)/ ルーレット(赤・黒は2倍、数字ぴったりは36倍)/ ブラックジャック(1人用。hit / stand で進行)<br>
+・<b>閲覧</b>: 株市場・所持金ランキング(上位10)・アイテム一覧。<b>「🔄 更新」ボタン</b>で株価を最新に更新</p>
+<p><b>サーバー管理者</b>でログインした場合は、さらに次の操作ができます。</p>
+<p>・通貨の記号・名前 / 初期所持金 / 借金の上限 / <code>/daily</code> の報酬 / <code>/work</code> の報酬と間隔 / 送金・ギャンブル・仮想株の許可 / <b>コインドロップの設定</b><br>
+・<b>所持金の操作</b>: メンバーを検索して、所持金の付与・減額・設定(<code>/money</code> コマンドと同じ。操作は管理ログに記録されます)</p>
+<p>じゃんけん対戦(<code>/rps</code>)とマルチのブラックジャックは、Discordで遊びます。ダッシュボードは <code>/web</code> からも、管理者用ボタン「経済の設定を開く」で直接開けます。</p>
 </article>
 
 <h2 class="chg">その他の変更</h2>
+<article class="chg">
+<h3>お仕事(/work)のやり方を変更・間隔を3分に短縮</h3>
+<p><code>/work</code> が、ボタンを押すだけで稼げる仕組みだったため、<b>クイズに正答してはじめて報酬</b>がもらえる方式に変更しました。出題は「計算」か「絵文字の数え」で、<b>15秒以内に4択から正解を選びます</b>。正答でフル報酬(従来どおり <code>work_min</code>〜<code>work_max</code>・ブースト適用)、誤答や時間切れは<b>半額</b>です。</p>
+<p>あわせて、実行間隔の既定を <b>1時間 → 3分</b> に短縮しました。これまでに間隔を変更していないサーバーは、自動で3分に移行します(変更済みのサーバーはそのまま。<code>/economy config work_cooldown:</code> で変更できます)。</p>
+</article>
 <article class="chg">
 <h3>初期所持金を 0 → 100 に変更</h3>
 <p>初めて経済を使う人に付く所持金を <b>100</b> に引き上げました。すぐに <code>/work</code> やミニゲームを始められます。既存のユーザーの所持金は変わりません。変更するには <code>/economy config start_balance:</code> か、Webダッシュボードの「経済」タブを使います。</p>
 </article>
 <article class="chg">
 <h3>コマンド一覧の整理</h3>
-<p><code>/help</code> の経済セクションに <code>/loan</code> <code>/stock</code> <code>/economyinfo</code> <code>/economyweb</code> を追加し、管理者用コマンドも整理しました。</p>
+<p><code>/help</code> の経済セクションに <code>/loan</code> <code>/stock</code> <code>/roles</code> <code>/coindrop</code> <code>/economyinfo</code> <code>/economyweb</code> を追加し、管理者用コマンドも整理しました。</p>
 </article>
 
 <h2 class="chg">アップデート方法</h2>
 <ul class="todo">
 <li><b>GitHub から最新の <code>bot.py</code> と <code>dashboard.html</code> をダウンロード</b>して、現在稼働中のものと入れ替えて再起動してください。<b>2つのファイルは必ず同じフォルダに置いてください</b>(ダッシュボードは bot.py と同じ場所から dashboard.html を読み込みます。dashboard.html を入れ替えない場合、「経済」タブは表示されません)。</li>
-<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。コインドロップも既定で有効です(無効にするには <code>/economy config drop_enabled:False</code>)。</li>
 <li>経済のデータは <code>data/economy.json</code> に保存されます(直前の正常な内容は <code>economy.json.bak</code> に残ります)。そのまま引き継がれるので、既存の所持金・アイテムは消えません。</li>
 <li>他の経済BOT(Noctalyなど)から乗り換える場合は <code>/money migrate</code> で移行ガイド、<code>/money import</code> で所持金の取り込み(CSV/JSON、プレビュー確認つき)が使えます。</li>
 </ul>
