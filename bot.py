@@ -429,6 +429,9 @@ async def start_web():
 
     app = web.Application(client_max_size=6 * 1024 * 1024, middlewares=[cf_only] if CF_PROXY else [])
     app.router.add_get("/health", health)
+    app.router.add_get("/eco", eco_page)
+    app.router.add_get("/api/eco/{gid}", eco_api_get)
+    app.router.add_post("/api/eco/{gid}", eco_api_post)
     if DASH_BASE:
         add_dashboard_routes(app)
     else:
@@ -464,6 +467,135 @@ async def start_web():
         log.info("Web認証のreCAPTCHA: %s", "有効" if RECAPTCHA_READY else "無効(RECAPTCHA_SITE_KEY / RECAPTCHA_SECRET_KEY が未設定)")
     log.info("Webサーバー起動: 0.0.0.0:%s (%s / ダッシュボード: %s)", port, "HTTPS" if ssl_ctx else "HTTP",
              "有効(OAuth)" if OAUTH_READY else "無効(DISCORD_CLIENT_SECRET が未設定)" if DASH_BASE else "無効")
+
+
+# ═════════════ 経済専用画面(/eco) — OAuth設定不要。/economyweb がトークン付きリンクを発行(12時間有効) ═════════════
+# 株の取引画面風の専用ページ(economyweb.html)。トークンがあれば本人として売買・ギャンブルができ、無くても市場の閲覧は可能。
+
+_eco_web_secret: Optional[bytes] = None
+
+
+def _eco_web_key() -> bytes:
+    global _eco_web_secret
+    if _eco_web_secret is None:
+        path = os.path.join(DATA_DIR, "eco_web_secret.key")
+        try:
+            with open(path, "rb") as f:
+                _eco_web_secret = f.read().strip()
+        except OSError:
+            pass
+        if not _eco_web_secret:
+            _eco_web_secret = secrets.token_hex(32).encode()
+            try:
+                os.makedirs(DATA_DIR, exist_ok=True)
+                with open(path, "wb") as f:
+                    f.write(_eco_web_secret)
+            except OSError:
+                log.exception("eco_web_secret.key を保存できませんでした(再起動のたびにリンクが無効になります)")
+    return _eco_web_secret
+
+
+def _eco_web_sign(payload: str) -> str:
+    return hmac.new(_eco_web_key(), payload.encode(), "sha256").hexdigest()[:32]
+
+
+def _eco_web_token(gid: int, uid: int, hours: int = 12) -> str:
+    exp = int(time.time()) + hours * 3600
+    payload = f"{gid}:{uid}:{exp}"
+    return f"{payload}.{_eco_web_sign(payload)}"
+
+
+def _eco_web_check(gid: int, token: str) -> Optional[int]:
+    """トークンを検証して、有効ならユーザーIDを返す(無効・期限切れは None)"""
+    try:
+        payload, sig = str(token).rsplit(".", 1)
+        g, u, exp = payload.split(":")
+        if int(g) != int(gid) or int(exp) < time.time():
+            return None
+        if not hmac.compare_digest(_eco_web_sign(payload), sig):
+            return None
+        return int(u)
+    except (ValueError, TypeError):
+        return None
+
+
+def _eco_url(gid: int, uid: int) -> Optional[str]:
+    if not DASH_BASE:
+        return None
+    return f"{DASH_BASE}/eco?g={gid}&t={_eco_web_token(gid, uid)}"
+
+
+async def eco_page(request):
+    try:
+        with open(os.path.join(BASE_DIR, "economyweb.html"), encoding="utf-8") as f:
+            page = f.read()
+    except OSError:
+        return web.Response(text="economyweb.html が bot.py と同じフォルダにありません。", status=404)
+    return web.Response(text=page, content_type="text/html",
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
+
+
+def _eco_page_snapshot(g: discord.Guild, uid: Optional[int]) -> dict:
+    eco_snap = _eco_snapshot(g)
+    mk = eco_market(g.id)
+    for row in eco_snap["stocks"]:
+        row["hist"] = [x for x in mk.get(row["sym"], {}).get("hist", [])][-30:]
+    c = eco.cfg(g.id)
+    out = {"ok": True, "gid": str(g.id), "name": g.name,
+           "cfg": {"symbol": c["symbol"], "name": c["name"], "debt_max": c["debt_max"],
+                   "gamble_enabled": c["gamble_enabled"], "max_bet": c["max_bet"],
+                   "stock_enabled": c.get("stock_enabled", True), "drop_rate": c.get("drop_rate", 0),
+                   "rank_include_stocks": c.get("rank_include_stocks", True)},
+           "stocks": eco_snap["stocks"], "items": eco_snap["items"], "top": eco_snap["top"],
+           "me": None, "user": None}
+    if uid:
+        m = g.get_member(uid)
+        out["user"] = m.display_name if m else None
+        out["me"] = _web_me(g, uid)
+    return out
+
+
+async def eco_api_get(request):
+    try:
+        gid = int(request.match_info["gid"])
+    except ValueError:
+        raise web.HTTPNotFound()
+    g = bot.get_guild(gid)
+    if not g:
+        raise web.HTTPNotFound()
+    uid = _eco_web_check(gid, request.query.get("t", ""))
+    return web.json_response(_eco_page_snapshot(g, uid), headers={"Cache-Control": "no-store"})
+
+
+async def eco_api_post(request):
+    try:
+        gid = int(request.match_info["gid"])
+    except ValueError:
+        raise web.HTTPNotFound()
+    g = bot.get_guild(gid)
+    if not g:
+        raise web.HTTPNotFound()
+    uid = _eco_web_check(gid, request.query.get("t", ""))
+    if not uid:
+        raise web.HTTPUnauthorized(text="リンクの有効期限が切れました。Discordで /economyweb をもう一度実行してください。")
+    m = g.get_member(uid)
+    if not m:
+        raise web.HTTPForbidden(text="サーバーに参加していないため、操作できません。")
+    try:
+        d = await request.json()
+        fn = ECO_WEB_HANDLERS.get(str(d.get("action")))
+        if not fn:
+            raise web.HTTPBadRequest(text="不明な操作です")
+        res = await fn(g, m, d)
+        msg, data = res if isinstance(res, tuple) else (res, None)
+    except SettingsError as e:
+        raise web.HTTPBadRequest(text=str(e))
+    except SrvAdmError as e:
+        raise web.HTTPBadRequest(text=str(e))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        log.exception("経済専用画面の操作でエラー: %s", (d.get("action") if isinstance(d, dict) else None))
+        raise web.HTTPBadRequest(text="入力が正しくありません")
+    return web.json_response({"ok": True, "msg": msg, "data": data}, headers={"Cache-Control": "no-store"})
 
 
 def make_embed(title: str, desc: Optional[str] = None, color: int = BLUE) -> discord.Embed:
@@ -6757,8 +6889,9 @@ async def _dash_member(g: discord.Guild, uid: int) -> Optional[discord.Member]:
     return m
 
 
-async def _dash_guild(request):
-    """ログイン中のユーザーが、このサーバーを管理できるかを、Discordの今の権限で毎回確認する(権限が変わればすぐ反映される)"""
+async def _dash_guild(request, manage: bool = True):
+    """ログイン中のユーザーが、このサーバーを使えるかを、Discordの今の権限で毎回確認する(権限が変わればすぐ反映される)。
+    manage=False のときは「サーバーのメンバー」でよく(経済の閲覧専用ページ用)"""
     sess = _dash_session(request)
     if not sess:
         raise web.HTTPUnauthorized()
@@ -6769,7 +6902,7 @@ async def _dash_guild(request):
         raise web.HTTPNotFound()
     guild = bot.get_guild(gid)
     m = await _dash_member(guild, uid) if guild else None
-    if not m or not _can_manage(m):
+    if not m or (manage and not _can_manage(m)):
         raise web.HTTPForbidden()
     request["dash_member"] = m
     return guild
@@ -6911,6 +7044,22 @@ def _pending_list(g: discord.Guild) -> list:
     return [{"id": str(u), "name": _who(g, u), "minutes": int((now - t) // 60), "suspect": v["suspects"].get(str(u))} for u, t in rows]
 
 
+def _eco_snapshot(g: discord.Guild) -> dict:
+    """ダッシュボード「経済」タブ用のデータ(設定・アイテム・株市場・所持金上位10)"""
+    return {"cfg": eco.cfg(g.id),
+            "items": [{"id": iid, "name": it.get("name", ""), "emoji": it.get("emoji", "📦"), "price": it.get("price", 0),
+                       "sell": it.get("sell", 0), "kind": it.get("kind", "normal"), "stock": it.get("stock", -1)}
+                      for iid, it in eco.guild(g.id)["items"].items()],
+            "stocks": [{"sym": s, "name": st.get("name", ""), "price": round(float(st.get("price", 0)), 2), "chg": round(eco_stock_chg(st), 2)}
+                       for s, st in eco_market(g.id).items()],
+            "top": [{"name": m.display_name, "bal": int(v)} for m, v in eco_board(g)[:10]]}
+
+
+def eco_view_snapshot(g: discord.Guild) -> dict:
+    """サーバー管理者以外のメンバー向け(経済の閲覧のみ・設定は変更できない)"""
+    return {"v": 2, "gid": str(g.id), "name": g.name, "web_ready": WEB_READY, "eco_only": True, "eco": _eco_snapshot(g)}
+
+
 def dash_snapshot(g: discord.Guild) -> dict:
     c = store.get(g.id)
     am, v, tc, kk = c["automod"], c["verify"], c["ticket"], c["kaso"]
@@ -6942,13 +7091,7 @@ def dash_snapshot(g: discord.Guild) -> dict:
                    "staff_roles": [str(i) for i in tc["staff_roles"]], "blocked": [str(i) for i in tc["blocked"]],
                    "open": sum(1 for i in tc["open"].values() if not i.get("closed"))},
         "warned": _warned_list(g), "pending_list": _pending_list(g),
-        "eco": {"cfg": eco.cfg(g.id),
-                "items": [{"id": iid, "name": it.get("name", ""), "emoji": it.get("emoji", "📦"), "price": it.get("price", 0),
-                           "sell": it.get("sell", 0), "kind": it.get("kind", "normal"), "stock": it.get("stock", -1)}
-                          for iid, it in eco.guild(g.id)["items"].items()],
-                "stocks": [{"sym": s, "name": st.get("name", ""), "price": round(float(st.get("price", 0)), 2), "chg": round(eco_stock_chg(st), 2)}
-                           for s, st in eco_market(g.id).items()],
-                "top": [{"name": m.display_name, "bal": int(v)} for m, v in eco_board(g)[:10]]},
+        "eco": _eco_snapshot(g),
         "rolepanels": [{"id": mid, "channel": str(p["channel"]), "title": p["title"], "text": p["text"], "exclusive": p["exclusive"],
                         "roles": [{"id": str(r["id"]), "label": r["label"]} for r in p["roles"]],
                         "url": f"https://discord.com/channels/{g.id}/{p['channel']}/{mid}"}
@@ -7066,8 +7209,11 @@ def apply_settings(g: discord.Guild, d: dict) -> None:
 
 
 async def dash_get(request):
-    g = await _dash_guild(request)
-    return web.json_response(dash_snapshot(g))
+    g = await _dash_guild(request, manage=False)
+    m = request.get("dash_member")
+    if m and _can_manage(m):
+        return web.json_response(dash_snapshot(g))
+    return web.json_response(eco_view_snapshot(g))   # メンバーは経済の閲覧のみ(/economyweb)
 
 
 async def dash_save(request):
@@ -7464,7 +7610,9 @@ ECO_WEB_NUM = {"start_balance": (0, 10 ** 9, "初期所持金"), "debt_max": (0,
                "daily_amount": (0, 10 ** 9, "デイリーの基本報酬"), "daily_streak_bonus": (0, 10 ** 9, "連続ボーナス(1日あたり)"),
                "daily_streak_cap": (0, 3650, "ボーナスが増える最大日数"), "work_min": (0, 10 ** 9, "/work の最小報酬"),
                "work_max": (0, 10 ** 9, "/work の最大報酬"), "work_cooldown": (0, 604800, "/work の間隔(秒)"),
-               "pay_fee": (0, 100, "送金手数料(%)"), "max_bet": (0, 10 ** 15, "1回の賭け金の上限")}  # 10 ** 15 = ECO_MAX(経済セクションで定義。ここではまだ参照できないため直値)
+               "pay_fee": (0, 100, "送金手数料(%)"), "max_bet": (0, 10 ** 15, "1回の賭け金の上限"),
+               "drop_rate": (0, 1000, "コインドロップの確率(‰)"), "drop_min": (0, 10 ** 9, "ドロップの最小額"),
+               "drop_max": (0, 10 ** 9, "ドロップの最大額"), "drop_cooldown": (0, 86400, "ドロップの最短間隔(秒)")}  # 10 ** 15 = ECO_MAX(経済セクションで定義。ここではまだ参照できないため直値)
 
 
 async def act_eco_save(g, m, d):
@@ -7477,7 +7625,8 @@ async def act_eco_save(g, m, d):
     if nums["work_min"] > nums["work_max"]:
         raise SettingsError("/work の最小報酬が最大報酬を超えています")
     c.update(nums, symbol=sym, name=name, pay_enabled=bool(d.get("pay_enabled")),
-             gamble_enabled=bool(d.get("gamble_enabled")), stock_enabled=bool(d.get("stock_enabled")))
+             gamble_enabled=bool(d.get("gamble_enabled")), stock_enabled=bool(d.get("stock_enabled")),
+             drop_enabled=bool(d.get("drop_enabled")), rank_include_stocks=bool(d.get("rank_include_stocks")))
     eco.save()
     await send_log(g, make_embed("💰 経済の設定を変更", f"実行者: {m} (`{m.id}` / ダッシュボード)", GRAY))
     return "✅ 経済の設定を保存しました。"
@@ -7500,23 +7649,85 @@ async def dash_welcome_bg(request):
     return web.json_response({"ok": True, "msg": "✅ 背景画像を設定しました。"})
 
 
+async def act_eco_search(g, m, d):
+    """Web経済タブ: 所持金を操作するメンバーを検索(管理者のみ)"""
+    q = str(d.get("q", "")).strip()[:100]
+    if not q:
+        raise SettingsError("名前かユーザーIDを入力してください。")
+    if q.isdigit():
+        found = [int(q)] if g.get_member(int(q)) else []
+    else:
+        ql = q.lower()
+        found = [x.id for x in g.members if not x.bot and (ql in x.name.lower() or ql in x.display_name.lower()
+                                                           or (x.global_name and ql in x.global_name.lower()))][:20]
+    if not found:
+        raise SettingsError("該当するメンバーが見つかりませんでした。")
+    rows = []
+    for u in found[:10]:
+        rec = eco.peek(g.id, u)
+        rows.append({"id": str(u), "name": _who(g, u), "bal": int(rec["bal"]), "debt": int(rec.get("debt", 0) or 0)})
+    return f"{len(rows)}人見つかりました。", rows
+
+
+async def act_eco_money(g, m, d):
+    """Web経済タブ: 所持金の付与・減額・設定(/money plus|minus|set と同じ。ログに記録)"""
+    uid = _wid(d.get("uid"))
+    mem = g.get_member(uid) if uid else None
+    if mem is None:
+        raise SettingsError("メンバーが見つかりません。もう一度検索してください。")
+    if mem.bot:
+        raise SettingsError("BOTの所持金は操作できません。")
+    mode = str(d.get("mode", ""))
+    if mode not in ("plus", "minus", "set"):
+        raise SettingsError("操作が正しくありません。")
+    amount = _num(d, "amount", 0 if mode == "set" else 1, 10 ** 15, "金額")
+    gid, uid = g.id, mem.id
+    if mode == "plus":
+        got = eco_change(gid, uid, amount)
+        eco_tx(gid, uid, got, "付与(ダッシュボード)", m.id)
+        await send_log(g, make_embed("💰 所持金の付与", f"{_who(g, uid)} に +{eco_fmt(gid, got)}\n実行者: {m} (ダッシュボード)", GREEN))
+        msg = f"✅ {_who(g, uid)} に {eco_fmt(gid, got)} を付与しました。"
+    elif mode == "minus":
+        got = -eco_change(gid, uid, -amount)
+        eco_tx(gid, uid, -got, "減額(ダッシュボード)", m.id)
+        await send_log(g, make_embed("💰 所持金の減額", f"{_who(g, uid)} から -{eco_fmt(gid, got)}\n実行者: {m} (ダッシュボード)", YELLOW))
+        msg = f"✅ {_who(g, uid)} から {eco_fmt(gid, got)} を減らしました。"
+    else:
+        delta = amount - eco.peek(gid, uid)["bal"]
+        eco_change(gid, uid, delta)
+        eco_tx(gid, uid, delta, "残高設定(ダッシュボード)", m.id)
+        await send_log(g, make_embed("💰 残高の設定", f"{_who(g, uid)} を {eco_fmt(gid, amount)} に設定\n実行者: {m} (ダッシュボード)", GRAY))
+        msg = f"✅ {_who(g, uid)} の所持金を {eco_fmt(gid, amount)} に設定しました。"
+    rec = eco.peek(gid, uid)
+    return msg + f"(現在 {eco_fmt(gid, rec['bal'])})", {"id": str(uid), "name": _who(g, uid), "bal": int(rec["bal"]), "debt": int(rec.get("debt", 0) or 0)}
+
+
 DASH_ACTIONS = {"welcome_test": act_welcome_test, "welcome_bg_delete": act_welcome_bg_delete, "member_search": act_member_search, "warn_remove": act_warn_remove, "warn_clear": act_warn_clear,
                 "verify_approve": act_verify_approve, "verify_revoke": act_verify_revoke, "verify_bulk": act_verify_bulk,
                 "verify_save": act_verify_save, "verify_raid": act_verify_raid, "verify_clearips": act_verify_clearips,
-                "ticket_save": act_ticket_save, "rp_save": act_rp_save, "rp_delete": act_rp_delete, "eco_save": act_eco_save}
+                "ticket_save": act_ticket_save, "rp_save": act_rp_save, "rp_delete": act_rp_delete,
+                "eco_save": act_eco_save, "eco_money_search": act_eco_search, "eco_money": act_eco_money}   # eco_me / eco_stock_* / eco_*ゲームは、定義後に下で登録する
 
 
 async def dash_do(request):
-    g = await _dash_guild(request)
+    g = await _dash_guild(request, manage=False)
     if request.headers.get("X-Requested-With") != "azq-dashboard":
         raise web.HTTPForbidden()
     d = None
     try:
         d = await request.json()
-        fn = DASH_ACTIONS.get(str(d.get("action")))
+        action = str(d.get("action"))
+        fn = DASH_ACTIONS.get(action)
         if not fn:
             raise SettingsError("不明な操作です")
-        res = await fn(g, _dash_admin_member(request, g), d)
+        m = request.get("dash_member")
+        if action in WEB_ECO_ACTIONS:
+            # 経済のセルフ操作(株の売買・ギャンブルなど)は、サーバーのメンバーならだれでも可(自分のアカウントに対してのみ)
+            if m is None:
+                raise web.HTTPForbidden()
+        else:
+            m = _dash_admin_member(request, g)
+        res = await fn(g, m, d)
         msg, data = res if isinstance(res, tuple) else (res, None)
     except SettingsError as e:
         raise web.HTTPBadRequest(text=str(e))
@@ -7526,7 +7737,8 @@ async def dash_do(request):
     except discord.HTTPException:
         log.exception("ダッシュボードの操作でDiscordのエラー")
         raise web.HTTPBadGateway(text="Discordとの通信に失敗しました。BOTの権限を確認してください。")
-    return web.json_response({"ok": True, "msg": msg, "snap": dash_snapshot(g), "data": data})
+    snap = dash_snapshot(g) if (request.get("dash_member") and _can_manage(request["dash_member"])) else eco_view_snapshot(g)
+    return web.json_response({"ok": True, "msg": msg, "snap": snap, "data": data})
 
 
 # ───────────────────────── /web:サーバー管理ページ(/web/manage) ─────────────────────────
@@ -9032,7 +9244,10 @@ class RankingView(discord.ui.View):
             else:
                 tail = f"**{v:,}** pt"
             lines.append(f"{medal} {m.mention} — {tail}")
-        e = make_embed(f"{RK_TITLES[self.key]} - {self.guild.name}", "\n".join(lines) or "まだデータがありません。", BLUE)
+        title = RK_TITLES[self.key]
+        if self.key == "money" and eco.cfg(self.guild.id).get("rank_include_stocks", True):
+            title = "💰 総資産ランキング(所持金+株)"
+        e = make_embed(f"{title} - {self.guild.name}", "\n".join(lines) or "まだデータがありません。", BLUE)
         mine = next((i for i, (m, _) in enumerate(self.rows, 1) if m.id == self.owner_id), None)
         foot = f"{self.page + 1}/{self.pages} ページ / {len(self.rows):,}人"
         if mine:
@@ -9099,9 +9314,11 @@ ECO_HAVE_MAX = 10 ** 6      # 1人が1種類を持てる上限
 ECO_CFG = {
     "symbol": "🪙", "name": "コイン", "start_balance": 100, "debt_max": 2000,
     "daily_amount": 500, "daily_streak_bonus": 50, "daily_streak_cap": 30,
-    "work_min": 100, "work_max": 300, "work_cooldown": 3600,
+    "work_min": 100, "work_max": 300, "work_cooldown": 180,
     "pay_enabled": True, "pay_fee": 0,
     "gamble_enabled": True, "max_bet": 100000, "stock_enabled": True,
+    "drop_enabled": True, "drop_rate": 5, "drop_min": 250, "drop_max": 350, "drop_cooldown": 300,
+    "rank_include_stocks": True,
 }
 ECO_KINDS = {"normal": "通常(使えない・コレクション/売買用)", "money": "コイン袋(使うとコインがもらえる)",
              "chest": "チェスト(使うと景品がランダムに出る)", "boost": "ブースト(一定時間 /daily /work の収入アップ)",
@@ -9156,6 +9373,14 @@ class EcoStore:
         c = self.guild(gid)["cfg"]
         for k, v in ECO_CFG.items():
             c.setdefault(k, v)
+        if c.get("work_cooldown") == 3600:
+            # v2.2以前の既定(1時間)を、v2.3の既定(3分)に移行する
+            c["work_cooldown"] = 180
+            self.save()
+        if c.get("drop_min", 0) == 10 and c.get("drop_max", 0) == 50:
+            # v2.3初期の既定(10〜50)を、300コイン台に移行する
+            c["drop_min"], c["drop_max"] = 250, 350
+            self.save()
         return c
 
     @staticmethod
@@ -9311,9 +9536,19 @@ def eco_tx(gid: int, uid: int, delta: int, why: str, by: int = 0) -> None:
 
 
 def eco_board(g: discord.Guild) -> list:
+    """所持金ランキング。(メンバー, 値) のリスト。
+    cfg の rank_include_stocks(既定ON)が有効なら、株の評価額を含めた「総資産」で比較する"""
+    c = eco.cfg(g.id)
+    include = c.get("rank_include_stocks", True)
+    mk = eco_market(g.id) if include else None
     rows = []
     for uid, r in eco.guild(g.id)["users"].items():
-        v = r.get("bal", 0)
+        v = int(r.get("bal", 0))
+        if include:
+            for sym, h in (r.get("stocks") or {}).items():
+                st = mk.get(sym)
+                if st and isinstance(h, dict) and int(h.get("n", 0)) > 0:
+                    v += int(float(st.get("price", 0)) * int(h["n"]))
         if v <= 0:
             continue
         m = g.get_member(int(uid))
@@ -9765,6 +10000,9 @@ async def balance_cmd(interaction: discord.Interaction, user: Optional[discord.M
     pos = eco_rank_of(g, m.id)
     e = make_embed(f"💰 {m.display_name} の所持金", f"**{eco_fmt(g.id, rec['bal'])}**", YELLOW)
     e.set_thumbnail(url=m.display_avatar.url)
+    if eco.cfg(g.id).get("rank_include_stocks", True):
+        _, total = eco_portfolio(g.id, rec)
+        e.add_field(name="📈 総資産(株込み)", value=eco_fmt(g.id, int(rec['bal']) + int(total)) + f"(株評価 {eco_fmt(g.id, int(total))})", inline=False)
     if debt := eco_debt_text(g.id, rec):
         e.add_field(name="🏦 借金", value=debt.split("\n")[0], inline=False)
         e.set_footer(text="`/loan repay` で返済・収入(/daily /work など)で自動返済されます。")
@@ -9797,7 +10035,7 @@ async def daily_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=e)
 
 
-@bot.tree.command(name="work", description="お仕事をしてお金を稼ぎます")
+@bot.tree.command(name="work", description="お仕事クイズに正答して、お金を稼ぎます(3分ごと。失敗すると半額)")
 @app_commands.guild_only()
 @lg_guard
 async def work_cmd(interaction: discord.Interaction):
@@ -9807,15 +10045,103 @@ async def work_cmd(interaction: discord.Interaction):
     ready = rec["work"] + c["work_cooldown"]
     if ready > now:
         raise SrvAdmError(f"まだ休憩中です。<t:{int(ready)}:R> にまた働けます。")
-    lo, hi = c["work_min"], max(c["work_min"], c["work_max"])
-    mult = eco_mult(rec)
     rec["work"] = now
-    got = eco_change(g.id, m.id, int(_eco_rng.randint(lo, hi) * mult))
-    e = make_embed("💼 お仕事", f"{_eco_rng.choice(ECO_JOBS)}。\n**+{eco_fmt(g.id, got)}** を稼ぎました!", GREEN)
-    if mult > 1:
-        e.add_field(name="ブースト", value=f"×{mult:.2f}")
-    e.add_field(name="残高", value=eco_fmt(g.id, rec["bal"]))
-    await interaction.response.send_message(embed=e)
+    eco.save()
+    task = _work_task()
+    view = WorkView(g, m, task)
+    e = make_embed(f"💼 お仕事: {_eco_rng.choice(ECO_JOBS)}", task["text"] + "\n\n**15秒以内に正しいボタンを押してください!**\n成功でフル報酬・失敗(誤り/時間切れ)は半額です。", YELLOW)
+    await interaction.response.send_message(embed=e, view=view)
+    try:
+        view.message = await interaction.original_response()
+    except discord.HTTPException:
+        pass
+
+
+WORK_EMOJIS = ("🔧", "📦", "🧹", "📌", "✏️", "🪣", "🔨", "🧽", "🛒", "🧲")
+
+
+def _work_task() -> dict:
+    """/work のミニクイズ(計算か、絵文字の数え)を1つ作る"""
+    if _eco_rng.random() < 0.5:
+        a, b = _eco_rng.randint(3, 19), _eco_rng.randint(2, 19)
+        if _eco_rng.random() < 0.5:
+            ans, text = a + b, f"**{a} + {b}** の答えは?"
+        else:
+            a, b = max(a, b), min(a, b)
+            ans, text = a - b, f"**{a} − {b}** の答えは?"
+    else:
+        target = _eco_rng.choice(WORK_EMOJIS)
+        others = [e for e in WORK_EMOJIS if e != target]
+        ans = _eco_rng.randint(3, 9)
+        parts = [target] * ans + [_eco_rng.choice(others) for _ in range(_eco_rng.randint(8, 16))]
+        _eco_rng.shuffle(parts)
+        text = f"次の中に **{target}** はいくつありますか?\n\n{''.join(parts)}"
+    opts = {ans}
+    while len(opts) < 4:
+        opts.add(max(0, ans + _eco_rng.choice((-1, 1, -2, 2, -3, 3, 10, -10))))
+    opts = list(opts)
+    _eco_rng.shuffle(opts)
+    return {"text": text, "answer": str(ans), "options": [str(o) for o in opts]}
+
+
+class WorkButton(discord.ui.Button):
+    def __init__(self, label: str):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: WorkView = self.view
+        if interaction.user.id != view.m.id:
+            return await interaction.response.send_message("これはあなたの仕事ではありません。", ephemeral=True)
+        if view.done:
+            return await interaction.response.defer()
+        view.done = True
+        view.stop()
+        await view.finish(interaction, self.label == view.task["answer"], clicked=self)
+
+
+class WorkView(discord.ui.View):
+    def __init__(self, g: discord.Guild, m: discord.Member, task: dict):
+        super().__init__(timeout=15)
+        self.g, self.m, self.task = g, m, task
+        self.message: Optional[discord.Message] = None
+        self.done = False
+        for label in task["options"]:
+            self.add_item(WorkButton(label))
+
+    async def finish(self, interaction: Optional[discord.Interaction], ok: bool, clicked: Optional[WorkButton] = None, timeout: bool = False):
+        g, m, c = self.g, self.m, eco.cfg(self.g.id)
+        lo, hi = c["work_min"], max(c["work_min"], c["work_max"])
+        mult = eco_mult(eco.user(g.id, m.id))
+        pay = int(_eco_rng.randint(lo, hi) * mult)
+        if not ok:
+            pay //= 2
+        got = eco_change(g.id, m.id, pay)
+        for child in self.children:
+            child.disabled = True
+        for child in self.children:
+            if isinstance(child, WorkButton):
+                if child.label == self.task["answer"]:
+                    child.style = discord.ButtonStyle.success
+                elif child is clicked:
+                    child.style = discord.ButtonStyle.danger
+        e = make_embed("💼 お仕事", f"{_eco_rng.choice(ECO_JOBS)}。\n"
+                       + (f"**+{eco_fmt(g.id, got)}** を稼ぎました!" if ok else f"ミスしてしまいました… **+{eco_fmt(g.id, got)}**(半額)です。"),
+                       GREEN if ok else YELLOW)
+        e.add_field(name="残高", value=eco_fmt(g.id, eco.peek(g.id, m.id)["bal"]))
+        e.set_footer(text=f"次の仕事は {_fmt_seconds(c['work_cooldown'])} 後から。" + ("" if ok else "次は正しいボタンを押すとフル報酬です。"))
+        try:
+            if interaction is not None:
+                await interaction.response.edit_message(embed=e, view=self)
+            elif self.message:
+                await self.message.edit(embed=e, view=None)
+        except discord.HTTPException:
+            pass
+
+    async def on_timeout(self):
+        if self.done:
+            return
+        self.done = True
+        await self.finish(None, False, timeout=True)
 
 
 @bot.tree.command(name="moneytop", description="サーバー内の所持金ランキングを表示します")
@@ -9870,7 +10196,11 @@ async def profile_cmd(interaction: discord.Interaction, user: Optional[discord.M
     pos = eco_rank_of(g, m.id)
     e = make_embed(f"👤 {m.display_name} のプロフィール", color=YELLOW)
     e.set_thumbnail(url=m.display_avatar.url)
-    e.add_field(name="💰 所持金", value=f"**{eco_fmt(g.id, rec['bal'])}**" + (f"\n({pos}位)" if pos else ""))
+    extra = ""
+    if eco.cfg(g.id).get("rank_include_stocks", True):
+        _, total = eco_portfolio(g.id, rec)
+        extra = f"\n総資産(株込み) {eco_fmt(g.id, int(rec['bal']) + int(total))}"
+    e.add_field(name="💰 所持金", value=f"**{eco_fmt(g.id, rec['bal'])}**" + (f"\n({pos}位)" if pos else "") + extra)
     e.add_field(name="🎁 デイリー連続", value=f"{rec['streak']}日" if rec["streak"] else "なし")
     e.add_field(name="🧰 チェスト", value=f"{chests:,}個")
     e.add_field(name="🎒 アイテム", value=f"{len(mine)}種類 / {sum(n for _, n in mine):,}個")
@@ -9900,10 +10230,12 @@ async def economyinfo_cmd(interaction: discord.Interaction):
     e = make_embed(f"💰 経済ガイド - {g.name}",
                    f"通貨: {c['symbol']} **{c['name']}** / 初期所持金 {eco_fmt(g.id, c['start_balance'])} / 借金上限 {eco_fmt(g.id, c['debt_max'])}(0=禁止)", BLUE)
     e.add_field(name="💵 お金を稼ぐ", value=(f"`/daily` 1日1回 {eco_fmt(g.id, c['daily_amount'])} + 連続ボーナス {eco_fmt(g.id, c['daily_streak_bonus'])}×最大{c['daily_streak_cap']}日\n"
-                                           f"`/work` お仕事で {eco_fmt(g.id, c['work_min'])}〜{eco_fmt(g.id, c['work_max'])}(間隔 {_fmt_seconds(c['work_cooldown'])})\n"
-                                           f"`/loan borrow` 借金する(上限 {eco_fmt(g.id, c['debt_max'])}) → 収入で自動返済、`/loan repay` でも返せる"), inline=False)
+                                           f"`/work` お仕事クイズに正答で {eco_fmt(g.id, c['work_min'])}〜{eco_fmt(g.id, c['work_max'])}(間隔 {_fmt_seconds(c['work_cooldown'])}・失敗は半額)\n"
+                                           f"`/loan borrow` 借金する(上限 {eco_fmt(g.id, c['debt_max'])}) → 収入で自動返済、`/loan repay` でも返せる\n"
+                                           f"💰 発言すると一定確率でコインがドロップ! 先着1人がゲット(確率 {c['drop_rate']}‰・{'ON' if c.get('drop_enabled', True) else 'OFF'})\n"
+                                           f"📊 ランキング(/moneytop)は、株込みの総資産で比較({'ON' if c.get('rank_include_stocks', True) else 'OFF・コインのみ'})"), inline=False)
     e.add_field(name="🛍️ 使う・増やす", value=("`/balance` 残高 / `/profile` プロフィール / `/moneytop` ランキング\n"
-                                              "`/shop` ショップ / `/item buy|sell|use|inventory|give|info` アイテム\n"
+                                              "`/shop` ショップ / `/roles` ロールショップ(コインでロールを購入)\n`/item buy|sell|use|inventory|give|info` アイテム\n"
                                               f"`/pay` 送金({onoff(c['pay_enabled'])}・手数料{c['pay_fee']}%)"), inline=False)
     stocks = eco_market(g.id)
     if c.get("stock_enabled", True) and stocks:
@@ -9913,11 +10245,11 @@ async def economyinfo_cmd(interaction: discord.Interaction):
     if not c["gamble_enabled"]:
         games += "\n※ このサーバーではギャンブルは無効です"
     e.add_field(name="🎲 ミニゲーム", value=games + f"(賭け金上限 {eco_fmt(g.id, c['max_bet']) if c['max_bet'] else '無制限'})", inline=False)
-    e.add_field(name="🛠️ 管理者向け", value=("`/money plus|minus|set|history` 残高の操作と履歴\n"
+    e.add_field(name="🛠️ 管理者向け", value=("`/money plus|minus|set|history` 残高の操作と履歴 / `/coindrop` コインをその場に落とす\n"
                                              "`/economy config` 各種設定 / `/economy item_set|item_remove|item_list|item_import|loot_add|loot_clear` アイテム\n"
-                                             f"`/economy stock_add|stock_remove` 銘柄の追加・削除\n"
-                                             "`/economyweb` ブラウザで経済の設定(ダッシュボード)\n"
+                                             f"`/economy role_add` ロールをコインで売る(ロールショップに追加)\n`/economy stock_add|stock_remove` 銘柄の追加・削除\n"
                                              "`/money migrate` 他の経済BOTからの移行ガイド / `/money import` 取り込み"), inline=False)
+    e.add_field(name="🌐 Web", value="`/economyweb` 経済専用の画面(タブ式・取引所風)を開く。設定不要・誰でも株の売買・ギャンブル・借金の返済・ショップ購入が可能。設定変更と所持金の操作はサーバー管理者(ダッシュボード)", inline=False)
     await interaction.response.send_message(embed=e, allowed_mentions=NONE)
 
 
@@ -10091,6 +10423,254 @@ async def stock_portfolio(interaction: discord.Interaction, user: Optional[disco
     else:
         e.description = "まだ株を持っていません。`/stock` で一覧を確認して、`/stock buy` で買えます。"
     await interaction.response.send_message(embed=e, allowed_mentions=NONE)
+
+
+# ───────────── Webダッシュボード: 経済の操作(/economyweb。ログイン中の本人が自分のアカウントで操作) ─────────────
+# ・株の売買・ギャンブル・残高・保有株は、サーバーのメンバーならだれでも(自分のアカウントに対して)Webから行える
+# ・設定の変更・他人の所持金の操作は、従来どおりサーバー管理者だけ
+
+WEB_ECO_ACTIONS = frozenset({"eco_me", "eco_stock_buy", "eco_stock_sell", "eco_coinflip", "eco_roulette",
+                             "eco_bj", "eco_bj_hit", "eco_bj_stand", "eco_loan_repay", "eco_item_buy"})
+_web_bj: dict = {}          # {(サーバーID, ユーザーID): 進行中のブラックジャック}
+
+
+def _web_srv_adm(fn, *args):
+    """Discordコマンド向けのエラー(SrvAdmError)を、ダッシュボード用のエラーに付け替える"""
+    try:
+        return fn(*args)
+    except SrvAdmError as e:
+        raise SettingsError(str(e))
+
+
+def _web_me(g: discord.Guild, uid: int) -> dict:
+    rec = eco.peek(g.id, uid)
+    rows, total = eco_portfolio(g.id, rec)
+    me = {"bal": int(rec["bal"]), "debt": int(rec.get("debt", 0) or 0),
+          "holdings": [{"sym": s, "name": nm, "n": n, "cost": round(c, 2), "value": int(v), "pnl": int(p)}
+                       for s, nm, n, c, v, p in rows],
+          "total": int(total), "rank": eco_rank_of(g, uid)}
+    st = _web_bj.get((g.id, uid))
+    if st and not st.get("done"):
+        me["bj"] = {"p": st["p"], "dl": [st["dl"][0]], "pv": bj_value(st["p"]), "bet": st["bet"], "status": "playing"}
+    return me
+
+
+def _web_data(g: discord.Guild, uid: int) -> dict:
+    return {"me": _web_me(g, uid), "eco": _eco_snapshot(g)}
+
+
+async def act_eco_me(g, m, d):
+    return "読み込みました。", _web_data(g, m.id)
+
+
+async def act_eco_stock_buy(g, m, d):
+    mk = _web_srv_adm(_stock_market_enabled, g)
+    sym = _web_srv_adm(_stock_sym, mk, str(d.get("symbol", "")))
+    shares = _num(d, "shares", 1, ECO_STOCK_MAX_HOLD, "株数")
+    price = float(mk[sym]["price"])
+    cost = int(price * shares)
+    async with eco_lock(g.id, m.id):
+        rec = eco.user(g.id, m.id)
+        h = rec["stocks"].setdefault(sym, {"n": 0, "cost": 0.0})
+        n = int(h.get("n", 0))
+        if n + shares > ECO_STOCK_MAX_HOLD:
+            raise SettingsError(f"1銘柄で持てるのは {ECO_STOCK_MAX_HOLD:,}株までです。")
+        if rec["bal"] < cost:
+            raise SettingsError(f"所持金が足りません。(必要 {eco_fmt(g.id, cost)} / 所持金 {eco_fmt(g.id, rec['bal'])})")
+        if not eco_take(g.id, m.id, cost):
+            raise SettingsError("所持金が足りません。")
+        h["n"], h["cost"] = n + shares, (float(h.get("cost", 0.0)) * n + cost) / (n + shares)
+        eco_tx(g.id, m.id, -cost, f"株購入 {sym}×{shares}(Web)")
+        eco.save()
+    return f"✅ `{sym}` {mk[sym]['name']} を {shares:,}株 購入しました。(合計 {eco_fmt(g.id, cost)})", _web_data(g, m.id)
+
+
+async def act_eco_stock_sell(g, m, d):
+    mk = _web_srv_adm(_stock_market_enabled, g)
+    sym = _web_srv_adm(_stock_sym, mk, str(d.get("symbol", "")))
+    async with eco_lock(g.id, m.id):
+        rec = eco.user(g.id, m.id)
+        h = rec.get("stocks", {}).get(sym)
+        if not h or int(h.get("n", 0)) <= 0:
+            raise SettingsError(f"`{sym}` は保有していません。")
+        have = int(h["n"])
+        raw = str(d.get("shares", "all")).strip().lower()
+        n = have if raw in ("all", "", "full", "すべて") else _num(d, "shares", 1, have, "株数")
+        price = float(mk[sym]["price"])
+        gain = int(price * n)
+        cost = float(h.get("cost", 0.0)) * n
+        h["n"] = have - n
+        if h["n"] <= 0:
+            rec["stocks"].pop(sym, None)
+        got = eco_change(g.id, m.id, gain)
+        eco_tx(g.id, m.id, gain, f"株売却 {sym}×{n}(Web)")
+        eco.save()
+    pnl = gain - cost
+    return (f"✅ `{sym}` {mk[sym]['name']} を {n:,}株 売却しました。(受け取り {eco_fmt(g.id, got)} / 損益 {'+' if pnl >= 0 else ''}{int(pnl):,})",
+            _web_data(g, m.id))
+
+
+async def act_eco_coinflip(g, m, d):
+    bet = _num(d, "amount", 1, ECO_MAX, "賭け金")
+    side = str(d.get("side", ""))
+    if side not in ("heads", "tails"):
+        raise SettingsError("表か裏を選んでください。")
+    _web_srv_adm(eco_bet_check, g, m.id, bet)
+    if not eco_take(g.id, m.id, bet):
+        raise SettingsError("所持金が足りません。")
+    result = _eco_rng.choice(("heads", "tails"))
+    win = result == side
+    if win:
+        eco_change(g.id, m.id, bet * 2)
+    eco_record(g.id, m.id, bet if win else -bet)
+    names = {"heads": "表", "tails": "裏"}
+    msg = f"🪙 コインは **{names[result]}**!(予想: {names[side]}) → " + (f"🎉 **+{eco_fmt(g.id, bet)}**" if win else f"💸 **-{eco_fmt(g.id, bet)}**")
+    data = _web_data(g, m.id)
+    data["res"] = {"game": "coinflip", "win": win, "draw": False, "net": bet if win else -bet, "out": names[result]}
+    return msg, data
+
+
+async def act_eco_roulette(g, m, d):
+    bet = _num(d, "amount", 1, ECO_MAX, "賭け金")
+    choice = str(d.get("choice", ""))
+    number = None
+    if choice == "number":
+        number = _num(d, "number", 0, 36, "数字")
+    elif choice not in ("red", "black"):
+        raise SettingsError("赤・黒・数字のどれかに賭けてください。")
+    _web_srv_adm(eco_bet_check, g, m.id, bet)
+    if not eco_take(g.id, m.id, bet):
+        raise SettingsError("所持金が足りません。")
+    spin = _eco_rng.randint(0, 36)
+    win = roulette_mult(spin, None if number is not None else choice, number) * bet
+    if win:
+        eco_change(g.id, m.id, win)
+    eco_record(g.id, m.id, win - bet)
+    net = win - bet
+    head = f"🎯 出目 {roulette_color(spin)} **{spin}**"
+    if number is not None:
+        head += f"(あなたの予想: {number})"
+    msg = head + " → " + (f"🎉 **+{eco_fmt(g.id, net)}**" if net > 0 else ("🤝 引き分け(賭け金が戻りました)" if net == 0 else f"💸 **-{eco_fmt(g.id, bet)}**"))
+    col = "green" if spin == 0 else ("red" if spin in ROULETTE_RED else "black")
+    data = _web_data(g, m.id)
+    data["res"] = {"game": "roulette", "win": net > 0, "draw": net == 0, "net": net, "spin": spin, "color": col}
+    return msg, data
+
+
+def _web_bj_view(st: dict, done: bool) -> dict:
+    return {"status": "done" if done else "playing", "p": st["p"], "dl": st["dl"] if done else [st["dl"][0]],
+            "pv": bj_value(st["p"]), "dv": bj_value(st["dl"]) if done else None, "bet": st["bet"]}
+
+
+def _web_bj_finish(g: discord.Guild, m: discord.Member, st: dict) -> tuple:
+    """ディーラーが引いて、精算する。状態は削除される"""
+    while bj_value(st["dl"]) < 17:
+        st["dl"].append(st["deck"].pop())
+    pay = bj_payout(st["bet"], st["p"], st["dl"])
+    net = pay - st["bet"]
+    if pay:
+        eco_change(g.id, m.id, pay)
+    eco_record(g.id, m.id, net)
+    pv, dv = bj_value(st["p"]), bj_value(st["dl"])
+    if net > 0:
+        res = f"🎉 あなたの勝ち! **+{eco_fmt(g.id, net)}**"
+    elif net == 0:
+        res = "🤝 引き分け(賭け金が戻りました)"
+    else:
+        res = f"💸 負け… **-{eco_fmt(g.id, st['bet'])}**"
+    msg = (f"🃏 あなた: {' '.join(st['p'])} (**{pv}**) / ディーラー: {' '.join(st['dl'])} (**{dv}**)\n{res}")
+    _web_bj.pop((g.id, m.id), None)
+    data = {"me": _web_me(g, m.id), "bj": _web_bj_view(st, True), "eco": _eco_snapshot(g)}
+    data["res"] = {"game": "blackjack", "win": net > 0, "draw": net == 0, "net": net, "pv": pv, "dv": dv}
+    return msg, data
+
+
+async def act_eco_bj(g, m, d):
+    bet = _num(d, "bet", 1, ECO_MAX, "賭け金")
+    _web_srv_adm(eco_bet_check, g, m.id, bet)
+    async with eco_lock(g.id, m.id):
+        st = _web_bj.get((g.id, m.id))
+        if st and not st.get("done"):
+            raise SettingsError("進行中のゲームがあります。hit か stand で決めてください。")
+        if not eco_take(g.id, m.id, bet):
+            raise SettingsError("所持金が足りません。")
+        deck = bj_new_deck()
+        st = {"deck": deck, "p": [deck.pop(), deck.pop()], "dl": [deck.pop(), deck.pop()], "bet": bet}
+        if bj_is_natural(st["p"]) or bj_is_natural(st["dl"]):
+            return await _web_bj_finish(g, m, st)   # 天然BJは即決着
+        _web_bj[(g.id, m.id)] = st
+        if len(_web_bj) > 3000:
+            for k in list(_web_bj)[:1000]:
+                _web_bj.pop(k, None)
+    msg = (f"🃏 ブラックジャック開始!(賭け金 {eco_fmt(g.id, bet)})\n"
+           f"あなた: {' '.join(st['p'])} ({bj_value(st['p'])}) / ディーラー: {st['dl'][0]} 🂠\n"
+           "hit(カードを引く)か stand(ここで勝負)を選んでください。")
+    return msg, {"me": _web_me(g, m.id), "bj": _web_bj_view(st, False), "eco": _eco_snapshot(g)}
+
+
+async def act_eco_bj_hit(g, m, d):
+    async with eco_lock(g.id, m.id):
+        st = _web_bj.get((g.id, m.id))
+        if not st or st.get("done"):
+            raise SettingsError("進行中のゲームがありません。賭け金を指定して「開始」を押してください。")
+        st["p"].append(st["deck"].pop())
+        pv = bj_value(st["p"])
+        if pv >= 21:      # バストまたは21: ここで決着
+            return await _web_bj_finish(g, m, st)
+    return f"🃏 引きました: {' '.join(st['p'])} (**{pv}**)", {"me": _web_me(g, m.id), "bj": _web_bj_view(st, False), "eco": _eco_snapshot(g)}
+
+
+async def act_eco_bj_stand(g, m, d):
+    async with eco_lock(g.id, m.id):
+        st = _web_bj.get((g.id, m.id))
+        if not st or st.get("done"):
+            raise SettingsError("進行中のゲームがありません。")
+        return await _web_bj_finish(g, m, st)
+
+
+async def act_eco_loan_repay(g, m, d):
+    """経済専用画面(/eco): 借金の返済(/loan repay と同じ)"""
+    raw = str(d.get("amount", "all")).strip().lower()
+    async with eco_lock(g.id, m.id):
+        rec = eco.user(g.id, m.id)
+        debt = int(rec.get("debt", 0) or 0)
+        if debt <= 0:
+            raise SettingsError("借金はありません。")
+        a = debt if raw in ("all", "", "full", "全額") else _num(d, "amount", 1, 10 ** 15, "返す金額")
+        pay = min(a, debt, rec["bal"])
+        if pay <= 0:
+            raise SettingsError(f"所持金が足りません。(所持金 {eco_fmt(g.id, rec['bal'])} / 借金 {eco_fmt(g.id, debt)})")
+        rec["bal"], rec["debt"] = rec["bal"] - pay, debt - pay
+        eco_tx(g.id, m.id, -pay, f"借金の返済(残り返済 {rec['debt']})")
+        eco.save()
+    left = f"残りの借金は **{eco_fmt(g.id, rec['debt'])}** です。" if rec["debt"] else "🎉 借金を完済しました!"
+    return f"✅ **{eco_fmt(g.id, pay)}** を返済しました。{left}", _web_data(g, m.id)
+
+
+async def act_eco_item_buy(g, m, d):
+    """経済専用画面(/eco): ショップでアイテムを購入(持ち物に追加。使用はDiscordの /item use)"""
+    iid = str(d.get("item", "")).strip().lower()
+    n = _num(d, "amount", 1, 1000, "個数")
+    try:
+        eco_item(g.id, iid)
+        msg = eco_buy(g, m, iid, n)
+    except SrvAdmError as e:
+        raise SettingsError(str(e))
+    eco_tx(g.id, m.id, 0, f"ショップ購入 {iid}×{n}(Web)")
+    return f"✅ {msg}\n使用はDiscordの `/item use` から。", _web_data(g, m.id)
+
+
+DASH_ACTIONS.update({"eco_me": act_eco_me, "eco_stock_buy": act_eco_stock_buy, "eco_stock_sell": act_eco_stock_sell,
+                     "eco_coinflip": act_eco_coinflip, "eco_roulette": act_eco_roulette,
+                     "eco_bj": act_eco_bj, "eco_bj_hit": act_eco_bj_hit, "eco_bj_stand": act_eco_bj_stand,
+                     "eco_loan_repay": act_eco_loan_repay, "eco_item_buy": act_eco_item_buy})
+
+
+# 経済専用画面(/eco)から使える操作(すべて「ログイン中の本人自身」に対する操作)
+ECO_WEB_HANDLERS = {"eco_me": act_eco_me, "eco_stock_buy": act_eco_stock_buy, "eco_stock_sell": act_eco_stock_sell,
+                    "eco_coinflip": act_eco_coinflip, "eco_roulette": act_eco_roulette,
+                    "eco_bj": act_eco_bj, "eco_bj_hit": act_eco_bj_hit, "eco_bj_stand": act_eco_bj_stand,
+                    "eco_loan_repay": act_eco_loan_repay, "eco_item_buy": act_eco_item_buy}
 
 
 # ───────────────────────── ショップ ─────────────────────────
@@ -11200,7 +11780,8 @@ economy_group = app_commands.Group(name="economy", description="経済機能の�
                        daily_amount="/daily の基本報酬", daily_streak_bonus="連続1日あたりの追加ボーナス", daily_streak_cap="ボーナスが増える最大日数",
                        work_min="/work の最小報酬", work_max="/work の最大報酬", work_cooldown="/work の間隔(秒)",
                        pay_enabled="/pay(送金)を許可する", pay_fee="送金手数料(%)", gamble_enabled="ギャンブルを許可する", max_bet="1回の賭け金の上限(0=無制限)",
-                       stock_enabled="仮想株(/stock)を許可する")
+                       stock_enabled="仮想株(/stock)を許可する", drop_enabled="コインドロップを有効にする", drop_rate="コインが落ちる確率(‰・1000分の1)",
+                       drop_min="ドロップの最小額", drop_max="ドロップの最大額", drop_cooldown="次に落ちるまでの最短間隔(秒)", rank_include_stocks="ランキングに株の評価額を含める(総資産)")
 @app_commands.checks.has_permissions(manage_guild=True)
 @lg_guard
 async def eco_config(interaction: discord.Interaction, symbol: Optional[app_commands.Range[str, 1, 10]] = None, name: Optional[app_commands.Range[str, 1, 10]] = None,
@@ -11210,12 +11791,16 @@ async def eco_config(interaction: discord.Interaction, symbol: Optional[app_comm
                      work_min: Optional[app_commands.Range[int, 0, 10 ** 9]] = None, work_max: Optional[app_commands.Range[int, 0, 10 ** 9]] = None,
                      work_cooldown: Optional[app_commands.Range[int, 0, 604800]] = None, pay_enabled: Optional[bool] = None,
                      pay_fee: Optional[app_commands.Range[int, 0, 100]] = None, gamble_enabled: Optional[bool] = None,
-                     max_bet: Optional[app_commands.Range[int, 0, ECO_MAX]] = None, stock_enabled: Optional[bool] = None):
+                     max_bet: Optional[app_commands.Range[int, 0, ECO_MAX]] = None, stock_enabled: Optional[bool] = None,
+                     drop_enabled: Optional[bool] = None, drop_rate: Optional[app_commands.Range[int, 0, 1000]] = None,
+                     drop_min: Optional[app_commands.Range[int, 0, 10 ** 9]] = None, drop_max: Optional[app_commands.Range[int, 0, 10 ** 9]] = None,
+                     drop_cooldown: Optional[app_commands.Range[int, 0, 86400]] = None, rank_include_stocks: Optional[bool] = None):
     g = interaction.guild
     c = eco.cfg(g.id)
     new = dict(symbol=symbol, name=name, start_balance=start_balance, debt_max=debt_max, daily_amount=daily_amount, daily_streak_bonus=daily_streak_bonus,
                daily_streak_cap=daily_streak_cap, work_min=work_min, work_max=work_max, work_cooldown=work_cooldown,
-               pay_enabled=pay_enabled, pay_fee=pay_fee, gamble_enabled=gamble_enabled, max_bet=max_bet, stock_enabled=stock_enabled)
+               pay_enabled=pay_enabled, pay_fee=pay_fee, gamble_enabled=gamble_enabled, max_bet=max_bet, stock_enabled=stock_enabled, drop_enabled=drop_enabled, drop_rate=drop_rate,
+               drop_min=drop_min, drop_max=drop_max, drop_cooldown=drop_cooldown, rank_include_stocks=rank_include_stocks)
     lo = new["work_min"] if new["work_min"] is not None else c["work_min"]
     hi = new["work_max"] if new["work_max"] is not None else c["work_max"]
     if lo > hi:
@@ -11231,7 +11816,9 @@ async def eco_config(interaction: discord.Interaction, symbol: Optional[app_comm
                                       f"/daily: {c['daily_amount']:,} + 連続ボーナス {c['daily_streak_bonus']:,}×最大{c['daily_streak_cap']}日\n"
                                       f"/work: {c['work_min']:,}〜{c['work_max']:,} / 間隔 {_fmt_seconds(c['work_cooldown'])}\n"
                                       f"送金: {onoff(c['pay_enabled'])}(手数料 {c['pay_fee']}%) / ギャンブル: {onoff(c['gamble_enabled'])}(上限 {c['max_bet']:,}・0=無制限)\n"
-                                      f"仮想株: {onoff(c.get('stock_enabled', True))} / アイテム: {len(eco.guild(g.id)['items'])}/{ECO_ITEM_MAX}種類")
+                                      f"仮想株: {onoff(c.get('stock_enabled', True))} / アイテム: {len(eco.guild(g.id)['items'])}/{ECO_ITEM_MAX}種類\n"
+                                      f"コインドロップ: {onoff(c.get('drop_enabled', True))}(確率 {c['drop_rate']}‰ = {c['drop_rate'] / 100:.1f}% / {c['drop_min']:,}〜{c['drop_max']:,} / 間隔 {_fmt_seconds(c['drop_cooldown'])})\n"
+                                      f"ランキング: 株込み(総資産) {onoff(c.get('rank_include_stocks', True))}")
     eco.save()
     await eph(interaction, "✅ 更新しました:\n" + "\n".join(changed))
 
@@ -11445,9 +12032,213 @@ async def eco_stock_remove(interaction: discord.Interaction, symbol: str):
     await eph(interaction, f"🗑️ 銘柄 `{sym}` {st.get('name', '')} を削除しました。(保有していた {holders}人の株も消えました)")
 
 
+@economy_group.command(name="role_add", description="ロールをコインで買えるようにします(/roles のロールショップに追加)")
+@app_commands.describe(role="売るロール", price="価格(コイン)", duration="期限(秒・0=永久。指定すると期限が来ると自動で外れます)",
+                       emoji="絵文字(省略で🏷️)", desc="説明(200文字まで)", stock="在庫(-1=無制限)")
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def eco_role_add(interaction: discord.Interaction, role: discord.Role, price: app_commands.Range[int, 1, ECO_MAX],
+                       duration: Optional[app_commands.Range[int, 0, 31536000]] = None,
+                       emoji: Optional[app_commands.Range[str, 1, 8]] = None,
+                       desc: Optional[app_commands.Range[str, 1, 200]] = None,
+                       stock: Optional[app_commands.Range[int, -1, 10 ** 6]] = None):
+    g = interaction.guild
+    if p := role_problem(interaction, role, True):
+        raise SrvAdmError(f"ロール: {p}")
+    items = eco.guild(g.id)["items"]
+    iid = next((k for k, it in items.items() if it.get("kind") == "role" and it.get("role") == role.id), None)
+    new = iid is None
+    if new:
+        if len(items) >= ECO_ITEM_MAX:
+            raise SrvAdmError(f"アイテムは{ECO_ITEM_MAX}種類までです。(/economy item_remove で不要なものを削除できます)")
+        iid = f"r{role.id}"          # ロールIDから必ず一意なIDを作る
+        it = copy.deepcopy(ECO_ITEM_DEFAULT)
+    else:
+        it = items[iid]
+    it["name"] = role.name[:30]
+    it["emoji"] = ((emoji or it.get("emoji") or "🏷️") or "🏷️")[:8]
+    it["desc"] = (desc if desc is not None else it.get("desc", ""))[:200]
+    it["price"], it["kind"], it["role"] = price, "role", role.id
+    it["duration"] = int(duration or 0)
+    if stock is not None:
+        it["stock"] = stock
+    items[iid] = it
+    eco.save()
+    await send_log(g, make_embed("🏷️ ロールショップに" + ("追加" if new else "変更"),
+                                 f"{eco_iname(it)} → {role.mention}\n価格 {eco_fmt(g.id, price)}"
+                                 + (f" / 期限 {_fmt_seconds(it['duration'])}" if it["duration"] else "")
+                                 + f"\n実行者: {interaction.user} (`{interaction.user.id}`)", GRAY))
+    await eph(interaction, f"✅ {eco_iname(it)} をロールショップに{'追加' if new else '更新'}しました。\n"
+                           f"価格 {eco_fmt(g.id, price)} / {role.mention}"
+                           + (f" / 期限 {_fmt_seconds(it['duration'])}(期限が来ると自動で外れます)" if it["duration"] else "")
+                           + "\nメンバーは `/roles` で購入できます。")
+
+
+def _eco_role_items(g: discord.Guild) -> list:
+    """ロールショップに出す商品(kind=role で価格1以上)を安い順で"""
+    rows = [(iid, it) for iid, it in eco.guild(g.id)["items"].items()
+            if it.get("kind") == "role" and it.get("price", 0) > 0]
+    rows.sort(key=lambda x: (x[1]["price"], x[0]))
+    return rows
+
+
+class RoleShopSelect(discord.ui.Select):
+    def __init__(self, view_items: list):
+        self.map = dict(view_items)
+        opts = []
+        for iid, it in view_items[:25]:
+            d = (f"{it['price']:,}コイン" + (" / 期限つき" if it.get("duration") else ""))[:100]
+            em = it.get("emoji") or "🏷️"
+            opts.append(discord.SelectOption(value=iid, label=(it["name"] or iid)[:100], description=d,
+                                             emoji=em if 1 <= len(em) <= 4 else None))
+        super().__init__(placeholder="購入するロールを選んでください", options=opts)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.chosen = self.values[0]
+        it = self.map[self.values[0]]
+        self.view.buy_btn.label = f"購入({it['price']:,}コイン)"
+        self.view.buy_btn.disabled = False
+        await interaction.response.edit_message(view=self.view)
+
+
+class RoleShopView(discord.ui.View):
+    def __init__(self, g: discord.Guild, view_items: list):
+        super().__init__(timeout=180)
+        self.g = g
+        self.map = dict(view_items)
+        self.chosen: Optional[str] = None
+        self.add_item(RoleShopSelect(view_items))
+        self.buy_btn = discord.ui.Button(label="↑ ロールを選んでください", style=discord.ButtonStyle.primary, disabled=True)
+        self.buy_btn.callback = self.buy
+        self.add_item(self.buy_btn)
+
+    async def buy(self, interaction: discord.Interaction):
+        iid = self.chosen
+        it = self.map.get(iid) if iid else None
+        role = self.g.get_role(it.get("role") or 0) if it else None
+        if it is None or role is None:
+            return await interaction.response.send_message("このロールは現在販売されていません。もう一度 `/roles` を実行してください。", ephemeral=True)
+        if it.get("duration", 0) <= 0 and role in interaction.user.roles:
+            return await interaction.response.send_message(f"あなたはすでに {role.mention} を持っています。", ephemeral=True)
+        try:
+            bought = eco_buy(self.g, interaction.user, iid, 1)
+            used = await eco_use(self.g, interaction.user, iid, 1)
+        except SrvAdmError as e:
+            return await interaction.response.send_message(f"❌ {e}", ephemeral=True)
+        await interaction.response.send_message(f"✅ {bought}\n{used}", ephemeral=True)
+
+
+@bot.tree.command(name="roles", description="コインで買えるロールの一覧を表示し、その場で購入できます")
+@app_commands.guild_only()
+@lg_guard
+async def roles_cmd(interaction: discord.Interaction):
+    g = interaction.guild
+    items = _eco_role_items(g)
+    if not items:
+        raise SrvAdmError("このサーバーには、まだ買えるロールがありません。サーバー管理者が `/economy role_add` で登録できます。")
+    lines = []
+    for iid, it in items[:25]:
+        lines.append(f"{eco_iname(it)} — **{eco_fmt(g.id, it['price'])}**"
+                     + (f"({_fmt_seconds(it['duration'])}の期限つき)" if it.get("duration") else ""))
+    e = make_embed("🏷️ ロールショップ", "\n".join(lines), BLUE)
+    e.set_footer(text="下のメニューでロールを選び、「購入」を押すと、その場でロールが付きます。所持金は /balance で確認できます。" if len(items) <= 25
+                  else f"全{len(items)}種類のうち上位25種類を表示しています。")
+    await interaction.response.send_message(embed=e, view=RoleShopView(g, items), ephemeral=True)
+
+
+# ───────────── コインドロップ(発言 → 一定確率でコインが落ちる → 先着1人がゲット。過疎対策も兼ねる) ─────────────
+
+_last_drop: dict = {}          # {サーバーID: 次に落ちてもよい時刻(monotonicでなくunix時刻)}
+
+
+class CoinDropView(discord.ui.View):
+    def __init__(self, g: discord.Guild, dropper: discord.Member, amount: int):
+        super().__init__(timeout=60)
+        self.g, self.dropper, self.amount = g, dropper, amount
+        self.claimed = False
+        self.message: Optional[discord.Message] = None
+
+    @discord.ui.button(label="コインを拾う", emoji="💰", style=discord.ButtonStyle.primary)
+    async def grab(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.claimed:
+            return await interaction.response.send_message("残念! 先を越されました…", ephemeral=True)
+        if interaction.user.bot or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.defer()
+        self.claimed = True
+        self.stop()
+        got = eco_change(self.g.id, interaction.user.id, self.amount)
+        eco_tx(self.g.id, interaction.user.id, got, f"コインドロップ(先着 / 落とした人 {self.dropper.id})")
+        for c in self.children:
+            c.disabled = True
+        e = make_embed("💰 コインを拾った!", f"**{interaction.user.mention}** が先着で **{eco_fmt(self.g.id, self.amount)}** をゲット!", GREEN)
+        await interaction.response.edit_message(embed=e, view=self)
+
+    async def on_timeout(self):
+        if self.claimed:
+            return
+        for c in self.children:
+            c.disabled = True
+        try:
+            await self.message.edit(embed=make_embed("💰 コイン", "誰も拾わないまま、コインは消えてしまいました…", GRAY), view=None)
+        except discord.HTTPException:
+            pass
+
+
+async def on_message_coin_drop(message: discord.Message) -> None:
+    g, m = message.guild, message.author
+    if g is None or m.bot or not isinstance(m, discord.Member):
+        return
+    if not isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+        return
+    c = eco.cfg(g.id)
+    if not c.get("drop_enabled", True) or c.get("drop_rate", 0) <= 0:
+        return
+    now = time.time()
+    if _last_drop.get(g.id, 0) > now:
+        return
+    if not can_post(message.channel, g.me):
+        return
+    if _eco_rng.random() * 1000 >= c["drop_rate"]:
+        return
+    amount = _eco_rng.randint(min(c["drop_min"], c["drop_max"]), max(c["drop_min"], c["drop_max"]))
+    _last_drop[g.id] = now + max(0, c["drop_cooldown"])
+    view = CoinDropView(g, m, amount)
+    e = make_embed("💰 コインが落ちた!", f"{m.mention} が **{eco_fmt(g.id, amount)}** を落とした!\n**先着1人** がゲット!(60秒で消えます)", YELLOW)
+    try:
+        view.message = await message.channel.send(embed=e, view=view)
+    except discord.HTTPException:
+        _last_drop[g.id] = 0
+
+
+@bot.tree.command(name="coindrop", description="コインをその場に落とします(先着1人がゲット。管理者向け)")
+@app_commands.guild_only()
+@app_commands.describe(amount="落とす金額(省略で設定値の範囲からランダム)", channel="落とすチャンネル(省略でこのチャンネル)")
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def coindrop_cmd(interaction: discord.Interaction, amount: Optional[app_commands.Range[int, 1, ECO_MAX]] = None,
+                       channel: Optional[discord.TextChannel] = None):
+    g = interaction.guild
+    ch = channel or interaction.channel
+    if not isinstance(ch, (discord.TextChannel, discord.Thread)):
+        raise SrvAdmError("テキストチャンネルに落としてください。")
+    if not can_post(ch, g.me):
+        raise SrvAdmError(f"BOTが #{ch.name} で発言できません。権限を確認してください。")
+    c = eco.cfg(g.id)
+    if amount is None:
+        amount = _eco_rng.randint(min(c["drop_min"], c["drop_max"]), max(c["drop_min"], c["drop_max"]))
+    view = CoinDropView(g, interaction.user, amount)
+    e = make_embed("💰 コインが落ちた!", f"{interaction.user.mention} が **{eco_fmt(g.id, amount)}** を落とした!\n**先着1人** がゲット!(60秒で消えます)", YELLOW)
+    try:
+        view.message = await ch.send(embed=e, view=view)
+    except discord.HTTPException:
+        raise SrvAdmError("コインを落とせませんでした。BOTの権限を確認してください。")
+    await eph(interaction, f"✅ {ch.mention} に {eco_fmt(g.id, amount)} を落としました。\n先着1人がゲットできます。")
+
+
 def economy_install() -> None:
     for cmd in (item_group, money_group, economy_group, loan_group, stock_group):
         bot.tree.add_command(cmd)
+    bot.add_listener(on_message_coin_drop, "on_message")
 
 
 # ───────────────────────── 固定メッセージ(sticky) ─────────────────────────
@@ -11663,25 +12454,32 @@ async def web_cmd(interaction: discord.Interaction):
         view=v, ephemeral=True)
 
 
-@bot.tree.command(name="economyweb", description="Webダッシュボードで経済機能の設定を開きます(サーバー管理者向け)")
+@bot.tree.command(name="economyweb", description="経済専用の画面(株の取引・ギャンブル・閲覧)をブラウザで開きます。設定不要・誰でも使えます")
 @app_commands.guild_only()
 @lg_guard
 async def economyweb_cmd(interaction: discord.Interaction):
-    if not _is_dash_admin(interaction.user):
-        return await interaction.response.send_message("❌ 経済の設定はサーバー管理者(サーバー管理権限)のみ変更できます。", ephemeral=True)
-    if not OAUTH_READY:
+    g = interaction.guild
+    if not getattr(bot, "web_runner", None):
         return await interaction.response.send_message(
-            "⚠️ Webダッシュボードは、このBOTでは有効になっていません。\n"
-            "BOTの管理者が `DISCORD_CLIENT_SECRET` と `WEB_URL` を設定し、Developer Portal の OAuth2 > Redirects に "
-            f"`{DASH_BASE or 'https://(公開URL)'}/callback` を登録すると使えます。設定は `/economy config` などのスラッシュコマンドでも変更できます。", ephemeral=True)
+            "⚠️ このBOTではWebサーバーが動いていません。BOTの管理者が環境変数 `PORT` か `WEB_URL` を設定すると使えます。", ephemeral=True)
+    url = _eco_url(g.id, interaction.user.id)
+    if not url:
+        return await interaction.response.send_message(
+            "⚠️ 公開URLが分からないため、リンクを作れませんでした。BOTの管理者が環境変数 `WEB_URL` を設定すると、どこからでも開けるURLが作れます。"
+            f"(サーバーのローカルからなら `http://サーバーのIP:{PORT or 8080}/eco` でも開けます)", ephemeral=True)
     v = discord.ui.View()
-    v.add_item(discord.ui.Button(label="経済の設定を開く", emoji="💰", style=discord.ButtonStyle.link,
-                                 url=dash_url(interaction.guild.id) + "&tab=eco"))
+    v.add_item(discord.ui.Button(label="経済ターミナルを開く", emoji="📈", style=discord.ButtonStyle.link, url=url))
+    extra = ""
+    if OAUTH_READY and _is_dash_admin(interaction.user):
+        v.add_item(discord.ui.Button(label="設定ダッシュボード(管理者)", emoji="⚙️", style=discord.ButtonStyle.link, url=dash_url(g.id) + "&tab=eco"))
+        extra = "\n・⚙️ 設定ダッシュボード: サーバー管理者用(経済の設定・所持金の操作)"
     await interaction.response.send_message(
-        "💰 ブラウザで経済機能の設定ができます。\n"
-        "・通貨の記号・名前、初期所持金、借金の上限\n・/daily /work の報酬、送金・ギャンブル・仮想株のON/OFFと上限\n"
-        "・サーバーの所持金ランキング・株市場・アイテム一覧の確認\n"
-        "アイテムの追加・編集はDiscordの `/economy item_set` で行います。", view=v, ephemeral=True)
+        "📈 経済専用の画面を開きます。**追加の設定は不要**で、誰でも使えます。\n"
+        "・タブで切り替え: 市場 / 取引 / 資産 / ギャンブル / ショップ\n"
+        "・株の売買・コインフリップ・ルーレット・ブラックジャック・借金の返済・ショップ購入が、ブラウザから自分のアカウントでできます\n"
+        "・市場の閲覧なら、ログインなしでも `/(公開URL)/eco` を開くだけで見られます\n"
+        "・🔒 このリンクはあなた専用(12時間有効)。再発行はもう一度このコマンドを"
+        + extra, view=v, ephemeral=True)
 
 
 def web_available() -> bool:
@@ -11773,7 +12571,7 @@ async def help_cmd(interaction: discord.Interaction):
     e.add_field(name="📈 レベル", value="`/rank [user]` ランクカード / `/ranking` ランキング(レベル・メッセージ数・VC滞在時間・ポイント)\n管理者: `/level` `/xp` `/stats` の `add` `remove` `set` `transfer` / `/level migrate`(移行ガイド) / `/level import`(MEE6・Amari自動取得・CSV/JSON、確認後に取り込み) / `/level undo_import` / `/level config`(獲得XP・VCのXP(`vc_*`)・通知文のほか、`copy_channel` でレベルアップ通知を別のチャンネルにもコピー送信、`copy_only` でコピー先のみに通知)", inline=False)
     e.add_field(name="📌 固定メッセージ", value="`/sticky set` 入力フォームで設定(常にチャンネルの一番下に表示) / `/sticky remove` 解除 / `/sticky list` 一覧\n管理者向け(「メッセージの管理」権限が必要)", inline=False)
     e.add_field(name="📜 ログ", value="`/manage log` 管理ログ(再起動後も保存) / `/manage ticket_history` チケット対応履歴\n`/web` からブラウザでも操作できます(サーバー管理ページ)", inline=False)
-    e.add_field(name="💰 経済(コイン)", value="`/economyinfo` 経済機能のすべてを一覧 / `/balance` `/daily` `/work` `/moneytop` `/pay` `/profile` `/shop`\n🏦 `/loan borrow|repay|status` 借金(初期所持金100・上限は設定で変更可)\n📈 `/stock` `/stock buy|sell|portfolio` 仮想株の売買(価格は1分ごとに変動)\n🎲 `/coinflip` `/blackjack`(1人・マルチ) `/roulette` `/rps`(ユーザー対戦)\n🎒 `/item buy|sell|use|inventory|give|cooldowns|duration|info`\n管理者: `/money plus|minus|set|history` / `/money migrate`(他BOTからの移行ガイド) `/money import` / `/economy config|item_set|item_remove|item_list|item_import|loot_add|loot_clear|stock_add|stock_remove` / `/economyweb`(Webで経済の設定)\n所持金ランキングは `/moneytop`(`/ranking` からも選べます)", inline=False)
+    e.add_field(name="💰 経済(コイン)", value="`/economyinfo` 経済機能のすべてを一覧 / `/balance` `/daily` `/work` `/moneytop` `/pay` `/profile` `/shop`\n🏷️ `/roles` ロールショップ(コインでロールを購入・期限つきにもできます)\n💰 発言でコインがドロップ(先着1人がゲット・確率は設定可)\n🏦 `/loan borrow|repay|status` 借金(初期所持金100・上限は設定で変更可)\n📈 `/stock` `/stock buy|sell|portfolio` 仮想株の売買(価格は1分ごとに変動)\n🎲 `/coinflip` `/blackjack`(1人・マルチ) `/roulette` `/rps`(ユーザー対戦)\n🎒 `/item buy|sell|use|inventory|give|cooldowns|duration|info`\n🌐 `/economyweb` 経済専用画面(タブ式・取引所風。設定不要・誰でも株の売買・ギャンブル・返済・ショップ購入。設定変更と所持金の操作はサーバー管理者)\n管理者: `/money plus|minus|set|history` / `/coindrop`(コインを手動でドロップ) / `/money migrate`(他BOTからの移行ガイド) `/money import` / `/economy config|item_set|item_remove|item_list|item_import|loot_add|loot_clear|role_add|stock_add|stock_remove`\n所持金ランキングは `/moneytop`(`/ranking` からも選べます)。既定で株込みの「総資産」で比較(`/economy config rank_include_stocks:` で切替)", inline=False)
     e.add_field(name="ℹ️ 情報", value="`/about` できることの説明 / `/userinfo` `/serverinfo` `/avatar`", inline=False)
     await interaction.response.send_message(embed=e, ephemeral=True)
 

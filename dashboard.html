@@ -251,11 +251,15 @@ const TICKET = [
 ];
 const ECO = [
   {t: "通貨", d: "コインの見た目と名前です。(/economyinfo などの表示に使われます)", f: [{k: "symbol", t: "txt", l: "記号(絵文字など)", max: 10, half: 1}, {k: "name", t: "txt", l: "名前", max: 10, half: 1}]},
-  {t: "所持金と借金", f: [N("start_balance", "初期所持金", 0, 1000000000, "初めて経済を使う人に付く所持金です。(既定100)"), N("debt_max", "借金の上限", 0, 1000000000, "`/loan borrow` で借りられる上限。(既定2000・0=借金禁止)")]},
+  {t: "所持金と借金", f: [N("start_balance", "初期所持金", 0, 1000000000, "初めて経済を使う人に付く所持金です。(既定100)"), N("debt_max", "借金の上限", 0, 1000000000, "`/loan borrow` で借りられる上限。(既定2000・0=借金禁止)"),
+    C("rank_include_stocks", "ランキングに株の評価額を含める(総資産)", "既定ON。オフにすると所持金(コイン)だけでランキングします。")]},
   {t: "デイリー(/daily)", f: [N("daily_amount", "基本報酬", 0, 1000000000), N("daily_streak_bonus", "連続ボーナス(1日あたり)", 0, 1000000000), N("daily_streak_cap", "ボーナスが増える最大日数", 0, 3650)]},
-  {t: "お仕事(/work)", f: [N("work_min", "最小報酬", 0, 1000000000), N("work_max", "最大報酬", 0, 1000000000, "最小報酬を上回る値にしてください。"), N("work_cooldown", "間隔(秒)", 0, 604800, "3600で1時間に1回。")]},
+  {t: "お仕事(/work)", f: [N("work_min", "最小報酬", 0, 1000000000), N("work_max", "最大報酬", 0, 1000000000, "最小報酬を上回る値にしてください。クイズに正答するとこの範囲で報酬。失敗は半額。"), N("work_cooldown", "間隔(秒)", 0, 604800, "既定180(3分ごと)。")]},
   {t: "送金・ギャンブル・仮想株", f: [C("pay_enabled", "送金(/pay)を許可する"), N("pay_fee", "送金手数料(%)", 0, 100), C("gamble_enabled", "ギャンブルを許可する"),
     N("max_bet", "1回の賭け金の上限", 0, 1000000000000000, "0=無制限。"), C("stock_enabled", "仮想株(/stock)を許可する")]},
+  {t: "コインドロップ(過疎対策)", d: "誰かが発言すると、一定確率でコインが落ちます。先着1人がボタンでゲット。チャットが活発になります。", f: [C("drop_enabled", "コインドロップを有効にする"),
+    N("drop_rate", "落ちる確率(‰・1000分の1)", 0, 1000, "5で0.5%。発言1回ごとの確率です。"), N("drop_cooldown", "次に落ちるまでの最短間隔(秒)", 0, 86400, "既定300(5分)。全サーバーで共通の間隔です。"),
+    N("drop_min", "最小額", 0, 1000000000, "既定250。"), N("drop_max", "最大額", 0, 1000000000, "既定350。最小〜最大の間のランダムな金額が落ちます(既定で平均300コイン)。")]},
 ];
 
 /* ---- 画面 ---- */
@@ -328,21 +332,188 @@ function renderTicket(snap) {
     el("div", {class: "acts"}, el("button", {type: "button", class: "btn sub", text: "パネルを再設置", onclick: () => saveCard("ticket", {repost: true})}))));
   $("#tab-ticket").replaceChildren(f.el);
 }
-function renderEco(snap) {
-  const e = snap.eco || {}, f = form(ECO, e.cfg || {}, "eco"); S.forms.eco = () => f.get();
+function ecoMeCard(me) {
+  const num = v => Number(v || 0).toLocaleString("ja-JP");
+  const card = el("div", {class: "card"}, el("h2", {text: "自分の経済"}));
+  if (!me) { card.append(el("p", {class: "desc", text: "読み込み中…"})); return card; }
+  card.append(el("p", {class: "desc", text: `残高: ${num(me.bal)}` + (me.debt ? ` / 借金: ${num(me.debt)}(/loan borrow で借りて、収入で自動返済)` : "") + ` / 株の評価合計: ${num(me.total)}`}),
+    el("p", {class: "hint", text: "じゃんけん(/rps)・マルチのブラックジャック・アイテムのやりとり(/item give・/pay)は、Discordで行えます。"}));
+  (me.holdings || []).forEach(h => card.append(el("div", {class: "rr2"},
+    el("span", {text: `${h.sym} ${h.name} — ${num(h.n)}株(平均取得 ${num(h.cost)}) 評価 ${num(h.value)}(${h.pnl >= 0 ? "+" : ""}${num(h.pnl)})`}),
+    el("button", {type: "button", class: "btn sub", text: "全売却", onclick: () => ecoOp({action: "eco_stock_sell", symbol: h.sym, shares: "all"}, `保有中の ${h.sym} をすべて売却します。よろしいですか?`)}))));
+  if (!me.holdings || !me.holdings.length) card.append(el("p", {class: "desc", text: "保有株はありません。下の「株を買う」から購入できます。"}));
+  return card;
+}
+function ecoTradeCard(e) {
+  const sel = selectBox((e.stocks || []).map(s => ({v: s.sym, t: `${s.sym} ${s.name} (${s.price.toLocaleString("ja-JP")})`})), "", "(銘柄を選ぶ)");
+  const amt = el("input", {type: "number", min: 1, style: "width:120px", placeholder: "株数"});
+  return el("div", {class: "card"}, el("h2", {text: "株を買う"}), el("p", {class: "desc", text: "株数を入れて銘柄を選び、「買う」を押すと、その時点の価格で購入します。売却は「自分の経済」の全売却ボタンから。"}),
+    el("div", {class: "acts", style: "margin:0"}, amt, sel,
+      el("button", {type: "button", class: "btn", text: "買う", onclick: () => {
+        const n = parseInt(amt.value, 10);
+        if (!sel.value) return setStatus("銘柄を選んでください。", "err");
+        if (!n || n < 1) return setStatus("株数を入力してください。", "err");
+        ecoOp({action: "eco_stock_buy", symbol: sel.value, shares: n});
+      }})));
+}
+function ecoGamesCard() {
+  const bj = S.ecoBj;
+  const num = v => Number(v || 0).toLocaleString("ja-JP");
+  const cfAmt = el("input", {type: "number", min: 1, style: "width:120px", placeholder: "賭け金"});
+  const flip = side => { const n = parseInt(cfAmt.value, 10); if (!n || n < 1) return setStatus("賭け金を入力してください。", "err"); ecoOp({action: "eco_coinflip", amount: n, side}); };
+  const rtAmt = el("input", {type: "number", min: 1, style: "width:120px", placeholder: "賭け金"});
+  const rtSel = selectBox([{v: "red", t: "🔴 赤 (2倍)"}, {v: "black", t: "⚫ 黒 (2倍)"}, {v: "number", t: "数字ぴったり (36倍)"}], "red", null);
+  const rtNum = el("input", {type: "number", min: 0, max: 36, style: "width:90px", placeholder: "0-36"});
+  const rtNumWrap = el("span", {style: "display:none"}, rtNum);
+  rtSel.onchange = () => rtNumWrap.style.display = rtSel.value === "number" ? "" : "none";
+  const bjAmt = el("input", {type: "number", min: 1, style: "width:120px", placeholder: "賭け金", value: bj ? bj.bet : ""});
+  const bjArea = el("div");
+  const playing = bj && bj.status === "playing";
+  const drawBj = () => {
+    if (!bj) { bjArea.replaceChildren(); return; }
+    const done = bj.status === "done";
+    bjArea.replaceChildren(el("p", {class: "desc", text: done
+      ? `あなた: ${bj.p.join(" ")} (${bj.pv}) / ディーラー: ${bj.dl.join(" ")} (${bj.dv})`
+      : `あなた: ${bj.p.join(" ")} (${bj.pv}) / ディーラー: ${bj.dl.join(" ")} 🂠` + (bj.pv === 21 ? " — 21! stand で勝負!" : "")}));
+  };
+  drawBj();
+  const acts = el("div", {class: "acts"}, bjAmt);
+  if (playing) {
+    acts.append(el("button", {type: "button", class: "btn sub", text: "🃏 hit(引く)", onclick: () => ecoOp({action: "eco_bj_hit"})}),
+                el("button", {type: "button", class: "btn sub", text: "✋ stand(勝負)", onclick: () => ecoOp({action: "eco_bj_stand"})}));
+  } else {
+    acts.append(el("button", {type: "button", class: "btn", text: "ブラックジャック開始", onclick: () => { const n = parseInt(bjAmt.value, 10); if (!n || n < 1) return setStatus("賭け金を入力してください。", "err"); ecoOp({action: "eco_bj", bet: n}); }}));
+  }
+  return el("div", {class: "card"}, el("h2", {text: "ギャンブル"}), el("p", {class: "desc", text: "賭け金はすべて自分の所持金から。0になったら /loan borrow で借りられます(収入で自動返済)。じゃんけん対戦はDiscordの /rps で。"}),
+    el("p", {class: "l", text: "🪙 コインフリップ(2倍)"}), el("div", {class: "acts", style: "margin:0"}, cfAmt,
+      el("button", {type: "button", class: "btn sub", text: "表", onclick: () => flip("heads")}), el("button", {type: "button", class: "btn sub", text: "裏", onclick: () => flip("tails")})),
+    el("p", {class: "l", text: "🎯 ルーレット"}), el("div", {class: "acts", style: "margin:0"}, rtAmt, rtSel, rtNumWrap,
+      el("button", {type: "button", class: "btn sub", text: "回す", onclick: () => { const n = parseInt(rtAmt.value, 10); if (!n || n < 1) return setStatus("賭け金を入力してください。", "err"); const b = {action: "eco_roulette", amount: n, choice: rtSel.value}; if (rtSel.value === "number") { const k = parseInt(rtNum.value, 10); if (isNaN(k) || k < 0 || k > 36) return setStatus("0〜36の数字を入力してください。", "err"); b.number = k; } ecoOp(b); }})),
+    el("p", {class: "l", text: "🃏 ブラックジャック(1人用)"}), acts, bjArea);
+}
+function ecoDyn(snap) {
+  const box = el("div");
+  box.append(ecoMeCard(S.ecoMe), ecoTradeCard(snap.eco || {}), ecoGamesCard(), ...ecoCards(snap.eco || {}));
+  return box;
+}
+async function ecoOp(body, ask) {   // Webから自分のアカウントで経済を操作(株の売買・ギャンブルなど)
+  if (ask && !confirm(ask)) return;
+  setStatus("処理中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", body)); if (!res) return;
+    const r = await res.json();
+    if (r.data && r.data.eco) S.snap.eco = r.data.eco;
+    if (r.data && r.data.me) S.ecoMe = r.data.me;
+    S.ecoBj = r.data && r.data.bj ? r.data.bj : null;
+    ecoRedraw();
+    setStatus(r.msg, "ok");
+    if (ecoQuery) ecoSearch(ecoQuery);
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+async function ecoRefreshMe() {   // 自分の残高・保有株・進行中のブラックジャックを取得
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", {action: "eco_me"})); if (!res) return;
+    const r = await res.json();
+    S.ecoMe = r.data ? r.data.me : null;
+    S.ecoBj = r.data && r.data.bj ? r.data.bj : null;
+    ecoRedraw();
+  } catch (e) { /* 無視 */ }
+}
+async function ecoRefreshMarket() {   // 株市場の「更新」ボタン: 最新の価格を取り直す
+  setStatus("更新中…");
+  try {
+    const res = await api("/api/guild/" + encodeURIComponent(S.snap.gid));
+    if (res.status === 401) return expired();
+    if (!res.ok) return setStatus("更新できませんでした。", "err");
+    const snap = await res.json();
+    S.snap.eco = snap.eco;
+    renderEco(S.snap);
+    ecoRefreshMe();
+    setStatus("株市場を更新しました。", "ok");
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+function ecoCards(e) {
   const pct = v => (v > 0 ? "🟢 +" : v < 0 ? "🔴 " : "⚪ ") + Number(v || 0).toFixed(2) + "%";
   const num = v => Number(v || 0).toLocaleString("ja-JP");
-  const mk = el("div", {class: "card"}, el("h2", {text: "株市場(閲覧のみ)"}), el("p", {class: "desc", text: "メンバーはDiscordの /stock で売買します。価格は1分ごとに変動します。銘柄の追加・削除は /economy stock_add / stock_remove で行えます。"}));
+  const refresh = el("button", {type: "button", class: "btn sub", text: "🔄 更新", onclick: () => ecoRefreshMarket()});
+  const mk = el("div", {class: "card"}, el("h2", {text: "株市場"}), el("p", {class: "desc", text: "価格は1分ごとに変動します。変化率は本日の始値からの割合。売買は上の「自分の経済」「株を買う」から。銘柄の追加・削除は /economy stock_add / stock_remove で行えます。"}), el("div", {class: "acts", style: "margin:0 0 6px"}, refresh));
   (e.stocks || []).forEach(s => mk.append(el("div", {class: "rr2"}, el("span", {text: `${s.sym} ${s.name} — ${num(s.price)}`}), el("span", {text: pct(s.chg)}))));
   if (!e.stocks || !e.stocks.length) mk.append(el("p", {class: "desc", text: "銘柄がありません。"}));
-  const top = el("div", {class: "card"}, el("h2", {text: "所持金ランキング(上位10)"}));
+  const top = el("div", {class: "card"}, el("h2", {text: e.cfg && e.cfg.rank_include_stocks ? "総資産ランキング(上位10・株込み)" : "所持金ランキング(上位10)"}));
   (e.top || []).forEach((u, i) => top.append(el("div", {class: "rr2"}, el("span", {text: `${i + 1}. ${u.name}`}), el("span", {text: num(u.bal)}))));
   if (!e.top || !e.top.length) top.append(el("p", {class: "desc", text: "まだデータがありません。"}));
   const items = el("div", {class: "card"}, el("h2", {text: `アイテム(${(e.items || []).length}種類)`}));
   (e.items || []).forEach(it => items.append(el("div", {class: "rr2"}, el("span", {text: `${it.emoji} ${it.name}`}), el("span", {text: `購入 ${num(it.price)} / 売却 ${num(it.sell)}`}))));
   if (!e.items || !e.items.length) items.append(el("p", {class: "desc", text: "ありません。アイテムの追加・編集・削除は、Discordの /economy item_set / item_remove で行えます。"}));
-  f.el.append(mk, top, items);
+  return [mk, top, items];
+}
+function ecoInfoCard() {
+  return el("div", {class: "card"}, el("h2", {text: "経済"}), el("p", {class: "desc", text: "株の売買・ギャンブル・市場やランキングの閲覧が、メンバーのだれでもできます(操作はすべて自分のアカウントに対して)。設定の変更や他人の所持金の操作は、サーバー管理者だけが行えます。"}));
+}
+function ecoRedraw() {   // 経済タブの動的部分だけを描き直す(管理者の設定フォームは消さない)
+  if (!S.snap) return;
+  if (S.snap.eco_only) $("#tab-eco").replaceChildren(el("div", {}, ecoInfoCard(), ecoDyn(S.snap)));
+  else if (S.ecoDyn) S.ecoDyn.replaceChildren(ecoOpsCard(), ecoDyn(S.snap));
+}
+function renderEco(snap) {
+  const e = snap.eco || {};
+  if (snap.eco_only) {   // サーバー管理者以外: 閲覧とセルフ操作のみ(設定フォームは出さない)
+    $("#tab-eco").replaceChildren(el("div", {}, ecoInfoCard(), ecoDyn(snap)));
+    S.forms.eco = () => ({});
+    return;
+  }
+  const f = form(ECO, e.cfg || {}, "eco"); S.forms.eco = () => f.get();
+  S.ecoDyn = el("div");
+  S.ecoDyn.replaceChildren(ecoOpsCard(), ecoDyn(snap));
+  f.el.append(S.ecoDyn);
   $("#tab-eco").replaceChildren(f.el);
+}
+let ecoQuery = "";
+async function ecoAct(body) {   // 所持金の操作(終わったら一覧と検索結果を更新)
+  setStatus("処理中…");
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", body)); if (!res) return;
+    const r = await res.json();
+    renderAll(r.snap);
+    setStatus(r.msg, "ok");
+    if (ecoQuery) ecoSearch(ecoQuery);
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+async function ecoSearch(q) {
+  try {
+    const res = await handle(await post("/api/guild/" + S.snap.gid + "/do", {action: "eco_money_search", q})); if (!res) return;
+    const r = await res.json();
+    if (!S.ecoRes) return;
+    const rows = r.data || [];
+    S.ecoRes.replaceChildren(...rows.map(ecoRow));
+    if (!rows.length) S.ecoRes.append(el("p", {class: "desc", text: "見つかりませんでした。"}));
+  } catch (e) { setStatus("通信に失敗しました。", "err"); }
+}
+function ecoRow(row) {
+  const card = el("div", {class: "card"});
+  const amt = el("input", {type: "number", min: 1, style: "width:140px", placeholder: "金額"});
+  const go = (mode, ask) => {
+    const n = parseInt(amt.value, 10);
+    if (!n || n < 1) return setStatus("金額を入力してください。", "err");
+    if (ask && !confirm(ask)) return;
+    ecoAct({action: "eco_money", uid: row.id, amount: n, mode});
+  };
+  card.append(el("h2", {text: row.name}),
+    el("p", {class: "desc", text: "残高: " + Number(row.bal || 0).toLocaleString("ja-JP") + (row.debt ? " / 借金: " + Number(row.debt).toLocaleString("ja-JP") : "") + " / ID: " + row.id}),
+    el("div", {class: "acts", style: "margin:0"}, amt,
+      el("button", {type: "button", class: "btn sub", text: "＋ 付与", onclick: () => go("plus")}),
+      el("button", {type: "button", class: "btn sub", text: "－ 減額", onclick: () => go("minus", "このメンバーの所持金を " + amt.value + " 減らします。よろしいですか?")}),
+      el("button", {type: "button", class: "btn sub", text: "金額に設定", onclick: () => go("set", "このメンバーの所持金を " + amt.value + " に設定します。よろしいですか?")}))); 
+  return card;
+}
+function ecoOpsCard() {
+  const q = el("input", {type: "text", maxlength: 100, placeholder: "名前またはユーザーID", style: "flex:1"});
+  const go = () => { const v = q.value.trim(); if (!v) return setStatus("名前かユーザーIDを入力してください。", "err"); ecoQuery = v; ecoSearch(v); };
+  q.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); go(); } };
+  S.ecoRes = el("div");
+  return el("div", {class: "card"}, el("h2", {text: "所持金の操作"}),
+    el("p", {class: "desc", text: "メンバーを検索して、所持金の付与・減額・設定ができます(/money コマンドと同じ。操作は管理ログに記録されます)。"}),
+    el("div", {class: "acts", style: "margin:0"}, q, el("button", {type: "button", class: "btn", text: "検索", onclick: go})), S.ecoRes);
 }
 function roleEditor(p, snap) {   // p が null なら新規
   const ro = nm(snap.roles, "@ "), rows = el("div"), ch = p ? null : selectBox(nm(snap.channels, "# "), "", "(選んでください)");
@@ -376,7 +547,11 @@ function renderRoles(snap) {
   root.append(nw); $("#tab-role").replaceChildren(root);
 }
 function renderAll(snap) {
-  S.snap = snap; renderGeneral(snap); renderVerify(snap); renderTicket(snap); renderEco(snap); renderRoles(snap); renderMember(snap); S.dirty = {};
+  S.snap = snap; S.ecoMe = null; S.ecoBj = null; ecoQuery = "";
+  if (snap.eco_only) {   // 閲覧専用(サーバー管理者以外): 経済タブだけを描画
+    renderEco(snap); S.dirty = {}; return;
+  }
+  renderGeneral(snap); renderVerify(snap); renderTicket(snap); renderEco(snap); renderRoles(snap); renderMember(snap); S.dirty = {};
 }
 
 
@@ -477,10 +652,14 @@ $("#saveBtn").onclick = async () => { $("#saveBtn").disabled = true; try { await
 /* ---- タブ・起動 ---- */
 const TABS = [["basic", "基本"], ["mod", "荒らし対策"], ["verify", "認証"], ["ticket", "チケット"], ["eco", "経済"], ["role", "ロールパネル"], ["member", "メンバー"]];
 function showTab(id) {
+  if (S.snap && S.snap.eco_only) id = "eco";   // 閲覧専用(管理者以外)は経済タブだけ
   S.tab = id;
   TABS.forEach(([k]) => { $("#tab-" + k).classList.toggle("hidden", k !== id); });
-  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.k === id)));
-  $("#saveBtn").classList.toggle("hidden", id === "role" || id === "member");
+  document.querySelectorAll("#tabs button").forEach(b => {
+    b.setAttribute("aria-selected", String(b.dataset.k === id));
+    b.classList.toggle("hidden", !!S.snap && !!S.snap.eco_only && b.dataset.k !== "eco");
+  });
+  $("#saveBtn").classList.toggle("hidden", id === "role" || id === "member" || !!(S.snap && S.snap.eco_only));
   $("#saveBtn").textContent = id === "verify" ? "認証を保存して反映" : id === "ticket" ? "チケットを保存して反映" : "保存";
 }
 function show(id) { ["vLoading", "vServers", "vApp"].forEach(v => $("#" + v).classList.toggle("hidden", v !== id)); $("#tabs").classList.toggle("hidden", id !== "vApp"); $("#savebar").classList.toggle("hidden", id !== "vApp"); }
@@ -515,19 +694,22 @@ async function loadGuild(gid) {
   try {
     const res = await api("/api/guild/" + encodeURIComponent(gid));
     if (res.status === 401) return toLogin(gid);
-    if (res.status === 403 || res.status === 404) return renderServers("このサーバーを管理する権限がありません。(BOTが参加していて、あなたが管理者・サーバー管理権限を持つサーバーだけ開けます)");
+    if (res.status === 403 || res.status === 404) return renderServers("このサーバーを表示する権限がありません。(BOTが参加していて、あなたがそのサーバーのメンバーである必要があります)");
     if (!res.ok) return setStatus("設定を読み込めませんでした(" + res.status + ")", "err");
     S.dirty = {}; notice(""); renderAll(await res.json());
     const tb = new URLSearchParams(location.search).get("tab");   // /economyweb からの ?tab=eco に対応
     if (tb && TABS.some(([k]) => k === tb)) S.tab = tb;
-    $("#title").textContent = "設定 — " + gname(gid); show("vApp"); showTab(S.tab); setStatus("");
+    if (S.snap.eco_only) S.tab = "eco";
+    $("#title").textContent = (S.snap.eco_only ? "経済 — " : "設定 — ") + (gname(gid) || S.snap.name || "");
+    show("vApp"); showTab(S.tab); setStatus("");
+    if (S.snap.eco) ecoRefreshMe();   // 自分の残高・保有株を取得
   } catch (e) { setStatus("通信に失敗しました。", "err"); }
 }
-async function route() {   // URLの ?g=サーバーID があれば、そのサーバーの画面を直接開く(/web から入った場合)
+async function route() {   // URLの ?g=サーバーID があれば、そのサーバーの画面を直接開く(/web・/economyweb から入った場合)。開けるかどうかはサーバー側で判定
   const want = new URLSearchParams(location.search).get("g") || "";
-  if (want && S.guilds.some(g => g.id === want)) return loadGuild(want);
-  if (!want && S.guilds.length === 1) return loadGuild(S.guilds[0].id);
-  renderServers(want ? "指定されたサーバーを管理する権限がありません。" : "");
+  if (want) return loadGuild(want);
+  if (S.guilds.length === 1) return loadGuild(S.guilds[0].id);
+  renderServers("");
 }
 async function boot() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => el("button", {type: "button", role: "tab", "data-k": k, text: l, onclick: () => showTab(k)})));

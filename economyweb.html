@@ -63,6 +63,16 @@ input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 
 .hold span{min-width:0;overflow-wrap:anywhere;font-size:13.5px}
 .msg{font-size:13.5px;margin:8px 0 0}
 .msg.ok{color:var(--up)}.msg.ng{color:var(--down)}
+.res{margin-top:10px;font-family:var(--mono);font-weight:800;font-size:22px;display:flex;align-items:center;gap:14px;justify-content:center;border-radius:8px;padding:12px;background:var(--panel2);border:1px solid var(--line2)}
+.res.win{color:var(--up);border-color:var(--up);background:rgba(14,159,110,.07)}
+.res.lose{color:var(--down);border-color:var(--down);background:rgba(224,53,63,.06)}
+.res.flat{color:var(--mute)}
+.res .amt{font-size:26px}
+.res .sub2{font-size:12px;color:var(--mute);font-weight:600;font-family:var(--font)}
+.res .dot{width:12px;height:12px}
+@keyframes pop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+.res.pop{animation:pop .25s ease-out}
+.rankme{font-size:13px;font-weight:700;margin:6px 0 0;color:var(--gold)}
 .hint{color:var(--dim);font-size:12px;margin:8px 0 0;line-height:1.6}
 .rank td:first-child{color:var(--dim);width:34px;font-family:var(--mono)}
 footer{max-width:1080px;margin:18px auto 0;padding:0 16px;color:var(--dim);font-size:12px}
@@ -71,6 +81,7 @@ footer{max-width:1080px;margin:18px auto 0;padding:0 16px;color:var(--dim);font-
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
 .dot.u{background:var(--up)}.dot.d{background:var(--down)}
 #load{color:var(--mute);text-align:center;padding:40px 0}
+.hidden{display:none!important}
 svg.ic{width:15px;height:15px;flex:none;vertical-align:-2px}
 </style>
 </head>
@@ -222,6 +233,7 @@ function drawAssets() {
   const ranks = (e.top || []).map((u, i) => `<tr class="rank"><td>${i + 1}</td><td>${esc(u.name)}</td><td class="px" style="text-align:right">${num(u.bal)}</td></tr>`).join("");
   $("#t-assets").innerHTML =
     `<div class="card"><h2>${icon("i-coin")}資産</h2>` +
+    (me && me.rank ? `<p class="rankme">順位: ${num(me.rank)}位(総資産)</p>` : "") +
     `<div class="order"><div><span class="l">残高</span><p class="big ${me && me.debt > 0 ? "down" : "up"}">${me ? num(me.bal) : "—"}</p></div>` +
     `<div><span class="l">株の評価合計</span><p class="big">${me ? num(me.total) : "—"}</p></div></div>` +
     (me && me.debt > 0 ? `<p class="msg ng">${icon("i-warn")} 借金 ${num(me.debt)}(上限 ${num(e.cfg.debt_max)}) — 収入(/daily・/work・コインドロップ)で自動返済されます。</p>
@@ -229,7 +241,7 @@ function drawAssets() {
       <button class="btn sub" id="rpAll">全額返済</button><button class="btn sub" id="rpGo">返済</button></div>` : "") +
     `<p class="hint">借金があれば、入ってきたコインから自動で返済に回ります。</p></div>` +
     `<div class="card"><h2>保有株</h2><table><tr><th>銘柄</th><th style="text-align:right">数量</th><th style="text-align:right">平均取得</th><th style="text-align:right">評価</th><th style="text-align:right">損益</th><th></th></tr>${holds}</table>${!holds ? "<p class='hint'>保有株はありません。</p>" : ""}</div>` +
-    `<div class="card"><h2>所持金ランキング(上位10)</h2><table><tr><th>#</th><th>メンバー</th><th style="text-align:right">所持金</th></tr>${ranks}</table></div>`;
+    `<div class="card"><h2>${e.cfg.rank_include_stocks !== false ? "総資産ランキング(上位10・株込み)" : "所持金ランキング(上位10)"}</h2><table><tr><th>#</th><th>メンバー</th><th style="text-align:right">${e.cfg.rank_include_stocks !== false ? "総資産" : "所持金"}</th></tr>${ranks}</table></div>`;
   if (me && me.debt > 0) {
     $("#rpAll").onclick = () => op({action: "eco_loan_repay", amount: "all"}, null, "借金を全額返済します。よろしいですか?");
     $("#rpGo").onclick = () => { const n = parseInt($("#rpAmt").value, 10); if (!n || n < 1) return alert("返す金額を入力してください。"); op({action: "eco_loan_repay", amount: n}, null); };
@@ -243,17 +255,17 @@ function drawGames() {
   $("#t-games").innerHTML =
     `<div class="card"><h2>${icon("i-coin")}コインフリップ(当たると2倍)</h2>` +
     `<div class="acts"><input type="number" id="cfAmt" min="1" placeholder="賭け金" style="width:140px">` +
-    `<button class="btn sub" id="cfH">表</button><button class="btn sub" id="cfT">裏</button></div><p class="msg" id="cfMsg"></p></div>` +
+    `<button class="btn sub" id="cfH">表</button><button class="btn sub" id="cfT">裏</button></div><div class="res hidden" id="cfRes"></div><p class="msg" id="cfMsg"></p></div>` +
     `<div class="card"><h2>${icon("i-target")}ルーレット(0〜36)</h2>` +
     `<div class="acts"><input type="number" id="rtAmt" min="1" placeholder="賭け金" style="width:140px">` +
     `<select id="rtSel" style="width:auto"><option value="red">赤 (2倍)</option><option value="black">黒 (2倍)</option><option value="number">数字ぴったり (36倍)</option></select>` +
     `<input type="number" id="rtNum" min="0" max="36" placeholder="0-36" style="width:90px;display:none">` +
-    `<button class="btn sub" id="rtGo">回す</button></div><p class="msg" id="rtMsg"></p></div>` +
+    `<button class="btn sub" id="rtGo">回す</button></div><div class="res hidden" id="rtRes"></div><p class="msg" id="rtMsg"></p></div>` +
     `<div class="card"><h2>${icon("i-cards")}ブラックジャック(1人用)</h2>` +
     `<div class="acts"><input type="number" id="bjAmt" min="1" placeholder="賭け金" style="width:140px" value="${bj ? bj.bet : ""}">` +
     (playing ? `<button class="btn sub" id="bjHit">${icon("i-hit")}hit(引く)</button><button class="btn sub" id="bjStand">${icon("i-hand")}stand(勝負)</button>`
              : `<button class="btn gold" id="bjGo">開始</button>`) + `</div>` +
-    `<div id="bjArea" class="hint" style="font-family:var(--mono);font-size:13.5px;margin-top:8px"></div><p class="msg" id="bjMsg"></p>` +
+    `<div id="bjArea" class="hint" style="font-family:var(--mono);font-size:13.5px;margin-top:8px"></div><div class="res hidden" id="bjRes"></div><p class="msg" id="bjMsg"></p>` +
     `<p class="hint">21に近づけるゲーム。ディーラーは17以上で止まります。21ちょうど(ブラックジャック)は1.5倍払い。21を超えると負け。</p></div>`;
   const bet = (input, fn, msgId) => {
     if (!S.me) return setMsg(msgId, "閲覧モードです。Discordで /economyweb を実行して自分用リンクを取得してください。", false);
@@ -295,6 +307,18 @@ function drawShop() {
     op({action: "eco_item_buy", item: b.dataset.item, amount: n}, "shMsg");
   });
 }
+function showRes(id, res) {   // ギャンブルの結果を大きく表示(WIN/LOSE/引き分け)
+  const el = document.getElementById(id);
+  if (!el || !res) return;
+  const draw = !!res.draw, win = !!res.win, net = res.net || 0;
+  el.className = "res " + (draw ? "flat" : win ? "win" : "lose") + " pop";
+  let sub = "";
+  if (res.game === "coinflip") sub = `コイン: ${res.out}`;
+  if (res.game === "roulette") sub = `出目: ${res.spin}(<span class="dot ${res.color === "green" ? "flat" : res.color === "red" ? "d" : ""}" style="background:${res.color === "green" ? "#3aa14a" : res.color === "red" ? "#e0353f" : "#20242c"}"></span>)`;
+  if (res.game === "blackjack") sub = `あなた ${res.pv} / ディーラー ${res.dv}`;
+  el.innerHTML = `<span>${draw ? "DRAW" : win ? "WIN" : "LOSE"}</span><span class="amt ${draw ? "" : win ? "up" : "down"}">${draw ? "±0" : (win ? "+" : "") + num(net)}</span><span class="sub2">${sub}</span>`;
+  setTimeout(() => el.classList.remove("pop"), 350);
+}
 /* ---- 共通 ---- */
 async function op(body, msgId, ask) {
   if (ask && !confirm(ask)) return;
@@ -309,6 +333,7 @@ async function op(body, msgId, ask) {
     if (!d) { if (msgId) setMsg(msgId, "応答を解釈できませんでした。", false); return; }
     if (d.data) { if (d.data.me) S.me = d.data.me; if (d.data.eco) S.snap.eco = d.data.eco; S.bj = d.data.bj && d.data.bj.status !== "done" ? d.data.bj : null; }
     drawHeader(); draw();
+    if (d.data && d.data.res) showRes({coinflip: "cfRes", roulette: "rtRes", blackjack: "bjRes"}[d.data.res.game], d.data.res);
     if (msgId) setMsg(msgId, d.msg, true);
   } catch (e) { if (msgId) setMsg(msgId, "通信に失敗しました。", false); }
 }
@@ -317,7 +342,7 @@ function showTab(t) {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.t === t)));
   ["market", "trade", "assets", "games", "shop"].forEach(k => $("#t-" + k).classList.toggle("hidden", k !== t));
 }
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.t));
+document.querySelector(".tabs").addEventListener("click", e => { const b = e.target.closest("button[data-t]"); if (b) showTab(b.dataset.t); });
 $("#rfBtn").onclick = () => load(true);
 $("#autoRf").onchange = () => { if (S.timer) { clearInterval(S.timer); S.timer = null; } if ($("#autoRf").checked) S.timer = setInterval(() => { if ($("#autoRf").checked) load(true); }, 60000); };
 S.timer = setInterval(() => { if ($("#autoRf").checked) load(true); }, 60000);
