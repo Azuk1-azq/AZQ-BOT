@@ -88,7 +88,7 @@ log = logging.getLogger("azqbot")
 
 DEFAULTS = {
     "log_channel": None,
-    "welcome": {"channel": None, "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)",
+    "welcome": {"channel": None, "style": "join", "message": "ようこそ {user} さん！ {server} へ 🎉 (あなたは {count} 人目です)",
                 "image": {"enabled": False, "title": "WELCOME", "subtitle": "{server} へようこそ!", "style": "black",
                           "color": True, "show_count": True, "bg": False}},
     "autorole": None,
@@ -702,10 +702,7 @@ async def send_welcome(member: discord.Member, test: bool = False) -> tuple:
     if not (p.view_channel and p.send_messages):
         log.warning("ウェルカムを送れません: BOTに #%s での「チャンネルを見る・メッセージを送信」権限がありません guild=%s", ch.name, guild.id)
         return False, f"BOTが #{ch.name} で「チャンネルを見る・メッセージを送信」を行えません。"
-    text = (wc["message"].replace("{user}", member.mention)
-            .replace("{server}", guild.name).replace("{count}", str(guild.member_count)))
-    if test:
-        text = "🧪 **テスト送信**(メンバーが参加したときは、この内容が送られます)\n" + text
+    style = wc.get("style", "join")
     im, file, note = wc.get("image") or {}, None, ""
     if im.get("enabled"):
         if not p.attach_files:
@@ -717,9 +714,33 @@ async def send_welcome(member: discord.Member, test: bool = False) -> tuple:
             except Exception as e:
                 log.exception("ウェルカム画像の生成に失敗しました。文章だけ送ります。")
                 note = f"画像を作れなかったので文章だけ送りました({type(e).__name__})。BOTのログを確認してください。"
+    use_embed = p.embed_links
+    if not use_embed:
+        note = (note + " " if note else "") + f"BOTに #{ch.name} での「埋め込みリンク」権限がないため、通常のメッセージで送りました。"
+    prefix = "🧪 **テスト送信**(メンバーが参加したときは、この内容が送られます)\n" if test else ""
     try:
-        kw = {"file": file} if file else {}
-        await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions(users=[member]), **kw)
+        if use_embed and style == "join":
+            joined = (member.joined_at or discord.utils.utcnow()).astimezone(JST).strftime("%Y-%m-%d %H:%M:%S")
+            e = discord.Embed(title=f"【+】ようこそ{guild.name}へ！"[:256],
+                              description=f"{member.mention} さんがサーバーに参加しました！\n\n（参加日時: {joined}）",
+                              color=GREEN)
+            e.set_thumbnail(url=member.display_avatar.url)
+            if file:
+                e.set_image(url="attachment://welcome.png")
+            await ch.send(prefix.strip() or None, embed=e, file=file or discord.utils.MISSING,
+                          allowed_mentions=discord.AllowedMentions.none())
+        else:
+            text = (wc["message"].replace("{user}", member.mention)
+                    .replace("{server}", guild.name).replace("{count}", str(guild.member_count)))
+            if use_embed:
+                e = discord.Embed(description=text[:4000], color=BLUE)
+                if file:
+                    e.set_image(url="attachment://welcome.png")
+                await ch.send(prefix.strip() or None, embed=e, file=file or discord.utils.MISSING,
+                              allowed_mentions=discord.AllowedMentions.none())
+            else:
+                kw = {"file": file} if file else {}
+                await ch.send((prefix + text)[:2000], allowed_mentions=discord.AllowedMentions(users=[member]), **kw)
     except discord.HTTPException as e:
         log.warning("ウェルカムの送信に失敗 guild=%s channel=%s: %s", guild.id, ch.id, e)
         return False, f"Discordに送信を拒否されました({e.status})。BOTの権限を確認してください。"
@@ -6849,7 +6870,7 @@ def dash_snapshot(g: discord.Guild) -> dict:
         "channels": [{"id": str(x.id), "name": x.name} for x in g.text_channels],
         "categories": [{"id": str(x.id), "name": x.name} for x in g.categories],
         "roles": [{"id": str(r.id), "name": r.name} for r in g.roles if not r.is_default() and not r.managed],
-        "cfg": {"log_channel": _s(c["log_channel"]), "welcome_channel": _s(c["welcome"]["channel"]), "welcome_message": c["welcome"]["message"],
+        "cfg": {"log_channel": _s(c["log_channel"]), "welcome_channel": _s(c["welcome"]["channel"]), "welcome_message": c["welcome"]["message"], "welcome_style": c["welcome"].get("style", "join"),
                 **{"welcome_image_" + k: v for k, v in {**DEFAULTS["welcome"]["image"], **c["welcome"].get("image", {})}.items()
                    if k in ("enabled", "title", "subtitle", "style", "color")},
                 "welcome_image_count": c["welcome"].get("image", {}).get("show_count", True),
@@ -6962,6 +6983,10 @@ def apply_settings(g: discord.Guild, d: dict) -> None:
     if new["wi"]["enabled"] and not new["wch"]:
         raise SettingsError("ウェルカム画像を使うには、ウェルカムメッセージの送信先チャンネルを選んでください")
     c["welcome"]["image"] = new["wi"]
+    if d.get("welcome_style") is not None:
+        if d["welcome_style"] not in ("join", "classic"):
+            raise SettingsError("ウェルカムの表示形式が正しくありません")
+        c["welcome"]["style"] = d["welcome_style"]
     c["log_channel"] = new["log"].id if new["log"] else None
     c["welcome"]["channel"], c["welcome"]["message"] = (new["wch"].id if new["wch"] else None), new["wmsg"]
     c["autorole"] = role.id if role else None
@@ -7690,6 +7715,8 @@ const VIEWS = {
     const ranks = [5, 4, 3, 2, 1];
     return `<div class="card"><h2>役職とDiscordロールの対応</h2><div class="mut" style="margin-bottom:8px">サーバーオーナーとDiscordの管理者権限を持つ人は、常に管理者として扱われます。</div>
       ${lock('rank_manage', ranks.map(r => form('rank_set', `<input type="hidden" name="rank" value="${r}">` + field(S.rank_names[r], sel('role', S.roles, S.ranks[r], '未設定')), '保存')).join(''))}</div>
+      <div class="card"><h2>ようこそメッセージの形式</h2><div class="mut" style="margin-bottom:8px">チャンネルや画像の設定は、設定ダッシュボードで行います。</div>
+      ${lock('rank_manage', form('welcome_style', field('形式', sel('style', [{id: 'join', name: '参加通知カード(既定)'}, {id: 'classic', name: 'カスタムメッセージ(埋め込み)'}], S.welcome.style)) + `<label class="wide">カスタムの文章({user} {server} {count} が使えます)<textarea name="message" maxlength="500">${esc(S.welcome.message)}</textarea></label>`, '保存'))}</div>
       <div class="card"><h2>機能ごとの必要役職</h2><table>${S.perms.map(p => `<tr><td>${esc(p.desc)}${p.changed ? ' <span class="tag wa">変更済み</span>' : ''}</td><td>${p.fixed || !S.can.rank_manage ? `<span class="tag">${esc(S.rank_names[p.need])}以上</span>` : `<form data-act="perm_set" style="display:flex;gap:6px"><input type="hidden" name="key" value="${esc(p.key)}">${sel('rank', rankOpts(), p.need)}<button class="b">変更</button></form>`}</td></tr>`).join('')}</table></div>`;
   },
 };
@@ -7924,6 +7951,23 @@ async def wa_questions(g, m, d):
     return core_set_questions(g, kind, qs)
 
 
+async def wa_welcome_style(g, m, d):
+    style = str(d.get("style") or "")
+    if style not in ("join", "classic"):
+        raise SrvAdmError("表示形式が正しくありません。")
+    wc = lg_welcome(g)
+    wc["style"] = style
+    msg = str(d.get("message") or "").strip()
+    if msg:
+        wc["message"] = msg[:500]
+    store.save()
+    return "✅ ウェルカムの形式を「" + ("参加通知カード" if style == "join" else "カスタムメッセージ(埋め込み)") + "」にしました。"
+
+
+def lg_welcome(g: discord.Guild) -> dict:
+    return store.get(g.id)["welcome"]
+
+
 async def wa_region_create(g, m, d):
     return await core_region_create(g, bool(d.get("include_prefectures", True)))
 
@@ -7950,6 +7994,7 @@ SRVADM_ACTIONS = {
     "staff_position": (wa_staff_position, "rank_manage"), "questions": (wa_questions, "rank_manage"),
     "region_create": (wa_region_create, "rank_manage"), "region_panel": (wa_region_panel, "rank_manage"),
     "region_set_role": (wa_region_set_role, "rank_manage"),
+    "welcome_style": (wa_welcome_style, "rank_manage"),
 }
 
 
@@ -8008,6 +8053,7 @@ def srvadm_snapshot(g: discord.Guild, m: discord.Member) -> dict:
                             "by": _who(g, e["by"]) if e["by"] else "自動", "x": bool(e.get("x"))} for e in reversed(entries)],
                    "mvp_hist": [{"ym": h["ym"], "name": _who(g, h["u"]), "pts": h["pts"]} for h in reversed(p["mvp_hist"][-12:])],
                    "cats": [{"id": k, "name": n} for k, n in CAT_NAMES.items() if k not in ("auto", "undo")]},
+        "welcome": {"style": lg_welcome(g).get("style", "join"), "message": lg_welcome(g)["message"]},
         "region": {"prefs": len(c["region"]["pref"]), "regions": len(c["region"]["region"]), "panel": _s(c["region"]["panel_channel"]),
                    "names": list(REGIONS) + list(PREF_TO_REGION)},
     }
@@ -9220,15 +9266,23 @@ async def cfg_meigen(interaction: discord.Interaction, enabled: bool):
 
 @config_group.command(name="welcome", description="ウェルカムメッセージを設定(channel省略で無効化)")
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(message="{user} {server} {count} が使えます")
-async def cfg_welcome(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, message: Optional[str] = None):
+@app_commands.describe(message="{user} {server} {count} が使えます(カスタム形式で使用)",
+                       style="表示形式(既定: 参加通知カード / カスタム: messageの文章を埋め込みで表示)")
+@app_commands.choices(style=[app_commands.Choice(name="参加通知カード(既定)", value="join"),
+                             app_commands.Choice(name="カスタムメッセージ(埋め込み)", value="classic")])
+async def cfg_welcome(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None, message: Optional[str] = None,
+                      style: Optional[app_commands.Choice[str]] = None):
     wc = store.get(interaction.guild.id)["welcome"]
     wc["channel"] = channel.id if channel else None
     if message:
         wc["message"] = message[:500]
+        if not style:
+            wc["style"] = "classic"  # 文面を指定したら、その文面を使う形式にする
+    if style:
+        wc["style"] = style.value
     store.save()
     await interaction.response.send_message(
-        f"✅ ウェルカム: {channel.mention if channel else '無効'}\n{wc['message']}\n🖼️ 画像を付けるオプションは `/web` で設定できます。", ephemeral=True,
+        f"✅ ウェルカム: {channel.mention if channel else '無効'} / 形式: {'参加通知カード' if wc.get('style', 'join') == 'join' else 'カスタムメッセージ'}\n{wc['message']}\n🖼️ 画像を付けるオプションは `/web` で設定できます。", ephemeral=True,
         allowed_mentions=discord.AllowedMentions.none())
 
 
