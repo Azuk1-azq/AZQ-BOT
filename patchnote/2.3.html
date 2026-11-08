@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>AZQ BOT パッチノート: 経済機能を大幅強化(借金・仮想株・Web設定)</title>
+<style>
+:root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
+--fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Noto Sans JP','Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius:1px;width:4px}article,.todo,.wrap{border-radius:6px}code{color:#134a8e}
+</style>
+</head>
+<body>
+<main>
+<h1>経済機能を大幅強化(借金・仮想株・Web設定)</h1>
+<p class="meta">AZQ BOT v2.3 パッチノート / 2026年11月8日</p>
+<p class="lead">経済(コイン)機能を大きく拡張しました。所持金が0になっても上限まで<strong>借金</strong>できる <code>/loan</code>、価格が1分ごとに変動する<strong>仮想株</strong>の売買ができる <code>/stock</code>、経済機能のすべてを一覧できる <code>/economyinfo</code> を追加しました。さらに、Webダッシュボードに<strong>「経済」タブ</strong>を追加し、ブラウザから経済の設定ができる <code>/economyweb</code> も用意しました。初期所持金も 0 → 100 に引き上げています。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>借金 <code>/loan borrow</code> <code>/loan repay</code> <code>/loan status</code></h3>
+<p>所持金が0になっても、<code>/loan borrow amount:</code> で上限(既定 <b>2,000</b>)までお金を借りられるようになりました。借金はサーバーごとに設定できる上限までで、それ以上は借りられません。</p>
+<p>返し方は2通り。<code>/loan repay amount:</code>(<code>all</code> で全額)で手動で返すか、<code>/daily</code> <code>/work</code> などでコインを得たときに<b>自動で返済</b>に回ります(返済が終わるまで、入ってきたコインから順に充当されます)。現在の借金は <code>/loan status</code> や <code>/balance</code> <code>/profile</code> でも確認できます。</p>
+<p>借金の上限は <code>/economy config debt_max:</code> で変更でき、<b>0にすると借金禁止</b>になります。</p>
+</article>
+<article class="new">
+<h3>仮想株 <code>/stock list</code> <code>/stock buy</code> <code>/stock sell</code> <code>/stock portfolio</code></h3>
+<p>このBOTの中だけで動く<b>仮想の株</b>を売買できるようになりました。実際の金融商品は一切関係なく、サーバー内のコインで遊べます。</p>
+<p>価格は<b>1分ごとに変動</b>します(ランダムウォーク方式。まれに大きく動く日も)。BOTが再起動しても、止まっていた時間分まとめて価格が進みます。変化率は「本日の始値」からの割合で、一覧では 🟢 / 🔴 で上がり下がりを表示します。</p>
+<p><code>/stock buy symbol: shares:</code> で購入、<code>/stock sell symbol: shares:</code>(<code>all</code> で全株式)で売却し、損益が表示されます。<code>/stock portfolio</code> で保有銘柄・平均取得単価・評価額・含み損益を一覧でき、<code>/profile</code> にも反映されます。</p>
+<p>初期銘柄は <b>AZQR(AZQテック)/ BOLT(ボルトゲームズ)/ MARQ(マルシェ食品)/ WATT(ワットエネルギー)/ GLDB(ゴールド銀行)/ COSM(コスモ宇宙開発)</b> の6銘柄。管理者は <code>/economy stock_add</code> <code>/economy stock_remove</code> で銘柄の追加・削除(最大50銘柄)ができ、<code>/economy config stock_enabled:False</code> でこのサーバーの取引を無効化できます。</p>
+</article>
+<article class="new">
+<h3>経済ガイド <code>/economyinfo</code></h3>
+<p>そのサーバーの経済機能を<b>すべて一覧</b>できるコマンドです。現在の設定値つきで、収入(<code>/daily</code> <code>/work</code> <code>/loan</code>)、ショップ・アイテム・送金、仮想株の市況、ミニゲーム、管理者向けコマンド、他の経済BOTからの移行ガイドへの案内を表示します。「経済で何ができるんだっけ?」がこれ1つで分かります。</p>
+</article>
+<article class="new">
+<h3>Webダッシュボードに「経済」タブ <code>/economyweb</code></h3>
+<p><code>/economyweb</code> を実行すると、Webダッシュボードの新しい<b>「経済」タブ</b>を開けます(サーバー管理者のみ)。ブラウザから次の設定ができます。</p>
+<p>・通貨の記号・名前 / 初期所持金 / 借金の上限<br>
+・<code>/daily</code> の報酬・連続ボーナス / <code>/work</code> の報酬と間隔<br>
+・送金(<code>/pay</code>)の許可と手数料 / ギャンブルの許可と賭け金上限 / 仮想株の許可</p>
+<p>設定のほか、<b>株市場・所持金ランキング(上位10)・アイテム一覧の確認</b>もタブから行えます(アイテムの追加・編集はDiscordの <code>/economy item_set</code> から)。従来どおり <code>/economy config</code> でも変更でき、どちらで変更しても即座に反映されます。ダッシュボードは <code>/web</code> からも、管理者用ボタン「経済の設定を開く」で直接開けます。</p>
+</article>
+
+<h2 class="chg">その他の変更</h2>
+<article class="chg">
+<h3>初期所持金を 0 → 100 に変更</h3>
+<p>初めて経済を使う人に付く所持金を <b>100</b> に引き上げました。すぐに <code>/work</code> やミニゲームを始められます。既存のユーザーの所持金は変わりません。変更するには <code>/economy config start_balance:</code> か、Webダッシュボードの「経済」タブを使います。</p>
+</article>
+<article class="chg">
+<h3>コマンド一覧の整理</h3>
+<p><code>/help</code> の経済セクションに <code>/loan</code> <code>/stock</code> <code>/economyinfo</code> <code>/economyweb</code> を追加し、管理者用コマンドも整理しました。</p>
+</article>
+
+<h2 class="chg">アップデート方法</h2>
+<ul class="todo">
+<li><b>GitHub から最新の <code>bot.py</code> と <code>dashboard.html</code> をダウンロード</b>して、現在稼働中のものと入れ替えて再起動してください。<b>2つのファイルは必ず同じフォルダに置いてください</b>(ダッシュボードは bot.py と同じ場所から dashboard.html を読み込みます。dashboard.html を入れ替えない場合、「経済」タブは表示されません)。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+<li>経済のデータは <code>data/economy.json</code> に保存されます(直前の正常な内容は <code>economy.json.bak</code> に残ります)。そのまま引き継がれるので、既存の所持金・アイテムは消えません。</li>
+<li>他の経済BOT(Noctalyなど)から乗り換える場合は <code>/money migrate</code> で移行ガイド、<code>/money import</code> で所持金の取り込み(CSV/JSON、プレビュー確認つき)が使えます。</li>
+</ul>
+</main>
+</body>
+</html>
