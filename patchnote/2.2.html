@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>AZQ BOT パッチノート: 投票・リマインダーを追加</title>
+<style>
+:root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
+--fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.8 'Noto Sans JP','Hiragino Sans','Yu Gothic UI','Noto Sans JP',system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.35;margin:0 0 8px;letter-spacing:.01em}
+.meta{color:var(--sub);font-size:14px;margin:0 0 24px}
+.lead{font-size:17px;margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+h2{font-size:20px;margin:48px 0 16px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:6px;height:22px;border-radius:3px;background:var(--c)}
+.fix{--c:var(--fix)}.chg{--c:var(--chg)}.new{--c:var(--new)}
+article{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:16px 20px;margin:0 0 14px}
+h3{font-size:16px;margin:0 0 6px}
+article p{margin:4px 0;color:var(--sub);font-size:15px}
+article p b{color:var(--ink);font-weight:600}
+code{font:13px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;background:var(--code);padding:2px 6px;border-radius:4px;word-break:break-all}
+.todo{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 20px 12px}
+.todo li{margin:10px 0;color:var(--sub);font-size:15px}
+.todo li b{color:var(--ink);font-weight:600}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:600;font-size:13px}
+tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap}
+:focus-visible{outline:2px solid var(--chg);outline-offset:2px}
+a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius:1px;width:4px}article,.todo,.wrap{border-radius:6px}code{color:#134a8e}
+</style>
+</head>
+<body>
+<main>
+<h1>投票・リマインダーを追加</h1>
+<p class="meta">AZQ BOT v2.2 パッチノート / 2026年11月8日</p>
+<p class="lead">誰でも使える便利コマンドとして、ボタン投票の <code>/poll</code> と、指定時間にDMでお知らせする <code>/remind</code> を追加しました。あわせて、設定ファイルの保護やメンション検知の精度など、安定性まわりの修正も行いました。</p>
+
+<h2 class="new">新機能</h2>
+<article class="new">
+<h3>投票 <code>/poll</code></h3>
+<p>質問と選択肢を指定して、ボタンで投票できるパネルを作成します。選択肢は最大10個で、既定では「1つだけ選択」ですが、<code>multi:True</code> で複数選択も許可できます。単一選択では、もう一度別のボタンを押すと投票先を変更でき、同じボタンをもう一度押すと取り消せます。</p>
+<p><code>minutes:</code> で投票期間(最長7日)を指定すると、その時刻に自動で締め切って結果を表示します。<code>hide:True</code> にすると、締め切りまで票数を非表示にできます。投票の作成者は、いつでも🔒「締め切る」ボタンで早期締め切りが可能です。</p>
+<p>例: <code>/poll question:次の企画はどれ? options:"ゲーム大会" "映画鑑賞会" "coding night" minutes:1440</code></p>
+</article>
+<article class="new">
+<h3>リマインダー <code>/remind set</code> <code>/remind list</code> <code>/remind cancel</code></h3>
+<p>指定した時間になると、BOTがDMでお知らせします。時間の指定は <code>30m</code>(30分)<code>2h</code>(2時間)<code>1d</code>(1日)<code>1h30m</code>(組み合わせ)のような書き方ができ、分数だけの <code>90</code> も受け付けます。最長は30日です。</p>
+<p>リマインダーはBOT側に保存されるため、メンテナンスなどでBOTが再起動しても消えません。オフライン中に予定時刻を過ぎた場合も、起動後にその旨を添えて届きます。設定した内容は <code>/remind list</code> で確認し、<code>/remind cancel</code> で取り消せます(1人あたり20件まで)。</p>
+</article>
+
+<h2 class="fix">修正</h2>
+<article class="fix">
+<h3>複数サーバーでの安定性の向上</h3>
+<p>定期処理(未認証キック・チケット自動クローズ・過疎アラート・期限ロールの剥奪など)を、サーバーごとに隔離して並行実行するようにしました。従来は1つのサーバーでエラーが起きると、定期処理全体が停止して他のサーバーにも影響していました。同時実行数は環境変数 <code>LOOP_CONCURRENCY</code>(既定8)で調整できます。</p>
+</article>
+<article class="fix">
+<h3>連投ガードの強化(低負荷化)</h3>
+<p>すべてのスラッシュコマンドに、1人あたりコマンドごとの最短間隔(既定3秒、環境変数 <code>CMD_COOLDOWN</code> で調整)を導入しました。連投してもコマンド本体は実行されず、「あと◯秒待ってください」と残り秒数だけを返します。また <code>/rank</code> <code>/ranking</code> <code>/leaderboard</code> <code>/kaso</code> <code>/ping</code> など重めのコマンドは、同じサーバーで同時に1つしか実行できず、前の処理が残っているときは待つように案内して滞留を防ぎます。画像生成の同時実行数も、低コアのサーバー向けに既定で最大3スレッドに抑えました。</p>
+</article>
+<article class="fix">
+<h3>設定ファイルのバックアップ</h3>
+<p>サーバー設定(<code>guilds.json</code>)の保存時に、直前の正常な内容を <code>guilds.json.bak</code> として残すようにしました。ディスクの故障やプロセスの中断などで設定ファイルが壊れた場合、次回の起動時にバックアップから自動で復旧します。</p>
+</article>
+<article class="fix">
+<h3>メンション過多検知の精度向上</h3>
+<p>荒らし対策の「メンション過多」の判定で、同じユーザーへの重複したメンションを1つとして数えるようにしました。従来は、1つのメッセージの中で同じ人を何回メンションしても回数として数えていたため、通常の会話でも誤検知することがありました。あわせて <code>@everyone</code>・<code>@here</code> も1つとしてカウントします。</p>
+</article>
+<article class="fix">
+<h3>そのほか</h3>
+<p>重複していたimport文を整理しました。</p>
+</article>
+
+<h2 class="chg">その他の変更</h2>
+<article class="chg">
+<h3>公式サイトの改善</h3>
+<p>コマンド一覧に投票・リマインダーを追加しました。また、SNSなどで共有したときの表示を整えるためのOGPタグと、検索エンジン向けのcanonical・サイトマップの整備を行いました(旧ドメインの記載を修正)。</p>
+</article>
+
+<h2 class="chg">アップデート方法</h2>
+<ul class="todo">
+<li><b>GitHub から最新の <code>bot.py</code> をダウンロード</b>して、現在稼働中の <code>bot.py</code> と入れ替えて再起動してください。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+<li>リマインダーのデータは <code>data/reminders.json</code> に保存されます。サーバー設定と同じく、バックアップ時に残しておくと安心です。</li>
+</ul>
+</main>
+</body>
+</html>
