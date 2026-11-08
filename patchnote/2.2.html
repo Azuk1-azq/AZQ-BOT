@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#ffffff">
-<title>AZQ BOT パッチノート: 投票・リマインダーを追加</title>
+<title>AZQ BOT パッチノート: 投票・リマインダー・ピン機能などを追加</title>
 <style>
 :root{color-scheme:light;--bg:#ffffff;--card:#f6f8fb;--ink:#1b2433;--sub:#566173;--line:#e2e7ee;--code:#eaeff6;
 --fix:#b7691f;--chg:#1b5fb0;--new:#1e7a4f}
@@ -37,9 +37,9 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 </head>
 <body>
 <main>
-<h1>投票・リマインダーを追加</h1>
+<h1>投票・リマインダー・ピン機能などを追加</h1>
 <p class="meta">AZQ BOT v2.2 パッチノート / 2026年11月8日</p>
-<p class="lead">誰でも使える便利コマンドとして、ボタン投票の <code>/poll</code> と、指定時間にDMでお知らせする <code>/remind</code> を追加しました。あわせて、設定ファイルの保護やメンション検知の精度など、安定性まわりの修正も行いました。</p>
+<p class="lead">誰でも使える便利コマンドとして、ボタン投票の <code>/poll</code> と、指定時間にDMでお知らせする <code>/remind</code> を追加しました。さらに、チャンネルの一番下に常に表示される固定メッセージ(ピン機能)、レベルアップ通知を別のチャンネルにも送るコピー機能、ようこそメッセージの新しい表示形式を追加しました。あわせて、設定ファイルの保護やメンション検知の精度など、安定性まわりの修正も行いました。</p>
 
 <h2 class="new">新機能</h2>
 <article class="new">
@@ -52,6 +52,21 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 <h3>リマインダー <code>/remind set</code> <code>/remind list</code> <code>/remind cancel</code></h3>
 <p>指定した時間になると、BOTがDMでお知らせします。時間の指定は <code>30m</code>(30分)<code>2h</code>(2時間)<code>1d</code>(1日)<code>1h30m</code>(組み合わせ)のような書き方ができ、分数だけの <code>90</code> も受け付けます。最長は30日です。</p>
 <p>リマインダーはBOT側に保存されるため、メンテナンスなどでBOTが再起動しても消えません。オフライン中に予定時刻を過ぎた場合も、起動後にその旨を添えて届きます。設定した内容は <code>/remind list</code> で確認し、<code>/remind cancel</code> で取り消せます(1人あたり20件まで)。</p>
+</article>
+
+<article class="new">
+<h3>ピン機能(固定メッセージ) <code>/sticky set</code> <code>/sticky remove</code> <code>/sticky list</code></h3>
+<p>指定したチャンネルで誰かが発言するたびに、BOTが固定メッセージを投稿し直し、常にチャンネルの一番下に表示します。<code>/sticky set</code> を実行すると入力フォームが開き、タイトルと本文を設定できます。同じチャンネルでもう一度実行すると編集になります。</p>
+<p>新しいメッセージを先に投稿してから古いメッセージを削除するため、固定メッセージが一瞬でも消えることはありません。発言が続いても投稿し直すのは数秒に1回だけなので、Discordの制限にもかかりにくくなっています。1サーバーあたり10チャンネルまで設定でき、チャンネルを削除すると設定も自動で消えます。「メッセージの管理」権限が必要です。</p>
+</article>
+<article class="new">
+<h3>レベルアップ通知のコピー送信 <code>/level config</code></h3>
+<p>レベルアップの通知を、特定のチャンネルにもコピーして送れるようになりました。<code>copy_channel:</code> でコピー先を指定すると、通常の通知と同じ内容がそのチャンネルにも届きます。<code>copy_only:True</code> にすると通知をコピー先だけに出し、発言したチャンネルには出さなくなります(コピー先に送れない場合は、通知が消えないよう通常どおり元のチャンネルに出します)。解除は <code>copy_off:True</code>、現在の設定は引数なしの <code>/level config</code> で確認できます。</p>
+</article>
+<article class="new">
+<h3>ようこそメッセージの新形式</h3>
+<p>ようこそチャンネルに送るメッセージを、「【+】ようこそ◯◯へ！ @ユーザー さんがサーバーに参加しました！(参加日時つき)」というカード形式に変更し、これを既定にしました。右側には参加した人のアイコンが表示されます。ウェルカム画像をONにしている場合は、画像もカードの中に表示されます。</p>
+<p>従来どおり自分で決めた文章を使うこともでき、その場合も通常のメッセージではなく埋め込みで送り、画像も埋め込みの中に入ります。形式は <code>/config welcome style:</code>、Webダッシュボードの「基本」タブ、サーバー管理ページの「役職・権限」タブから切り替えられます。BOTに「埋め込みリンク」権限がないチャンネルでは、従来の通常メッセージで送ります。</p>
 </article>
 
 <h2 class="fix">修正</h2>
@@ -86,6 +101,7 @@ a{color:#1b5fb0}a:hover{color:#134a8e}h1{font-size:28px}h2::before{border-radius
 <ul class="todo">
 <li><b>GitHub から最新の <code>bot.py</code> をダウンロード</b>して、現在稼働中の <code>bot.py</code> と入れ替えて再起動してください。</li>
 <li><b>追加の設定は不要です。</b>新しいスラッシュコマンドは、起動時の同期で自動的に反映されます。</li>
+<li>固定メッセージの設定はサーバー設定(<code>guilds.json</code>)に保存されます。ようこそメッセージは、更新後すぐに新しいカード形式になります(従来の文章に戻すには、形式をカスタムに変更してください)。</li>
 <li>リマインダーのデータは <code>data/reminders.json</code> に保存されます。サーバー設定と同じく、バックアップ時に残しておくと安心です。</li>
 </ul>
 </main>
