@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>カード入力欄の判定デモ</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--sub:#667085;--bd:#d9dde3;--ac:#1a73e8;--ok:#188038;--ng:#c5221f;--code:#eef1f5;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161a;--card:#1d2026;--tx:#e8eaed;--sub:#9aa0a6;--bd:#363a42;--ac:#8ab4f8;--ok:#81c995;--ng:#f28b82;--code:#2a2e35}}
+:root[data-theme="dark"]{--bg:#14161a;--card:#1d2026;--tx:#e8eaed;--sub:#9aa0a6;--bd:#363a42;--ac:#8ab4f8;--ok:#81c995;--ng:#f28b82;--code:#2a2e35}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:8px 0}
+p.lead{color:var(--sub);margin:0 0 16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+.box h2{font-size:16px;margin:0 0 10px}
+label.f{display:block;font-size:13px;color:var(--sub);margin:10px 0 4px}
+input[type=text],input[type=tel]{width:100%;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:16px}
+input:focus{outline:2px solid var(--ac);border-color:transparent}
+.row{display:flex;gap:10px}.row>div{flex:1}
+.tg{display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer}
+.verdict{margin-top:12px;padding:12px;border-radius:10px;font-weight:700;text-align:center}
+.verdict.yes{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.verdict.no{background:color-mix(in srgb,var(--ng) 18%,transparent);color:var(--ng)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--bd);vertical-align:top}
+.scroll{overflow-x:auto}
+code{background:var(--code);padding:1px 5px;border-radius:5px;font-size:12px}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;background:var(--code);font-size:12px;margin:1px}
+.brand{font-weight:700;color:var(--ac)}
+ul{margin:6px 0;padding-left:20px}
+.note{font-size:12px;color:var(--sub);margin-top:14px}
+</style>
+</head>
+<body>
+<main>
+<h1>💳 カード入力欄の判定デモ</h1>
+<p class="lead">ブラウザ(Chrome / Google Pay の自動入力)は、フォームの<b>ヒント</b>を集めて「これはカード入力欄だ」と判断します。ヒントを出し入れして、判定がどう変わるか試してみてください。</p>
+
+<div class="grid">
+  <section class="box">
+    <h2>① 試すフォーム</h2>
+    <label class="tg"><input type="checkbox" id="tAuto" checked> <span><code>autocomplete="cc-*"</code> を付ける</span></label>
+    <label class="tg"><input type="checkbox" id="tName" checked> <span><code>name</code>/<code>id</code> を意味のある名前にする</span></label>
+    <label class="tg"><input type="checkbox" id="tLabel" checked> <span>ラベル・placeholderを「カード番号」等にする</span></label>
+    <form id="f" autocomplete="on" onsubmit="return false">
+      <label class="f" id="l1" for="i1">カード番号</label>
+      <input type="tel" id="i1" inputmode="numeric" maxlength="19" placeholder="4242 4242 4242 4242">
+      <label class="f" id="l2" for="i2">名義人</label>
+      <input type="text" id="i2" placeholder="TARO YAMADA">
+      <div class="row">
+        <div><label class="f" id="l3" for="i3">有効期限</label>
+        <input type="tel" id="i3" inputmode="numeric" maxlength="5" placeholder="MM/YY"></div>
+        <div><label class="f" id="l4" for="i4">セキュリティコード</label>
+        <input type="tel" id="i4" inputmode="numeric" maxlength="4" placeholder="123"></div>
+      </div>
+    </form>
+    <p class="note">⚠ テスト用です。実在のカード番号は入力しないでください(通信も保存もしません)。<br>試せるテスト番号: <code>4242 4242 4242 4242</code></p>
+  </section>
+
+  <section class="box">
+    <h2>② 判定結果</h2>
+    <div id="verdict" class="verdict"></div>
+    <p style="margin:10px 0 4px">カードブランド推定: <span id="brand" class="brand">-</span> / Luhnチェック: <span id="luhn">-</span></p>
+    <div class="scroll"><table>
+      <thead><tr><th>欄</th><th>推定</th><th>根拠</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+</div>
+
+<section class="box" style="margin-top:16px">
+  <h2>③ 判定に使われる主なヒント</h2>
+  <ul>
+    <li><b>autocomplete属性</b>(最も確実): <code>cc-number</code> <code>cc-name</code> <code>cc-exp</code> <code>cc-exp-month</code> <code>cc-exp-year</code> <code>cc-csc</code> <code>cc-type</code></li>
+    <li><b>name / id / ラベル / placeholder</b> の文字列(card, cvv, expiry, カード番号 など)</li>
+    <li><b>入力の特徴</b>: <code>inputmode="numeric"</code>、短い <code>maxlength</code>、<code>type="tel"</code></li>
+    <li><b>入力内容</b>: 13〜19桁の数字でLuhnチェックを通る、先頭数字でブランドが分かる</li>
+    <li><b>フォーム全体の構成</b>: 番号欄 + (有効期限 / CVC / 名義) の組み合わせがあるか</li>
+  </ul>
+  <p class="note">※ 実際のChromeはこれらに加え、サーバー側のルールや機械学習も使います。このデモはその仕組みを理解するための簡易版です。</p>
+</section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const fields = [
+  {el:$('#i1'), lab:$('#l1'), ac:'cc-number',   nm:'cardnumber', t:['カード番号','入力欄1'], ph:['4242 4242 4242 4242','']},
+  {el:$('#i2'), lab:$('#l2'), ac:'cc-name',     nm:'ccname',     t:['名義人','入力欄2'],     ph:['TARO YAMADA','']},
+  {el:$('#i3'), lab:$('#l3'), ac:'cc-exp',      nm:'cc-exp',     t:['有効期限','入力欄3'],   ph:['MM/YY','']},
+  {el:$('#i4'), lab:$('#l4'), ac:'cc-csc',      nm:'cvc',        t:['セキュリティコード','入力欄4'], ph:['123','']},
+];
+const rules = {
+  'cc-number': /card.?(num|no)|cc.?num|カード.?番号/i,
+  'cc-name':   /card.?holder|name.?on.?card|cc.?name|名義/i,
+  'cc-exp':    /exp|有効期限|mm.?\/?.?yy/i,
+  'cc-csc':    /cvv|cvc|csc|security.?code|セキュリティ/i,
+};
+const jp = {'cc-number':'カード番号','cc-name':'名義人','cc-exp':'有効期限','cc-csc':'セキュリティコード'};
+
+function luhn(s){
+  const d = s.replace(/\D/g,''); if(d.length<13||d.length>19) return false;
+  let sum=0,alt=false;
+  for(let i=d.length-1;i>=0;i--){let n=+d[i]; if(alt){n*=2;if(n>9)n-=9} sum+=n; alt=!alt}
+  return sum%10===0;
+}
+function brand(s){
+  const d=s.replace(/\D/g,'');
+  if(/^4/.test(d)) return 'Visa';
+  if(/^(5[1-5]|2(2[2-9]|[3-6]|7[01]|720))/.test(d)) return 'Mastercard';
+  if(/^3[47]/.test(d)) return 'American Express';
+  if(/^35(2[89]|[3-8])/.test(d)) return 'JCB';
+  if(/^3(0[0-5]|[68])/.test(d)) return 'Diners Club';
+  if(/^(6011|65|64[4-9])/.test(d)) return 'Discover';
+  return '-';
+}
+
+function applyToggles(){
+  const a=$('#tAuto').checked, n=$('#tName').checked, l=$('#tLabel').checked;
+  fields.forEach((f,i)=>{
+    const e=f.el;
+    if(a) e.setAttribute('autocomplete',f.ac); else e.setAttribute('autocomplete','off');
+    const key=n?f.nm:'f'+(i+1);
+    e.name=key; e.id=n?f.nm:'i'+(i+1); f.lab.htmlFor=e.id;
+    f.lab.textContent=f.t[l?0:1]; e.placeholder=f.ph[l?0:1];
+  });
+  detect();
+}
+
+function detect(){
+  const rows=[]; let hits={};
+  fields.forEach(f=>{
+    const e=f.el, sig=[]; const sc={};
+    const add=(type,pt,why)=>{sc[type]=(sc[type]||0)+pt; sig.push({type,why})};
+    const ac=(e.getAttribute('autocomplete')||'').toLowerCase();
+    ac.split(/\s+/).forEach(tok=>{ if(tok.startsWith('cc-')) add(tok==='cc-exp-month'||tok==='cc-exp-year'?'cc-exp':tok,100,'autocomplete="'+tok+'"') });
+    const text=[e.name,e.id,e.placeholder,f.lab.textContent].join(' ');
+    for(const t in rules){ if(rules[t].test(text)) add(t,40,'名前/ラベルが一致') }
+    const val=e.value;
+    if(f===fields[0] && luhn(val)) add('cc-number',60,'入力値がLuhn検算OK(13〜19桁)');
+    if(e.inputMode==='numeric'||e.type==='tel') sig.push({type:null,why:'数値入力ヒント(inputmode/tel)'});
+    if(e.maxLength>0&&e.maxLength<=5) sig.push({type:null,why:'短いmaxlength='+e.maxLength});
+    let best=null,bs=0; for(const t in sc){ if(sc[t]>bs){bs=sc[t];best=t} }
+    if(best&&bs>=40) hits[best]=true; else best=null;
+    rows.push({f,best,bs,sig});
+  });
+  const tb=$('#rows'); tb.innerHTML='';
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    const why=r.sig.length?r.sig.map(s=>'<span class="pill">'+s.why+'</span>').join(''):'<span class="pill">手がかりなし</span>';
+    tr.innerHTML='<td><code>'+(r.f.el.name||r.f.el.id)+'</code></td><td>'+(r.best?'✅ '+jp[r.best]+' <small>('+r.best+')</small>':'❔ 不明')+'</td><td>'+why+'</td>';
+    tb.appendChild(tr);
+  });
+  const isCard = hits['cc-number'] && (hits['cc-exp']||hits['cc-csc']||hits['cc-name']);
+  const v=$('#verdict');
+  if(isCard){v.className='verdict yes';v.textContent='✅ クレジットカード入力フォームと判定 → Google Payの候補が出ます'}
+  else{v.className='verdict no';v.textContent='❌ カード入力と判定できません → カード候補は出ません'}
+  const num=fields[0].el.value;
+  $('#brand').textContent=num?brand(num):'-';
+  $('#luhn').textContent=num?(luhn(num)?'✅ OK':'❌ NG'):'-';
+}
+
+// 4242 4242 ... 形式 / MM/YY 形式
+fields[0].el.addEventListener('input',e=>{
+  const d=e.target.value.replace(/\D/g,'').slice(0,19);
+  e.target.value=d.replace(/(.{4})/g,'$1 ').trim(); detect();
+});
+fields[2].el.addEventListener('input',e=>{
+  let d=e.target.value.replace(/\D/g,'').slice(0,4);
+  if(d.length>2) d=d.slice(0,2)+'/'+d.slice(2);
+  e.target.value=d; detect();
+});
+[fields[1].el,fields[3].el].forEach(e=>e.addEventListener('input',detect));
+['#tAuto','#tName','#tLabel'].forEach(s=>$(s).addEventListener('change',applyToggles));
+applyToggles();
+</script>
+</body>
+</html>
