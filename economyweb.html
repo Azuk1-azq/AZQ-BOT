@@ -2,122 +2,378 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AZQ 経済ターミナル</title>
 <style>
-:root{--bg:#f5f7fb;--panel:#ffffff;--panel2:#f1f4f9;--line:#e4e8f0;--line2:#cfd6e4;--text:#1a2030;--mute:#5b6478;--dim:#8a93a6;
---up:#0e9f6e;--down:#e0353f;--gold:#b8860b;--accent:#2563eb;--soft:rgba(37,99,235,.1);--r:10px;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;--font:"Inter","Hiragino Sans","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 var(--font);-webkit-font-smoothing:antialiased;padding-bottom:24px}
-a{color:var(--accent)}
-header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);box-shadow:0 1px 8px rgba(20,30,60,.05)}
-.bar{max-width:1080px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.logo{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
-.logo b{font-size:16px;letter-spacing:.04em;color:#14203a}.logo b i{color:var(--gold);font-style:normal}
-.logo small{color:var(--mute);font-size:12px}
-.me{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
-.chip{background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:3px 12px;font-size:12.5px;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
-.chip b{font-family:var(--mono)}
-.chip.debt{border-color:var(--down);color:var(--down)}
-.chip svg{flex:none}
-.who{color:var(--mute);font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
-.tabs{max-width:1080px;margin:0 auto;padding:0 16px;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tabs button{background:none;border:0;color:var(--mute);font:600 14px var(--font);padding:10px 16px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
-.tabs button:hover{color:var(--text)}
-.tabs button[aria-selected=true]{color:var(--gold);border-bottom-color:var(--gold)}
-main{max-width:1080px;margin:0 auto;padding:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:0 0 12px;box-shadow:0 1px 3px rgba(20,30,60,.04)}
-h2{font-size:12px;margin:0 0 10px;color:var(--mute);font-weight:700;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
-.banner{border:1px solid var(--gold);color:var(--gold);border-radius:var(--r);padding:10px 14px;margin:0 0 12px;font-size:13.5px;background:rgba(184,134,11,.06)}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{text-align:left;color:var(--dim);font-weight:600;font-size:11.5px;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line)}
-td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
-tr:last-child td{border-bottom:0}
-tr:hover td{background:var(--panel2)}
-.sym{font-weight:700}.nm{color:var(--mute);font-size:12px}
-.px{font-family:var(--mono);font-weight:700;text-align:right;font-size:14px}
-.chg{font-family:var(--mono);text-align:right;font-weight:700}
-.up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--mute)}
-.spark{width:110px;height:30px}
-.symbtn{background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:8px;padding:5px 12px;font:600 12.5px var(--font);cursor:pointer}
-.symbtn:hover{border-color:var(--gold);color:var(--gold)}
-.order{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:760px){.order{grid-template-columns:1fr}}
-.l{display:block;font-size:12px;color:var(--mute);font-weight:600;margin:0 0 5px}
-input,select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:9px 12px;font:600 14px var(--mono);transition:border-color .15s}
-select{width:100%}
-input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
-.big{font-family:var(--mono);font-size:22px;font-weight:800;padding:6px 0}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:8px;padding:10px 18px;font:700 14px var(--font);cursor:pointer;color:#fff}
-.btn.buy{background:var(--up);color:#fff;width:100%}
-.btn.sell{background:var(--down);width:100%}
-.btn.gold{background:var(--gold);color:#fff}
-.btn.sub{background:var(--panel2);border:1px solid var(--line2);color:var(--text);font-size:13px;padding:8px 14px}
-.btn.sub:hover{border-color:var(--accent);color:var(--accent)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.hold{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
-.hold:last-child{border-bottom:0}
-.hold span{min-width:0;overflow-wrap:anywhere;font-size:13.5px}
-.msg{font-size:13.5px;margin:8px 0 0}
-.msg.ok{color:var(--up)}.msg.ng{color:var(--down)}
-.res{margin-top:10px;font-family:var(--mono);font-weight:800;font-size:22px;display:flex;align-items:center;gap:14px;justify-content:center;border-radius:8px;padding:12px;background:var(--panel2);border:1px solid var(--line2)}
-.res.win{color:var(--up);border-color:var(--up);background:rgba(14,159,110,.07)}
-.res.lose{color:var(--down);border-color:var(--down);background:rgba(224,53,63,.06)}
-.res.flat{color:var(--mute)}
-.res .amt{font-size:26px}
-.res .sub2{font-size:12px;color:var(--mute);font-weight:600;font-family:var(--font)}
-.res .dot{width:12px;height:12px}
-@keyframes pop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
-.res.pop{animation:pop .25s ease-out}
-.rankme{font-size:13px;font-weight:700;margin:6px 0 0;color:var(--gold)}
-.hint{color:var(--dim);font-size:12px;margin:8px 0 0;line-height:1.6}
-.rank td:first-child{color:var(--dim);width:34px;font-family:var(--mono)}
-footer{max-width:1080px;margin:18px auto 0;padding:0 16px;color:var(--dim);font-size:12px}
-.auto{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12.5px;cursor:pointer}
-.auto input{width:15px;height:15px;accent-color:var(--gold);padding:0}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
-.dot.u{background:var(--up)}.dot.d{background:var(--down)}
-#load{color:var(--mute);text-align:center;padding:40px 0}
-.hidden{display:none!important}
-svg.ic{width:15px;height:15px;flex:none;vertical-align:-2px}
+:root {
+  --bg: #edf0ec;
+  --text: #14201c;
+  --accent: #0a6a58;
+  --line: color-mix(in srgb, var(--text) 22%, var(--bg));
+  --panel: color-mix(in srgb, var(--text) 5%, var(--bg));
+  --mute: color-mix(in srgb, var(--text) 74%, var(--bg));
+  --soft: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  --up: var(--accent);
+  --down: var(--text);
+  --gold: var(--accent);
+  --mono: var(--font);
+  --float: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --lift: 0 4px 8px rgba(0, 0, 0, 0.2);
+  --font: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", Meiryo, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding-bottom: 24px;
+  font: 14px/1.6 var(--font);
+  color: var(--text);
+  background: var(--bg);
+}
+a { text-decoration: underline; color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: var(--soft); }
+h1 { margin: 0 0 16px; font-size: 24px; font-weight: 700; }
+h2 {
+  display: flex;
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.hidden { display: none !important; }
+.card {
+  margin: 0 0 16px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.l {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mute);
+}
+.hint { margin: 8px 0 0; font-size: 12px; color: var(--mute); }
+footer {
+  max-width: 1080px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--mute);
+}
+input, select, textarea {
+  width: 100%;
+  height: 40px;
+  padding: 8px 16px;
+  font: 14px var(--font);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--text);
+  border-radius: 4px;
+  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+}
+textarea { height: auto; min-height: 88px; resize: vertical; }
+input:hover, select:hover, textarea:hover { background: var(--soft); }
+input:focus, select:focus, textarea:focus { background: var(--bg); outline: 2px solid var(--accent); outline-offset: 0; }
+input:disabled, select:disabled, textarea:disabled { opacity: 0.4; }
+select {
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2314201c' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  appearance: none;
+}
+input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+input[type=file] {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.btn, .b, .symbtn, .tf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font: 700 14px var(--font);
+  text-decoration: none;
+  color: var(--accent);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+  cursor: pointer;
+}
+.btn:hover, .b:hover, .symbtn:hover, .tf:hover { background: var(--soft); }
+.btn:active, .b:active, .symbtn:active, .tf:active { background: var(--line); }
+.btn.buy, .btn.gold, .b.pri, .b.ok, .tf.on { color: var(--bg); background: var(--accent); }
+.btn.buy:hover, .btn.gold:hover, .b.pri:hover, .b.ok:hover, .tf.on:hover { background: var(--text); }
+.btn.sell, .btn.red, .b.ng { color: var(--text); border-color: var(--text); }
+.btn.sub, .symbtn, .tf { height: 40px; padding: 0 16px; font-size: 12px; }
+.btn:disabled, .b:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.buy, .btn.sell { width: 100%; }
+.msg {
+  margin: 0 0 16px;
+  padding: 8px 16px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.msg.ok { color: var(--accent); border-color: var(--accent); }
+.msg.ng, .msg.err { font-weight: 700; border-color: var(--text); }
+.acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--mute);
+}
+code {
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--float);
+}
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 8px 16px;
+}
+.logo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.logo b { font-size: 16px; }
+.logo small { font-size: 12px; color: var(--mute); }
+.me {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.chip b { font-weight: 700; }
+.chip.debt { border-color: var(--text); }
+.auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.tabs button {
+  height: 40px;
+  padding: 0 16px;
+  font: 700 14px var(--font);
+  white-space: nowrap;
+  color: var(--mute);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  transition: background-color 150ms ease-out;
+  cursor: pointer;
+}
+.tabs button:hover { background: var(--soft); }
+.tabs button[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
+main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+.banner {
+  margin: 0 0 16px;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+#load { padding: 40px 0; text-align: center; color: var(--mute); }
+table { width: 100%; font-size: 14px; border-collapse: collapse; }
+th {
+  padding: 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mute);
+  border-bottom: 1px solid var(--text);
+}
+td { padding: 8px; vertical-align: middle; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+tr:hover td { background: var(--soft); }
+.sym { font-weight: 700; }
+.nm { font-size: 12px; color: var(--mute); }
+.px, .chg { text-align: right; font-weight: 700; }
+.up { color: var(--up); }
+.down { color: var(--down); }
+.flat { color: var(--mute); }
+.spark { width: 112px; height: 40px; }
+.order { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.big { padding: 8px 0; font-size: 24px; font-weight: 700; }
+.res {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px;
+  font-size: 24px;
+  font-weight: 700;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.res.win { color: var(--accent); border-color: var(--accent); }
+.res.lose { color: var(--text); border-color: var(--text); }
+.res.flat { color: var(--mute); }
+.res .amt { font-size: 24px; }
+.res .sub2 { font-size: 12px; font-weight: 400; color: var(--mute); }
+.res .dot { width: 8px; height: 8px; }
+.rankme {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+.rank td:first-child { width: 40px; color: var(--mute); }
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+.dot.u { background: var(--up); }
+.dot.d { background: var(--down); }
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+}
+.mbox {
+  overflow: auto;
+  width: 100%;
+  max-width: 784px;
+  max-height: 640px;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--float);
+}
+.mbox .px { font-size: 24px; }
+.tfs { display: flex; gap: 8px; margin: 16px 0; }
+.bigchart { display: block; width: 100%; height: auto; }
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+}
+.grid4 > div {
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.grid4 .l { margin: 0 0 8px; }
+.hrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  font-size: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.hrow:last-child { border-bottom: 0; }
+.hrow .t { font-size: 12px; color: var(--mute); }
+@media (max-width: 760px) {
+  .order { grid-template-columns: 1fr; }
+  .grid4 { grid-template-columns: 1fr 1fr; }
+}
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20c1.5-4 5-5 8-5s6.5 1 8 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
-<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></symbol>
-<symbol id="i-rf" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M20 3v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 22 20H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1.3" fill="currentColor"/></symbol>
-<symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
-<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
-<symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="5" width="10" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 6.5 19.5 7.5 16.8 19 13 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
-<symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5a1.5 1.5 0 0 1 3 0V11m0-5a1.5 1.5 0 0 1 3 0v6m0-3.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-5-2.7L4.5 14a1.6 1.6 0 0 1 2.6-1.9L8 13.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="i-hit" viewBox="0 0 24 24"><rect x="4" y="4" width="12" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M17 8l4 2.5L18.5 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
-<symbol id="i-box" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 8l9 5 9-5M12 13v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
-<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 20h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 16l4-5 3.5 3L17 6l3 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="i-back" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2" fill="currentColor"/></symbol>
-</defs></svg>
 <header>
   <div class="bar">
     <div class="logo"><b>AZQ <i>経済</i>ターミナル</b><small id="srvName"></small></div>
     <div class="me">
-      <span class="who" id="who"></span>
-      <span class="chip"><svg class="ic"><use href="#i-coin"/></svg>残高 <b id="meBal">—</b></span>
-      <span class="chip debt hidden" id="meDebtWrap"><svg class="ic"><use href="#i-warn"/></svg>借金 <b id="meDebt">—</b></span>
-      <span class="chip"><svg class="ic"><use href="#i-chart"/></svg>株評価 <b id="meTotal">—</b></span>
-      <label class="auto"><input type="checkbox" id="autoRf" checked> 自動更新(60秒)</label>
-      <button class="btn sub" id="rfBtn" type="button"><svg class="ic"><use href="#i-rf"/></svg>更新</button>
+      <span id="who" class="who"></span>
+      <span class="chip">残高 <b id="meBal">—</b></span>
+      <span id="meDebtWrap" class="chip debt hidden">借金 <b id="meDebt">—</b></span>
+      <span class="chip">株評価 <b id="meTotal">—</b></span>
+      <label class="auto"><input id="autoRf" type="checkbox" checked> 自動更新(60秒)</label>
+      <button id="rfBtn" class="btn sub" type="button">更新</button>
     </div>
   </div>
   <div class="tabs" role="tablist">
-    <button role="tab" data-t="market" aria-selected="true"><svg class="ic"><use href="#i-chart"/></svg>市場</button>
-    <button role="tab" data-t="trade" aria-selected="false"><svg class="ic"><use href="#i-coin"/></svg>取引</button>
-    <button role="tab" data-t="assets" aria-selected="false"><svg class="ic"><use href="#i-box"/></svg>資産</button>
-    <button role="tab" data-t="games" aria-selected="false"><svg class="ic"><use href="#i-target"/></svg>ギャンブル</button>
-    <button role="tab" data-t="shop" aria-selected="false"><svg class="ic"><use href="#i-box"/></svg>ショップ</button>
+    <button role="tab" data-t="market" aria-selected="true">市場</button>
+    <button role="tab" data-t="trade" aria-selected="false">取引</button>
+    <button role="tab" data-t="assets" aria-selected="false">資産</button>
+    <button role="tab" data-t="games" aria-selected="false">ギャンブル</button>
+    <button role="tab" data-t="shop" aria-selected="false">ショップ</button>
+    <button role="tab" data-t="plus" aria-selected="false">フリマ・会社</button>
   </div>
 </header>
 <main>
@@ -129,11 +385,11 @@ svg.ic{width:15px;height:15px;flex:none;vertical-align:-2px}
     <section id="t-assets" class="hidden"></section>
     <section id="t-games" class="hidden"></section>
     <section id="t-shop" class="hidden"></section>
+    <section id="t-plus" class="hidden"></section>
   </div>
 </main>
 <footer>AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。株・ギャンブルは仮想通貨(コイン)によるサーバー内の遊びです。じゃんけん対戦(/rps)・マルチのブラックジャックはDiscordで。設定の変更は管理者用ダッシュボード(/economy config)から。</footer>
 <script>
-"use strict";
 const $ = s => document.querySelector(s);
 const Q = new URLSearchParams(location.search);
 const GID = Q.get("g") || "", TOKEN = Q.get("t") || "";
@@ -141,7 +397,8 @@ const S = {snap: null, me: null, bj: null, tab: "market", tradeSym: "", timer: n
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{1F300}-\u{1F5FF}\u{1F600}-\u{1F64F}\u{FE0F}\u{200D}\u{2705}\u{26A0}\u{26AB}\u{2B00}-\u{2BFF}\u{2B50}]/gu;
 const clean = s => String(s == null ? "" : s).replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
-const num = v => Number(v || 0).toLocaleString("ja-JP");
+const md = s => esc(clean(s)).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+const num = v => { v = Number(v || 0); return v.toLocaleString("ja-JP", (v !== 0 && Math.abs(v) < 1) ? {maximumFractionDigits: 4} : {}); };
 const px = (v, sym) => sym + " " + Number(v || 0).toLocaleString("ja-JP", {maximumFractionDigits: 2});
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "flat";
 const sign = v => (v > 0 ? "+" : "") + Number(v || 0).toLocaleString("ja-JP", {maximumFractionDigits: 2});
@@ -154,9 +411,9 @@ function spark(hist) {
   const mn = Math.min(...a), mx = Math.max(...a), rg = (mx - mn) || 1;
   const pts = a.map((v, i) => `${(i / (a.length - 1) * w).toFixed(1)},${(h - 3 - (v - mn) / rg * (h - 6)).toFixed(1)}`).join(" ");
   const up = a[a.length - 1] >= a[0];
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${up ? "#0e9f6e" : "#e0353f"}" stroke-width="1.6"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${up ? "#0a6a58" : "#14201c"}" stroke-width="1.6"/></svg>`;
 }
-function setMsg(id, text, ok) { const el = document.getElementById(id); if (!el) return alert(clean(text) || ""); el.textContent = clean(text) || ""; el.className = "msg " + (ok ? "ok" : "ng"); }
+function setMsg(id, text, ok) { const el = document.getElementById(id); if (!el) return alert(clean(text) || ""); el.innerHTML = md(text) || ""; el.className = "msg " + (ok ? "ok" : "ng"); }
 async function load(silent) {
   try {
     const res = await api(`/api/eco/${GID}?t=${encodeURIComponent(TOKEN)}`);
@@ -181,47 +438,142 @@ function drawHeader() {
   $("#meDebt").textContent = me ? num(me.debt) : "—";
   $("#meTotal").textContent = me ? num(me.total) : "—";
 }
-function draw() { drawMarket(); drawTrade(); drawAssets(); drawGames(); drawShop(); }
+function draw() { drawMarket(); drawTrade(); drawAssets(); drawGames(); drawShop(); drawPlus(); }
 /* ---- 市場 ---- */
+const MK_SORTS = [["popular", "人気順"], ["hot", "最もホット(変動大)"], ["gainer", "値上がり率"], ["loser", "値下がり率"], ["high", "最も高い"], ["low", "最も安い"], ["name", "銘柄コード順"]];
+S.mkt = {q: "", sort: "popular", page: 1, rows: [], total: 0, pages: 1};
+async function loadMarket(silent) {
+  try {
+    const res = await post({action: "eco_market_list", q: S.mkt.q, sort: S.mkt.sort, page: S.mkt.page});
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d) return;
+    S.mkt.rows = d.data.rows; S.mkt.total = d.data.total; S.mkt.page = d.data.page; S.mkt.pages = d.data.pages;
+    drawMarketRows();
+    if (!silent) setStatus2("市場を更新しました(" + d.data.total + "銘柄)");
+  } catch (e) { if (!silent) setStatus2("市場の読み込みに失敗しました。"); }
+}
+const DUR_PRESETS = [["10秒",10],["30秒",30],["1分",60],["5分",300],["30分",1800],["1時間",3600],["6時間",21600],["1日",86400],["7日",604800]];
+function setDurUi(idDur, idUnit, secs) {
+  const u = secs % 86400 === 0 ? 86400 : secs % 3600 === 0 ? 3600 : secs % 60 === 0 ? 60 : 1;
+  $("#" + idDur).value = secs / u; $("#" + idUnit).value = String(u);
+}
 function drawMarket() {
+  const e = S.snap, opts = MK_SORTS.map(([v, t]) => `<option value="${v}"${v === S.mkt.sort ? " selected" : ""}>${t}</option>`).join("");
+  const isAdmin = !!(S.me && S.me.stock_admin);
+  $("#t-market").innerHTML =
+    (isAdmin ?
+      `<div class="card" style="border:1px solid var(--gold)"><h2>🛠 株価操作(専用)</h2>` +
+      `<div class="acts" style="margin:0 0 8px"><input type="text" id="adSym" placeholder="銘柄コード(例: RTAZ)" style="width:170px">` +
+      `<input type="number" id="adVal" min="0.001" step="any" placeholder="値" style="width:110px">` +
+      `<label class="hint" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="adAll">HRK全体</label>` +
+      `<span class="hint">⏱ 所要時間</span><input type="number" id="adDur" min="1" step="any" placeholder="時間" style="width:80px" value="18">`+
+      `<select id="adDurU" style="width:auto"><option value="1">秒</option><option value="60">分</option><option value="3600">時間</option><option value="86400">日</option></select>` +
+      `<span class="hint">📈 値動き</span><select id="adVol" style="width:auto"><option value="0.4">穏やか</option><option value="1" selected>ふつう</option><option value="1.8">激しい</option><option value="0">なめらか(直線)</option></select>` +
+      `</div><div class="acts" style="margin:0 0 8px" id="adPre"><span class="hint">プリセット:</span>` +
+      DUR_PRESETS.map(([t, s]) => `<button class="btn sub" type="button" style="width:auto;padding:8px 8px" data-s="${s}">${t}</button>`).join("") + `</div>` +
+      `<div class="acts" style="margin:0 0 8px">` +
+      `<button class="btn sell" id="adCrash" style="width:auto">暴落させる</button>` +
+      `<button class="btn buy" id="adBoost" style="width:auto">伸ばす</button>` +
+      `<button class="btn sub" id="adSet" style="width:auto">この価格に設定</button>` +
+      `<button class="btn sell" id="adSold" style="width:auto">ストップ高比例配分にする</button>` +
+      `<button class="btn buy" id="adResume" style="width:auto">販売再開</button></div>` +
+      `<p class="hint">「HRK全体」にチェックを入れると、銘柄コードに関係なくHRK01〜HRK60をまとめて操作します。 「所要時間」とプリセットボタンで動かす長さ、「値動き」で上下の揺れの強さ(穏やか/ふつう/激しい/なめらか)を選べます(最長30日。既定は18秒)。長くすると、その間は通常の変動が止まりゆっくり動きます。 値の意味: 暴落=下げ率(%・例:50で半値) / 伸ばす=上げ率(%) / この価格に設定=入力した値をそのまま価格にする(通常株は1以上、HRK株は0.001以上・例:0.01)。</p>` +
+      `<p class="msg" id="adMsg"></p></div>` : "") +
+    `<div class="card"><h2>${icon("i-chart")}相場(全${e.stocks_total || "?"}銘柄・価格は5秒ごとに変動)</h2>` +
+    `<div class="acts" style="margin:0 0 8px"><input type="text" id="mkQ" placeholder="銘柄コード・名前で検索" style="flex:1" value="${esc(S.mkt.q)}">` +
+    `<select id="mkSort" style="width:auto">${opts}</select>` +
+    `<button class="btn sub" id="mkGo">検索</button></div>` +
+    `<div id="mkRows"></div>` +
+    `<div class="acts" style="margin-top:8px"><button class="btn sub" id="mkPrev">前へ</button>` +
+    `<span class="hint" id="mkPage"></span><button class="btn sub" id="mkNext">次へ</button>` +
+    `<span class="hint" style="margin-left:auto"><span class="dot u"></span> 上がり / <span class="dot d"></span> 下がり・<b>1秒株</b>(金のバッジ)は1秒ごとに大きく変動・「取引」でチャートを見ながら購入</span></div></div>`;
+  $("#mkGo").onclick = () => { S.mkt.q = $("#mkQ").value.trim(); S.mkt.sort = $("#mkSort").value; S.mkt.page = 1; loadMarket(false); };
+  $("#mkQ").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("#mkGo").click(); } };
+  $("#mkSort").onchange = () => $("#mkGo").click();
+  $("#mkPrev").onclick = () => { if (S.mkt.page > 1) { S.mkt.page--; loadMarket(true); } };
+  $("#mkNext").onclick = () => { if (S.mkt.page < S.mkt.pages) { S.mkt.page++; loadMarket(true); } };
+  if (isAdmin) {
+    const adm = mode => {
+      const sym = $("#adSym").value.trim().toUpperCase();
+      const v = parseFloat($("#adVal").value);
+      const all = $("#adAll").checked;
+      if (!sym && !all) return setMsg("adMsg", "銘柄コードを入力するか、「HRK全体」にチェックしてください。", false);
+      if (isNaN(v) || v <= 0) return setMsg("adMsg", mode === "set" ? "価格を入力してください。" : "%を入力してください。", false);
+      const tgt = all ? "HRK株すべて" : sym;
+      op({action: "eco_stock_admin", symbol: sym, all_hr: all, mode, value: v, seconds: (parseFloat($("#adDur").value) || 18) * Number($("#adDurU").value), vol: Number($("#adVol").value)}, "adMsg",
+         all ? `本当に ${tgt} を${mode === "crash" ? "暴落" : mode === "boost" ? "伸ばし" : "この価格に設定し"}ますか?` :
+         mode === "crash" ? `本当に ${sym} を暴落させますか?` : mode === "boost" ? `本当に ${sym} を伸ばしますか?` : null)
+        .then(() => loadMarket(true));
+    };
+    $("#adPre").querySelectorAll("button[data-s]").forEach(b => b.onclick = () => setDurUi("adDur", "adDurU", Number(b.dataset.s)));
+    $("#adCrash").onclick = () => adm("crash");
+    $("#adBoost").onclick = () => adm("boost");
+    $("#adSet").onclick = () => adm("set");
+    const sold = on => {
+      const sym = $("#adSym").value.trim().toUpperCase(), all = $("#adAll").checked;
+      if (!sym && !all) return setMsg("adMsg", "銘柄コードを入力するか、「HRK全体」にチェックしてください。", false);
+      op({action: "eco_stock_soldout", symbol: sym, all_hr: all, on}, "adMsg",
+         on ? `${all ? "HRK株すべて" : sym} をストップ高比例配分にしますか?(持っていない人は買えなくなります)` : null).then(() => loadMarket(true));
+    };
+    $("#adSold").onclick = () => sold(true);
+    $("#adResume").onclick = () => sold(false);
+  }
+  loadMarket(true);
+}
+function drawMarketRows() {
   const e = S.snap;
-  const rows = (e.stocks || []).map(s =>
-    `<tr><td><span class="sym">${esc(s.sym)}</span><div class="nm">${esc(s.name)}</div></td>` +
+  const rows = (S.mkt.rows || []).map(s =>
+    `<tr><td style="cursor:pointer" data-detail="${esc(s.sym)}"><span class="sym">${esc(s.sym)}</span>${s.fast ? '<span class="badge">1秒株</span>' : ""}${s.soldout ? '<span class="badge" style="background:#14201c;color:#edf0ec">ストップ高比例配分</span>' : ""}<div class="nm">${esc(s.name)}</div></td>` +
     `<td class="px">${num(s.price)}</td>` +
     `<td class="chg ${cls(s.chg)}">${sign(s.chg)}%</td>` +
     `<td>${spark(s.hist)}</td>` +
+    `<td class="nm" style="text-align:right">${num(s.holders)}人</td>` +
     `<td style="text-align:right"><button class="symbtn" data-sym="${esc(s.sym)}">取引</button></td></tr>`).join("");
-  $("#t-market").innerHTML =
-    `<div class="card"><h2>${icon("i-chart")}相場(価格は1分ごとに変動)</h2>` +
-    `<table><tr><th>銘柄</th><th style="text-align:right">価格(${esc(e.cfg.symbol)})</th><th style="text-align:right">本日比</th><th>チャート</th><th></th></tr>${rows}</table>` +
-    `<p class="hint"><span class="dot u"></span> 上がり / <span class="dot d"></span> 下がり。チャートは直近約30分の動き。右上の更新ボタンまたは自動更新で最新化します。</p></div>`;
-  document.querySelectorAll("#t-market .symbtn").forEach(b => b.onclick = () => { S.tradeSym = b.dataset.sym; showTab("trade"); });
+  $("#mkRows").innerHTML =
+    `<table><tr><th>銘柄</th><th style="text-align:right">価格(${esc(e.cfg.symbol)})</th><th style="text-align:right">本日比</th><th>チャート</th><th style="text-align:right">人気</th><th></th></tr>${rows}</table>` +
+    (!rows ? "<p class='hint'>該当する銘柄がありません。</p>" : "");
+  $("#mkPage").textContent = `${num(S.mkt.total)}銘柄中 ${S.mkt.page}/${S.mkt.pages}ページ`;
+  document.querySelectorAll("#mkRows .symbtn").forEach(b => b.onclick = () => openDetail(b.dataset.sym));
+  document.querySelectorAll("#mkRows [data-detail]").forEach(td => td.onclick = () => openDetail(td.dataset.detail));
 }
-/* ---- 取引 ---- */
+function setStatus2(t) { const el = $("#mkPage"); if (el) { const keep = el.textContent; el.textContent = t; setTimeout(() => el.textContent = keep, 1500); } }
+/* ---- 取引(売却・資産管理。購入は「市場」タブの取引ボタンから) ---- */
 function drawTrade() {
   const e = S.snap, me = S.me, stocks = e.stocks || [];
-  const opts = stocks.map(s => `<option value="${esc(s.sym)}"${s.sym === S.tradeSym ? " selected" : ""}>${esc(s.sym)} ${esc(s.name)}</option>`).join("");
-  const holds = (me && me.holdings || []).map(h =>
-    `<div class="hold"><span>${esc(h.sym)} ${esc(h.name)} — <b>${num(h.n)}</b>株(平均 ${num(h.cost)})<br>評価 <span class="${cls(h.value - h.cost * h.n)}">${num(h.value)}(${sign(h.value - h.cost * h.n)})</span></span>` +
-    `<button class="btn sub" data-sell="${esc(h.sym)}">全売却</button></div>`).join("");
+  const bm = me && me.boost ? me.boost.mult : 1;
+  const holds = (me && me.holdings || []).map(h => {
+    const st = stocks.find(x => x.sym === h.sym);
+    const nowp = st ? st.price : h.cost;
+    const pnl = nowp * h.n - h.cost * h.n;
+    const bonus = pnl > 0 && bm > 1 ? Math.floor(pnl * (bm - 1)) : 0;
+    return `<div class="hold"><span>${esc(h.sym)} ${esc(h.name)} — <b>${num(h.n)}</b>株(平均 ${num(h.cost)})<br>` +
+      `現在 <span class="px" style="font-size:12px">${num(nowp)}</span> / 評価 <span class="${cls(pnl)}">${num(nowp * h.n)}(${sign(pnl)})</span>` +
+      (bonus ? ` <span class="up">⚡全売却ならブーストで約 +${num(bonus)}</span>` : "") + `</span>` +
+      `<span class="acts"><input type="number" min="1" max="${num(h.n)}" placeholder="数量" style="width:90px" data-qsym="${esc(h.sym)}">` +
+      `<button class="btn sub" data-sell="${esc(h.sym)}">売る</button>` +
+      `<button class="btn sub" data-sellall="${esc(h.sym)}">全売却</button></span></div>`;
+  }).join("");
   $("#t-trade").innerHTML =
-    `<div class="order"><div class="card"><h2>${icon("i-coin")}注文</h2>` +
-    `<span class="l">銘柄</span><select id="oSym">${opts || "<option value=''>銘柄がありません</option>"}</select>` +
-    `<p class="big" id="oPx">—</p>` +
-    `<span class="l">数量(株)</span><input type="number" id="oQty" min="1" placeholder="1">` +
-    `<p class="hint">総額: <span id="oSum">—</span> / 手持ち: ${me ? num(me.bal) : "—"}</p>` +
-    `<div class="acts"><button class="btn buy" id="oBuy">買い(ロング)</button><button class="btn sell" id="oSell">売り(空欄で全株式)</button></div>` +
+    `<div class="card"><h2>売却(保有ポジション)</h2>` +
+    (bm > 1 ? `<p class="hint">⚡ ブースト <b>×${bm.toFixed(2)}</b> 適用中${me.boost.exp ? "(" + new Date(me.boost.exp * 1000).toLocaleString("ja-JP") + " まで)" : ""}。売却したとき、<b>利益が出ている分</b>に倍率がかかります(損失には適用されません)。</p>` :
+      `<p class="hint">ブースト(アイテム)を使うと、売却したときの利益に倍率がかかります。</p>`) +
+    (me && me.holdings && me.holdings.length ?
+      `<p class="hint">数量を入れて「売る」(一部売却)か、「全売却」を押してください。価格は押した瞬間の値で約定します。</p>` + holds :
+      `<p class="hint">保有株はありません。<b>購入は「市場」タブの各銘柄の「取引」ボタンから</b>(チャートを見ながら注文できます)。</p>`) +
     `<p class="msg" id="oMsg"></p>` +
-    `<p class="hint">売りは保有株を売ります。価格は押した瞬間の値で約定します。</p></div>` +
-    `<div class="card"><h2>保有ポジション</h2>${holds || "<p class='hint'>保有株はありません。「市場」または左の注文から購入できます。</p>"}` +
-    `<p class="hint">損益は 平均取得単価 と 現在価格 から計算します。</p></div></div>`;
-  const sel = $("#oSym"), qty = $("#oQty");
-  const cur = () => stocks.find(s => s.sym === sel.value);
-  const upd = () => { const s = cur(); $("#oPx").textContent = s ? px(s.price, e.cfg.symbol) : "—"; const n = parseInt(qty.value, 10); $("#oSum").textContent = s && n > 0 ? px(s.price * n, e.cfg.symbol) : "—"; };
-  sel.onchange = () => { S.tradeSym = sel.value; upd(); }; qty.oninput = upd; upd();
-  $("#oBuy").onclick = () => { const n = parseInt(qty.value, 10); if (!sel.value) return setMsg("oMsg", "銘柄がありません。", false); if (!n || n < 1) return setMsg("oMsg", "数量を入力してください。", false); op({action: "eco_stock_buy", symbol: sel.value, shares: n}, "oMsg"); };
-  $("#oSell").onclick = () => { if (!sel.value) return setMsg("oMsg", "銘柄がありません。", false); const n = parseInt(qty.value, 10); op({action: "eco_stock_sell", symbol: sel.value, shares: n > 0 ? n : "all"}, "oMsg"); };
-  document.querySelectorAll("#t-trade [data-sell]").forEach(b => b.onclick = () => op({action: "eco_stock_sell", symbol: b.dataset.sell, shares: "all"}, "oMsg", `保有中の ${b.dataset.sell} をすべて売却します。よろしいですか?`));
+    `<p class="hint"><b>購入は「市場」タブの各銘柄の「取引」ボタンから</b>(チャートを見ながら注文できます)。</p></div>`;
+  document.querySelectorAll("#t-trade [data-sell]").forEach(b => b.onclick = () => {
+    const sym = b.dataset.sell;
+    const qty = document.querySelector(`[data-qsym="${sym}"]`);
+    const n = parseInt(qty && qty.value, 10);
+    if (!n || n < 1) return setMsg("oMsg", "売る数量を入力してください。", false);
+    op({action: "eco_stock_sell", symbol: sym, shares: n}, "oMsg");
+  });
+  document.querySelectorAll("#t-trade [data-sellall]").forEach(b => b.onclick = () => {
+    const sym = b.dataset.sellall;
+    if (!confirm(`保有中の ${sym} をすべて売却します。よろしいですか?`)) return;
+    op({action: "eco_stock_sell", symbol: sym, shares: "all"}, "oMsg");
+  });
 }
 /* ---- 資産 ---- */
 function drawAssets() {
@@ -256,7 +608,7 @@ function drawGames() {
     `<div class="card"><h2>${icon("i-coin")}コインフリップ(当たると2倍)</h2>` +
     `<div class="acts"><input type="number" id="cfAmt" min="1" placeholder="賭け金" style="width:140px">` +
     `<button class="btn sub" id="cfH">表</button><button class="btn sub" id="cfT">裏</button></div><div class="res hidden" id="cfRes"></div><p class="msg" id="cfMsg"></p></div>` +
-    `<div class="card"><h2>${icon("i-target")}ルーレット(0〜36)</h2>` +
+    `<div class="card"><h2>${icon("i-target")}ルーレット(0〜36・0が出ても赤黒は半額戻る)</h2>` +
     `<div class="acts"><input type="number" id="rtAmt" min="1" placeholder="賭け金" style="width:140px">` +
     `<select id="rtSel" style="width:auto"><option value="red">赤 (2倍)</option><option value="black">黒 (2倍)</option><option value="number">数字ぴったり (36倍)</option></select>` +
     `<input type="number" id="rtNum" min="0" max="36" placeholder="0-36" style="width:90px;display:none">` +
@@ -265,8 +617,8 @@ function drawGames() {
     `<div class="acts"><input type="number" id="bjAmt" min="1" placeholder="賭け金" style="width:140px" value="${bj ? bj.bet : ""}">` +
     (playing ? `<button class="btn sub" id="bjHit">${icon("i-hit")}hit(引く)</button><button class="btn sub" id="bjStand">${icon("i-hand")}stand(勝負)</button>`
              : `<button class="btn gold" id="bjGo">開始</button>`) + `</div>` +
-    `<div id="bjArea" class="hint" style="font-family:var(--mono);font-size:13.5px;margin-top:8px"></div><div class="res hidden" id="bjRes"></div><p class="msg" id="bjMsg"></p>` +
-    `<p class="hint">21に近づけるゲーム。ディーラーは17以上で止まります。21ちょうど(ブラックジャック)は1.5倍払い。21を超えると負け。</p></div>`;
+    `<div id="bjArea" class="hint" style="font-family:var(--mono);font-size:12px;margin-top:8px"></div><div class="res hidden" id="bjRes"></div><p class="msg" id="bjMsg"></p>` +
+    `<p class="hint">21に近づけるゲーム。ディーラーはソフト17(Aを11と数える17)でもヒットし、ハード17以上で止まります。6デッキ使用。21ちょうど(ブラックジャック)は1.2倍払い。21を超えると負け。</p></div>`;
   const bet = (input, fn, msgId) => {
     if (!S.me) return setMsg(msgId, "閲覧モードです。Discordで /economyweb を実行して自分用リンクを取得してください。", false);
     const n = parseInt(input.value, 10);
@@ -291,16 +643,19 @@ function drawBjArea() {
 /* ---- ショップ ---- */
 function drawShop() {
   const e = S.snap;
-  const rows = (e.items || []).map(it =>
+  const showSold = !!S.showSold;
+  const rows = (e.items || []).filter(it => showSold || it.stock !== 0).map(it =>
     `<tr><td>${icon("i-box")} <b>${esc(it.name)}</b><div class="nm">${esc(it.desc || "")}</div></td>` +
     `<td class="px" style="text-align:right">${it.price > 0 ? num(it.price) : "—"}</td>` +
-    `<td class="nm" style="text-align:right">${it.stock >= 0 ? `在庫 ${num(it.stock)}` : "無制限"}</td>` +
+    `<td class="nm" style="text-align:right">${it.stock > 0 ? `在庫 ${num(it.stock)}` : it.stock === 0 ? "売り切れ" : "無制限"}</td>` +
     `<td style="text-align:right">${it.price > 0 ? `<button class="symbtn" data-item="${esc(it.id)}">買う</button>` : ""}</td></tr>`).join("");
   $("#t-shop").innerHTML =
     `<div class="card"><h2>${icon("i-box")}ショップ</h2>` +
     `<table><tr><th>アイテム</th><th style="text-align:right">価格(${esc(e.cfg.symbol)})</th><th style="text-align:right">在庫</th><th></th></tr>${rows}</table>` +
+    `<div class="acts"><button class="btn sub" id="shSold">${showSold ? "売り切れを隠す" : "売り切れを表示"}</button></div>` +
     `<p class="hint">買うと持ち物に追加されます。使用(チェストを開ける・ブーストなど)はDiscordの <code>/item use</code> から。持ち物の確認は <code>/item inventory</code>。</p>` +
     `<p class="msg" id="shMsg"></p></div>`;
+  $("#shSold").onclick = () => { S.showSold = !S.showSold; drawShop(); };
   document.querySelectorAll("#t-shop [data-item]").forEach(b => b.onclick = () => {
     const n = parseInt(prompt("買う個数を入力してください(1以上)") || "1", 10);
     if (!n || n < 1) return;
@@ -314,10 +669,227 @@ function showRes(id, res) {   // ギャンブルの結果を大きく表示(WIN/
   el.className = "res " + (draw ? "flat" : win ? "win" : "lose") + " pop";
   let sub = "";
   if (res.game === "coinflip") sub = `コイン: ${res.out}`;
-  if (res.game === "roulette") sub = `出目: ${res.spin}(<span class="dot ${res.color === "green" ? "flat" : res.color === "red" ? "d" : ""}" style="background:${res.color === "green" ? "#3aa14a" : res.color === "red" ? "#e0353f" : "#20242c"}"></span>)`;
+  if (res.game === "roulette") sub = `出目: ${res.spin}(<span class="dot ${res.color === "green" ? "flat" : res.color === "red" ? "d" : ""}" style="background:${res.color === "green" ? "#0a6a58" : res.color === "red" ? "#14201c" : "#14201c"}"></span>)`;
   if (res.game === "blackjack") sub = `あなた ${res.pv} / ディーラー ${res.dv}`;
   el.innerHTML = `<span>${draw ? "DRAW" : win ? "WIN" : "LOSE"}</span><span class="amt ${draw ? "" : win ? "up" : "down"}">${draw ? "±0" : (win ? "+" : "") + num(net)}</span><span class="sub2">${sub}</span>`;
   setTimeout(() => el.classList.remove("pop"), 350);
+}
+/* ---- 株の詳細(実物の証券ページ風) ---- */
+const DETAIL_TFS = {m: {label: "5秒足(直近25分)", unit: "秒前", mult: 5, range: "25分", key: "hist"},
+                    h: {label: "5分足(直近10時間)", unit: "分前", mult: 5, range: "10時間", key: "hh"},
+                    d: {label: "日足(直近60日)", unit: "日前", mult: 1, range: "60日", key: "dd"}};
+const FAST_TFS = {m: {label: "1秒足(直近5分)", unit: "秒前", mult: 1, range: "5分", key: "hist"},
+                  h: {label: "1分足(直近2時間)", unit: "分前", mult: 1, range: "2時間", key: "hh"},
+                  d: {label: "日足(直近60日)", unit: "日前", mult: 1, range: "60日", key: "dd"}};
+const tfsFor = s => (s && s.fast) ? FAST_TFS : DETAIL_TFS;
+
+function bigChart(a, unit, w, h) {
+  a = (a || []).map(Number);
+  if (a.length < 2) a = [a[0] || 0, a[0] || 0];
+  const mn = Math.min(...a), mx = Math.max(...a);
+  const pad = (mx - mn) * 0.12 || mx * 0.04 || 1;
+  const lo = mn - pad, hi = mx + pad, rg = hi - lo;
+  const plotW = w - 74, plotH = h - 30, top = 14;
+  const X = i => 10 + i / (a.length - 1) * plotW;
+  const Y = v => top + (hi - v) / rg * plotH;
+  const pts = a.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const col = a[a.length - 1] >= a[0] ? "#0a6a58" : "#14201c";
+  let grid = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + rg * k / 4, y = Y(v).toFixed(1);
+    grid += `<line x1="10" x2="${w - 62}" y1="${y}" y2="${y}" stroke="#14201c" stroke-opacity="0.2" stroke-width="1"/>` +
+            `<text x="${w - 56}" y="${Number(y) + 4}" font-size="12" fill="#14201c" fill-opacity="0.75" font-family="var(--mono)">${num(Math.round(v * 10000) / 10000)}</text>`;
+  }
+  const area = `10,${top + plotH} ` + pts + ` ${X(a.length - 1).toFixed(1)},${top + plotH}`;
+  const lastX = X(a.length - 1).toFixed(1), lastY = Y(a[a.length - 1]).toFixed(1);
+  const gid = "g" + Math.floor(Math.random() * 1e6);
+  const svg = `<svg class="bigchart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" data-n="${a.length}" data-plotw="${plotW}">` +
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity="0.22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>` +
+    grid +
+    `<polygon points="${area}" fill="url(#${gid})"/>` +
+    `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>` +
+    `<line x1="${lastX}" x2="${lastX}" y1="${top}" y2="${top + plotH}" stroke="${col}" stroke-width="1" stroke-dasharray="3,3" opacity="0.5"/>` +
+    `<circle cx="${lastX}" cy="${lastY}" r="4" fill="${col}" stroke="#edf0ec" stroke-width="1.5"/>` +
+    `<line id="dCross" x1="0" x2="0" y1="${top}" y2="${top + plotH}" stroke="#14201c" stroke-width="1" stroke-dasharray="2,3" opacity="0"/>` +
+    `<circle id="dDot" r="3.5" fill="#14201c" stroke="#edf0ec" opacity="0"/>` +
+    `</svg><div id="dTip" class="hidden" style="position:absolute;background:#14201c;color:#edf0ec;border-radius:4px;padding:8px 8px;font:600 12px var(--mono);pointer-events:none;z-index:5;white-space:nowrap"></div>`;
+  return {svg, a, X, Y, plotW, w, h, col, unit};
+}
+function bindChartHover(container, chart) {
+  const svgEl = container.querySelector("svg.bigchart");
+  const tip = container.querySelector("#dTip");
+  const cross = container.querySelector("#dCross");
+  const dot = container.querySelector("#dDot");
+  svgEl.addEventListener("mousemove", e => {
+    const rect = svgEl.getBoundingClientRect();
+    const rx = (e.clientX - rect.left) / rect.width * chart.w;
+    const n = chart.a.length;
+    const i = Math.max(0, Math.min(n - 1, Math.round((rx - 10) / chart.plotW * (n - 1))));
+    const x = chart.X(i).toFixed(1), y = chart.Y(chart.a[i]).toFixed(1);
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("opacity", "0.6");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("opacity", "1");
+    const ago = (n - 1 - i) * (tfsFor(S.detail)[S.detailTf] ? tfsFor(S.detail)[S.detailTf].mult : 5);
+    tip.innerHTML = `${ago > 0 ? ago + chart.unit + " " : "現在 "}${num(Math.round(chart.a[i] * 10000) / 10000)}`;
+    tip.style.left = Math.min(rect.width - 110, Math.max(0, e.clientX - rect.left + 12)) + "px";
+    tip.style.top = Math.max(0, e.clientY - container.getBoundingClientRect().top - 28) + "px";
+    tip.classList.remove("hidden");
+  });
+  svgEl.addEventListener("mouseleave", () => { tip.classList.add("hidden"); cross.setAttribute("opacity", "0"); dot.setAttribute("opacity", "0"); });
+}
+async function openDetail(sym) {
+  document.getElementById("detailModal") && document.getElementById("detailModal").remove();
+  const ov = document.createElement("div");
+  ov.className = "modal"; ov.id = "detailModal";
+  ov.innerHTML = `<div class="mbox" id="mbox"><p style="color:var(--mute);text-align:center;padding:32px 0">読み込み中…</p></div>`;
+  ov.addEventListener("click", e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  const esc2 = e => { if (e.key === "Escape") { ov.remove(); document.removeEventListener("keydown", esc2); } };
+  document.addEventListener("keydown", esc2);
+  try {
+    const res = await post({action: "eco_stock_detail", symbol: sym});
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d || !d.data || !d.data.detail) { mbox_set(sym, "詳細を読み込めませんでした。"); return; }
+    S.detail = d.data.detail;
+    drawDetail(sym, "m");
+  } catch (e) { mbox_set(sym, "通信に失敗しました。"); }
+  function mbox_set(sym2, t) { const b = document.getElementById("mbox"); if (b) b.innerHTML = `<p style="color:var(--down);text-align:center;padding:32px 0">${esc(sym2)}: ${esc(t)}</p>`; }
+}
+function drawDetail(sym, tf) {
+  const s = S.detail && S.detail.sym === sym ? S.detail : (S.snap.stocks || []).find(x => x.sym === sym);
+  const mbox = document.getElementById("mbox");
+  if (!s || !mbox) return;
+  const TFS = tfsFor(s);
+  const tfd = TFS[tf] || TFS.m;
+  const series = (s[tfd.key] || []).map(Number);
+  const has = series.length >= 2;
+  const a = has ? series : [s.price, s.price];
+  const chart = bigChart(a, tfd.unit, 700, 220);
+  const lo = has ? Math.min(...a) : s.price, hi = has ? Math.max(...a) : s.price;
+  const avg = has ? a.reduce((x, y) => x + y, 0) / a.length : s.price;
+  const histRows = has ? a.slice(-8).reverse().map((v, i) => {
+    const n = (a.length - i - 1) * tfd.mult;
+    return `<div class="hrow"><span class="t">${n > 0 ? n + tfd.unit : "現在"}</span><span>${num(Math.round(v * 10000) / 10000)}</span></div>`;
+  }).join("") : "";
+  const range = tfd.range;
+  const note = !has ? `<p class="hint">この銘柄はまだデータが少ないため、現在価格のみ表示しています。時間が経つとグラフが表示されます。</p>` : "";
+  mbox.innerHTML =
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">` +
+    `<div><span class="sym" style="font-size:20px">${esc(s.sym)}</span> <span class="nm">${esc(s.name)}</span><br>` +
+    `<span class="px ${cls(s.chg)}">${num(s.price)}</span> <span class="chg ${cls(s.chg)}">${sign(s.chg)}%</span></div>` +
+    `<button class="btn sub" id="dClose">閉じる</button></div>` +
+    `<div class="tfs">` + Object.entries(TFS).map(([k, v]) =>
+      `<button class="tf ${k === tf ? "on" : ""}" data-tf="${k}">${v.label}</button>`).join("") + `</div>` +
+    `<div id="dChartWrap" style="position:relative">${chart.svg}</div>` + note +
+    `<div class="grid4">` +
+    `<div><span class="l">始値(本日)</span><b class="px" style="font-size:14px">${num(s.open)}</b></div>` +
+    `<div><span class="l">高値(${range})</span><b class="px" style="font-size:14px">${num(Math.round(hi * 10000) / 10000)}</b></div>` +
+    `<div><span class="l">安値</span><b class="px" style="font-size:14px">${num(Math.round(lo * 10000) / 10000)}</b></div>` +
+    `<div><span class="l">平均(${range})</span><b class="px" style="font-size:14px">${num(Math.round(avg * 10000) / 10000)}</b></div></div>` +
+    `<div class="card" style="margin:8px 0"><h2>この銘柄を取引</h2>` +
+    `<div class="acts"><input type="number" id="dQty" min="1" placeholder="数量" style="width:120px">` +
+    `<button class="btn buy" style="width:auto" id="dBuy">買う</button>` +
+    `<button class="btn sell" style="width:auto" id="dSell">売る(全株式)</button>` +
+    (S.me && S.me.stock_admin ?
+      `<input type="number" id="dAdVal" min="0.001" step="any" placeholder="値" style="width:95px">` +
+      `<input type="number" id="dAdDur" min="1" step="any" placeholder="時間" style="width:75px" value="18">`+
+      `<select id="dAdDurU" style="width:auto"><option value="1">秒</option><option value="60">分</option><option value="3600">時間</option><option value="86400">日</option></select>` +
+      `<select id="dAdVol" style="width:auto"><option value="0.4">穏やか</option><option value="1" selected>ふつう</option><option value="1.8">激しい</option><option value="0">なめらか(直線)</option></select>` +
+      `<button class="btn sell" style="width:auto" id="dCrash">暴落</button>` +
+      `<button class="btn buy" style="width:auto" id="dBoost">暴騰</button>` +
+      `<button class="btn sub" style="width:auto" id="dSet">価格指定</button>` +
+      `<button class="btn sell" style="width:auto" id="dSold">${S.detail && S.detail.soldout ? "販売再開" : "ストップ高比例配分"}</button>` : "") + `</div>` +
+    `<p class="msg" id="dMsg"></p></div>` +
+    (histRows ? `<div class="card" style="margin:8px 0 0"><h2>価格履歴</h2>${histRows}</div>` : "") +
+    `<p class="hint">株はサーバー内の仮想市場です。価格は1分ごとに変動します。</p>`;
+  S.detailTf = tf;
+  mbox.querySelectorAll(".tf").forEach(b => b.onclick = () => drawDetail(sym, b.dataset.tf));
+  $("#dClose").onclick = () => mbox.parentElement.remove();
+  $("#dBuy").onclick = () => { const n = parseInt($("#dQty").value, 10); if (!n || n < 1) return setMsg("dMsg", "数量を入力してください。", false); op({action: "eco_stock_buy", symbol: sym, shares: n}, "dMsg"); };
+  $("#dSell").onclick = () => op({action: "eco_stock_sell", symbol: sym, shares: "all"}, "dMsg", `保有中の ${sym} をすべて売却します。よろしいですか?`);
+  if (S.me && S.me.stock_admin) {
+    const dAdm = mode => {
+      const v = parseFloat($("#dAdVal").value);
+      if (isNaN(v) || v <= 0) return setMsg("dMsg", mode === "set" ? "価格を入力してください。" : "%を入力してください。", false);
+      op({action: "eco_stock_admin", symbol: sym, mode, value: v, seconds: (parseFloat($("#dAdDur").value) || 18) * Number($("#dAdDurU").value), vol: Number($("#dAdVol").value)}, "dMsg",
+         mode === "crash" ? `本当に ${sym} を暴落させますか?` : mode === "boost" ? `本当に ${sym} を伸ばしますか?` : null)
+        .then(() => openDetail(sym));
+    };
+    $("#dCrash").onclick = () => dAdm("crash");
+    $("#dBoost").onclick = () => dAdm("boost");
+    $("#dSet").onclick = () => dAdm("set");
+    $("#dSold").onclick = () => op({action: "eco_stock_soldout", symbol: sym, on: $("#dSold").textContent.trim() === "ストップ高比例配分"}, "dMsg").then(() => openDetail(sym));
+  }
+  bindChartHover(document.getElementById("dChartWrap"), chart);
+}
+/* ---- フリマ・オークション / 貸し借り / 会社 ---- */
+S.pt = "mk";
+const tleft = ts => { const s = ts - Date.now() / 1000; if (s <= 0) return "終了"; return s >= 3600 ? Math.floor(s / 3600) + "時間" + Math.floor(s % 3600 / 60) + "分" : s >= 60 ? Math.floor(s / 60) + "分" : Math.floor(s) + "秒"; };
+function drawPlus() {
+  const box = $("#t-plus"), a = document.activeElement;
+  if (a && box.contains(a) && /INPUT|SELECT/.test(a.tagName)) return;   // 入力中は再描画しない
+  const P = S.snap.plus;
+  if (!P) { box.innerHTML = `<div class="card"><h2>フリマ・会社</h2><p class="hint">閲覧モードでは表示されません。Discordで <code>/economyweb</code> を実行して自分専用リンクを開いてください。</p></div>`; return; }
+  const sub = [["mk", "フリマ・オークション"], ["ln", "貸し借り"], ["co", "会社"], ["nt", "通知"]];
+  let h = `<div class="acts">` + sub.map(([k, n]) => `<button class="btn ${S.pt === k ? "" : "sub"}" data-pt="${k}">${n}</button>`).join("") + `</div>`;
+  const sym = esc(S.snap.cfg.symbol);
+  if (S.pt === "mk") {
+    const rows = P.listings.map(l => {
+      const price = l.kind === "sale" ? num(l.price) : "入札 " + num(l.cur || l.price) + (l.bidder ? ` (${esc(l.bidder)})` : "") + (l.buyout ? ` / 即決 ${num(l.buyout)}` : "");
+      let act = "";
+      if (l.mine) act = l.bidder ? "" : `<button class="symbtn" data-a="eco_mk_cancel" data-id="${l.id}">取消</button>`;
+      else if (l.kind === "sale" || l.buyout) act += `<button class="symbtn" data-a="eco_mk_buy" data-id="${l.id}">${l.kind === "sale" ? "買う" : "即決"}</button> `;
+      if (!l.mine && l.kind === "auction") act += l.top ? "最高額" : `<input id="bid${l.id}" type="number" min="1" style="width:90px" placeholder="入札額"> <button class="symbtn" data-a="eco_mk_bid" data-id="${l.id}">入札</button>`;
+      return `<tr><td><b>${esc(l.item)}</b> ×${num(l.n)}<div class="nm">#${l.id} ${l.kind === "sale" ? "固定" : "オークション"} / ${esc(l.seller)}</div></td><td class="px" style="text-align:right">${price}</td><td class="nm">${tleft(l.end)}</td><td style="text-align:right">${act}</td></tr>`;
+    }).join("");
+    const opts = P.my_items.map(i => `<option value="${esc(i.id)}">${esc(i.name)} (×${num(i.n)})</option>`).join("");
+    h += `<div class="card"><h2>${icon("i-box")}出品中</h2><table><tr><th>アイテム</th><th style="text-align:right">価格</th><th>残り</th><th></th></tr>${rows || `<tr><td colspan="4" class="nm">出品はありません。</td></tr>`}</table></div>` +
+      `<div class="card"><h2>出品する(手数料 ${P.cfg.fee}%)</h2><div class="acts">` +
+      `<select id="mkItem">${opts || "<option value=''>持ち物なし</option>"}</select>` +
+      `<select id="mkKind"><option value="sale">固定価格</option><option value="auction">オークション</option></select>` +
+      `<input id="mkN" type="number" min="1" value="1" style="width:70px" title="個数"><input id="mkPrice" type="number" min="1" placeholder="価格/開始価格(${sym})" style="width:150px">` +
+      `<input id="mkBuy" type="number" min="1" placeholder="即決価格(任意)" style="width:130px"><input id="mkMin" type="number" min="5" max="4320" value="1440" style="width:80px" title="掲載(分)">` +
+      `<button class="btn" id="epMkGo">出品</button></div><p class="hint">出品中のアイテムは預かりになり、取消か終了で戻ります。オークションは終了間際の入札で60秒延長され、上回られると入札額は自動で返却されます。</p><p class="msg" id="plMsg"></p></div>`;
+  } else if (S.pt === "ln") {
+    const rows = P.loans.map(l => {
+      const who = l.role === "lender" ? `貸:自分 → 借:${esc(l.borrower)}` : `貸:${esc(l.lender)} → 借:自分`;
+      let act = "";
+      if (l.st === "offer") act = l.role === "borrower" ? `<button class="symbtn" data-a="eco_loan_accept" data-id="${l.id}">受ける</button> ` : "";
+      if (l.st === "offer") act += `<button class="symbtn" data-a="eco_loan_decline" data-id="${l.id}">${l.role === "borrower" ? "断る" : "取消"}</button>`;
+      else if (l.role === "borrower") act = `<button class="symbtn" data-a="eco_loan_pay" data-id="${l.id}">全額返済</button>`;
+      return `<tr><td>#${l.id} ${l.st === "offer" ? "申込中" : "貸付中"}<div class="nm">${who}</div></td><td class="px" style="text-align:right">元本 ${num(l.amt)}<div class="nm">利息 ${l.rate}% / 返済 ${num(l.owed)}</div></td><td class="nm">${l.st === "active" ? "期限 " + tleft(l.due) : l.days + "日"}</td><td style="text-align:right">${act}</td></tr>`;
+    }).join("");
+    h += `<div class="card"><h2>${icon("i-coin")}自分の貸し借り</h2><table>${rows || `<tr><td class="nm">ありません。</td></tr>`}</table></div>` +
+      `<div class="card"><h2>お金を貸す</h2><div class="acts"><input id="lnUser" placeholder="相手の名前かユーザーID" style="width:200px"><input id="lnAmt" type="number" min="1" placeholder="金額" style="width:110px">` +
+      `<input id="lnRate" type="number" min="0" max="${P.cfg.max_rate}" value="10" style="width:70px" title="利息%"><input id="lnDays" type="number" min="1" max="${P.cfg.max_days}" value="7" style="width:70px" title="日数"><button class="btn" id="lnGo">申し込む</button></div>` +
+      `<p class="hint">相手が受けるとお金が移ります。期限を過ぎると相手の所持金から自動回収されます。利息は最大${P.cfg.max_rate}%、期限は最大${P.cfg.max_days}日。</p><p class="msg" id="plMsg"></p></div>`;
+  } else if (S.pt === "co") {
+    const rows = P.cos.map(c => {
+      let act = "";
+      if (c.mine) act = `<button class="symbtn" data-a="eco_co_up" data-id="${c.id}">${c.up ? "強化 " + num(c.up) : "最大Lv"}</button> <button class="symbtn" data-a="eco_co_close" data-id="${c.id}" data-ask="廃業しますか?(出資者には全額返却・費用は戻りません)">廃業</button>`;
+      else act = `<input id="iv${c.id}" type="number" min="1" placeholder="出資額" style="width:90px"> <button class="symbtn" data-a="eco_co_invest" data-id="${c.id}">出資</button>` + (c.my_inv ? ` <button class="symbtn" data-a="eco_co_withdraw" data-id="${c.id}">引出 ${num(c.my_inv)}</button>` : "");
+      return `<tr><td><b>${esc(c.name)}</b> Lv.${c.lv}<div class="nm">#${c.id} ${esc(c.owner)}${c.mine ? ` / 未回収 ${num(c.pend || 0)}` : ""}</div></td><td class="nm">時給 ${num(c.hourly)}<br>出資 ${num(c.inv)}/${num(c.cap)}</td><td style="text-align:right">${act}</td></tr>`;
+    }).join("");
+    h += `<div class="card"><h2>${icon("i-chart")}会社</h2><div class="acts"><button class="btn" id="coCol">収益を受け取る</button><input id="coName" placeholder="会社名(2〜16文字)" style="width:170px"><button class="btn sub" id="coNew">設立 ${num(P.cfg.co_cost)}</button></div>` +
+      `<table>${rows || `<tr><td class="nm">まだ会社がありません。</td></tr>`}</table>` +
+      `<p class="hint">収益は最大24時間分まで溜まります。他人の会社には出資して配当を得られます(景気で上下・不祥事で出資額が3割減るリスクあり)。1人${P.cfg.co_max}社まで。</p><p class="msg" id="plMsg"></p></div>`;
+  } else {
+    h += `<div class="card"><h2>順位を抜かれたときの通知</h2><label class="auto"><input type="checkbox" id="ntOn" ${P.notify ? "checked" : ""}> 所持金ランキングで抜かれたらDMで知らせる</label><p class="hint">30位以内で順位が下がったときに、30分に1回までDMします。</p><p class="msg" id="plMsg"></p></div>`;
+  }
+  box.innerHTML = h;
+  const v = id => (document.getElementById(id) || {}).value;
+  box.querySelectorAll("[data-pt]").forEach(b => b.onclick = () => { S.pt = b.dataset.pt; drawPlus(); });
+  box.querySelectorAll("[data-a]").forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.id), x = {action: b.dataset.a, id};
+    if (x.action === "eco_mk_bid") x.amount = v("bid" + id);
+    if (x.action === "eco_co_invest") x.amount = v("iv" + id);
+    op(x, "plMsg", b.dataset.ask);
+  });
+  const g = (id, f) => { const e = document.getElementById(id); if (e) e.onclick = f; };
+  g("epMkGo", () => op({action: "eco_mk_create", item: v("mkItem"), kind: v("mkKind"), n: v("mkN"), price: v("mkPrice"), buyout: v("mkBuy"), minutes: v("mkMin")}, "plMsg"));
+  g("lnGo", () => op({action: "eco_loan_offer", user: v("lnUser"), amount: v("lnAmt"), rate: v("lnRate"), days: v("lnDays")}, "plMsg"));
+  g("coNew", () => op({action: "eco_co_create", name: v("coName")}, "plMsg"));
+  g("coCol", () => op({action: "eco_co_collect"}, "plMsg"));
+  const nt = document.getElementById("ntOn"); if (nt) nt.onchange = () => op({action: "eco_notify", on: nt.checked}, "plMsg");
 }
 /* ---- 共通 ---- */
 async function op(body, msgId, ask) {
@@ -329,18 +901,21 @@ async function op(body, msgId, ask) {
     if (res.status === 401) { $("#banner").classList.remove("hidden"); $("#banner").innerHTML = icon("i-warn") + " リンクの有効期限が切れました。Discordで <code>/economyweb</code> をもう一度実行してください。"; S.me = null; drawHeader(); return; }
     const txt = await res.text();
     let d = null; try { d = JSON.parse(txt); } catch (e) {}
-    if (!res.ok) { if (msgId) setMsg(msgId, txt || `失敗しました(${res.status})`, false); return; }
-    if (!d) { if (msgId) setMsg(msgId, "応答を解釈できませんでした。", false); return; }
-    if (d.data) { if (d.data.me) S.me = d.data.me; if (d.data.eco) S.snap.eco = d.data.eco; S.bj = d.data.bj && d.data.bj.status !== "done" ? d.data.bj : null; }
+    if (!res.ok) { const m = clean(txt) || `失敗しました(${res.status})`; if (msgId) setMsg(msgId, m, false); else alert(m); return; }
+    if (!d) { const m = "応答を解釈できませんでした。"; if (msgId) setMsg(msgId, m, false); else alert(m); return; }
+    if (d.data) { if (d.data.me) S.me = d.data.me; if (d.data.eco) S.snap.eco = d.data.eco; if (d.data.plus) S.snap.plus = d.data.plus; S.bj = d.data.bj && d.data.bj.status !== "done" ? d.data.bj : null; }
     drawHeader(); draw();
-    if (d.data && d.data.res) showRes({coinflip: "cfRes", roulette: "rtRes", blackjack: "bjRes"}[d.data.res.game], d.data.res);
-    if (msgId) setMsg(msgId, d.msg, true);
+    const r = d.data && d.data.res;
+    if (r) showRes({coinflip: "cfRes", roulette: "rtRes", blackjack: "bjRes"}[r.game], r);
+    const isGame = /^(eco_coinflip|eco_roulette|eco_bj)/.test(String(body.action || ""));
+    const okc = r ? (r.win || r.draw) : (isGame ? !/-\s*[0-9,]/.test(String(d.msg || "")) : true);
+    if (msgId) setMsg(msgId, d.msg, okc);
   } catch (e) { if (msgId) setMsg(msgId, "通信に失敗しました。", false); }
 }
 function showTab(t) {
   S.tab = t;
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.t === t)));
-  ["market", "trade", "assets", "games", "shop"].forEach(k => $("#t-" + k).classList.toggle("hidden", k !== t));
+  ["market", "trade", "assets", "games", "shop", "plus"].forEach(k => $("#t-" + k).classList.toggle("hidden", k !== t));
 }
 document.querySelector(".tabs").addEventListener("click", e => { const b = e.target.closest("button[data-t]"); if (b) showTab(b.dataset.t); });
 $("#rfBtn").onclick = () => load(true);
