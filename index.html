@@ -1,295 +1,31 @@
 <!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AZQ BOT - サーバー管理Discord Bot</title>
-<meta name="description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・投票・リマインダー・脳内メーカー・名言画像・王様ゲーム・モデレーションが使える高機能Discord Bot">
-<meta name="theme-color" content="#0e2747">
-<link rel="canonical" href="https://bot.azuk1.com/">
-<meta property="og:site_name" content="AZQ BOT">
-<meta property="og:locale" content="ja_JP">
-<meta property="og:type" content="website">
-<meta property="og:title" content="AZQ BOT - サーバー管理Discord Bot">
-<meta property="og:description" content="荒らし検知・メンバー認証・チケット・レベル・過疎診断・投票・リマインダーなど、サーバー管理に必要な機能を1つのBotで。">
-<meta property="og:url" content="https://bot.azuk1.com/">
-<meta name="twitter:card" content="summary">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-<style>:root{color-scheme:light;
---navy:#0e2747;--navy2:#143561;--acc:#1b5fb0;--accd:#134a8e;--bg:#fff;--alt:#f2f5f9;--line:#d8dfe9;--line2:#bcc7d6;
---text:#18212f;--mute:#4b586b;--dim:#6f7b8d;--green:#17744a;--amber:#8a5a00;--red:#b3261e;
---ease:cubic-bezier(.2,.8,.2,1);
---font:"Noto Sans JP","Hiragino Sans","Yu Gothic",Meiryo,system-ui,sans-serif}
-*{box-sizing:border-box}
-html{overflow-x:clip;scroll-behavior:smooth;scroll-padding-top:96px}
-body{margin:0;font:400 15.5px/1.9 var(--font);background:var(--bg);color:var(--text);overflow-x:clip;-webkit-font-smoothing:antialiased}
-a{color:var(--acc);text-underline-offset:3px}a:hover{color:var(--accd)}
-button{font:inherit;color:inherit}
-:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-::selection{background:#cfe0f5}
-.skip{position:absolute;left:12px;top:-60px;background:#fff;color:#000;padding:8px 14px;z-index:100;font-weight:700}
-.skip:focus{top:12px}
-.wrap{max-width:1120px;margin:auto;padding:0 28px}
-.band{margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);padding-left:calc(50vw - 50%);padding-right:calc(50vw - 50%)}
-/* header */
-.top{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--line)}
-.nav{max-width:1120px;margin:auto;height:68px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-.logo{display:inline-flex;align-items:center;gap:10px;font:700 18px/1 var(--font);letter-spacing:.06em;color:var(--navy);text-decoration:none;white-space:nowrap}
-.logo .azq-mark{width:28px;height:28px;flex:none}
-.logo-b{font-weight:400;color:var(--mute);margin-left:.3em}
-.links{display:flex;align-items:center;gap:2px;height:100%}
-.links a{white-space:nowrap;color:var(--text);text-decoration:none;font-size:14px;font-weight:500;padding:0 13px;height:100%;display:inline-flex;align-items:center;border-bottom:3px solid transparent;margin-bottom:-1px}
-.links a:hover{color:var(--acc);border-bottom-color:var(--acc)}
-.links a.on{color:var(--acc);border-bottom-color:var(--acc)}
-.links a.legal{font-size:12.5px;color:var(--dim)}
-.nav-cta{margin:0 0 0 14px!important;padding:0 22px!important;height:40px!important;background:var(--navy);color:#fff!important;border:0!important;border-radius:2px}
-.nav-cta:hover{background:var(--acc)!important;color:#fff!important}
-.burger{display:none;width:40px;height:40px;border:1px solid var(--line2);background:#fff;cursor:pointer;position:relative;border-radius:2px}
-.burger i,.burger i::before,.burger i::after{position:absolute;left:11px;width:16px;height:2px;background:var(--navy);transition:transform .25s var(--ease)}
-.burger i{top:19px}.burger i::before,.burger i::after{content:"";left:0}.burger i::before{top:-6px}.burger i::after{top:6px}
-.burger[aria-expanded=true] i{background:transparent}
-.burger[aria-expanded=true] i::before{transform:translateY(6px) rotate(45deg)}
-.burger[aria-expanded=true] i::after{transform:translateY(-6px) rotate(-45deg)}
-/* buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--acc);color:#fff;padding:14px 30px;border-radius:2px;text-decoration:none;font-weight:700;border:1px solid var(--acc);cursor:pointer;transition:background .2s,color .2s,border-color .2s}
-.btn:hover{background:var(--accd);border-color:var(--accd);color:#fff}
-.btn.alt{background:transparent;border:1px solid var(--line2);color:var(--text)}
-.btn.alt:hover{background:var(--alt);color:var(--text)}
-.btns{display:flex;flex-wrap:wrap;gap:12px}
-.sub{display:block;margin-top:18px;color:var(--mute);font-size:13px}
-/* type */
-h1{font-size:clamp(28px,3.8vw,44px);line-height:1.45;margin:0 0 20px;font-weight:700;letter-spacing:.02em}
-h2{font-size:clamp(23px,2.6vw,30px);line-height:1.5;margin:0 0 14px;font-weight:700;letter-spacing:.03em}
-.grad{color:inherit}
-.lead{color:var(--mute);font-size:16px;margin:0 0 30px;max-width:32em}
-.eyebrow{display:flex;align-items:center;gap:12px;font:700 12px var(--font);letter-spacing:.2em;text-transform:uppercase;color:var(--acc);margin-bottom:10px}
-.eyebrow::before{content:"";width:28px;height:2px;background:var(--acc)}
-.sec-lead{color:var(--mute);margin:0 0 40px;max-width:42em}
-section{padding:88px 0}
-section:nth-of-type(even){background:var(--alt)}
-section.band{}
-code{background:#eaf0f8;color:#123f76;padding:1px 7px;border-radius:2px;font-size:.88em;border:1px solid #d3deee}
-/* hero */
-.hband{background:var(--navy);color:#fff;padding-top:88px;padding-bottom:88px;position:relative}
-.hband::after{content:"";position:absolute;right:0;top:0;bottom:0;width:36%;background:var(--navy2);z-index:0}
-.hgrid{position:relative;z-index:1;display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:center}
-.hero{text-align:left}
-.hero h1{color:#fff}
-.hero .lead{color:#c3cfe0;margin:0 0 32px}
-.hero .sub,.hero .sub a{color:#a9b8cf}
-.hero .sub a{text-decoration:underline}
-.hero .btn.alt{border-color:#5b7396;color:#fff}.hero .btn.alt:hover{background:rgba(255,255,255,.08);color:#fff}
-.hero .btn:not(.alt){background:#fff;color:var(--navy);border-color:#fff}.hero .btn:not(.alt):hover{background:#e3ebf6;color:var(--navy)}
-.pill{display:inline-flex;align-items:center;gap:10px;border:1px solid #3d5a85;padding:3px 14px 3px 3px;font-size:13px;color:#c3cfe0;text-decoration:none;margin-bottom:28px}
-.pill b{background:#fff;color:var(--navy);padding:0 10px;font:700 12px/22px var(--font)}
-.pill i{font-style:normal;color:#8fa3c0}
-.pill:hover{color:#fff;border-color:#8fa3c0}
-.badges{display:flex;flex-direction:column;gap:6px;margin:32px 0 0;padding:0;border-top:1px solid #2b4a75;padding-top:22px}
-.badges span{color:#c3cfe0;font-size:13.5px}
-.badges span::first-letter{color:#7fd6a8}
-.app{display:block;background:#fff;color:var(--text);border-radius:2px;overflow:hidden;font-size:14px;line-height:1.6;box-shadow:0 20px 40px -20px rgba(0,0,0,.5);margin:0}
-.app-side{display:none}
-.chat-bar{display:flex;align-items:center;gap:7px;padding:13px 18px;border-bottom:1px solid var(--line);background:var(--alt);color:var(--mute);font-size:13px}
-.chat-bar i{width:9px;height:9px;border-radius:50%;background:var(--line2)}
-.chat-bar b{margin-left:8px;font-weight:700}
-.chat-body{padding:22px 20px}
-.msg{display:flex;gap:12px;margin-bottom:18px}.msg:last-child{margin:0}
-.av{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff}
-.who{font-weight:700}.who small{color:var(--dim);font-weight:400;margin-left:8px;font-size:12px}
-.gone{color:var(--dim);text-decoration:line-through;text-decoration-color:var(--red)}
-.bot .av{background:#fff;box-shadow:inset 0 0 0 1px var(--line2)}
-.av .azq-mark{width:24px;height:24px}
-.tag{background:var(--navy);color:#fff;font-size:10.5px;padding:1px 6px;margin-left:8px;vertical-align:1px;font-weight:500;border-radius:2px}
-.note{border-left:3px solid var(--red);background:#fbf1f0;padding:10px 14px;margin-top:6px}
-.note em{font-style:normal;color:var(--amber);font-weight:700}
-.cmd{background:var(--alt);padding:8px 12px;color:var(--mute);margin-top:4px}
-.cmd b{color:var(--acc)}
-/* stats */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border-bottom:1px solid var(--line);padding-top:0;padding-bottom:0}
-.stat{padding:36px 8px 36px 28px;border-left:1px solid var(--line)}
-.stat:first-child{border-left:0;padding-left:0}
-.stat b{display:block;font:700 clamp(28px,3.6vw,42px)/1 var(--font);color:var(--navy);letter-spacing:.01em}
-.stat span{display:block;margin-top:10px;color:var(--mute);font-size:13.5px}
-/* tabs */
-.tabs{display:flex;flex-wrap:wrap;gap:0;margin-bottom:24px;border-bottom:1px solid var(--line2)}
-.tab{cursor:pointer;border:0;border-bottom:3px solid transparent;background:transparent;padding:10px 22px;font-size:14px;font-weight:500;color:var(--mute);margin-bottom:-1px}
-.tab:hover{color:var(--acc)}
-.tab[aria-selected=true]{border-bottom-color:var(--acc);color:var(--acc);font-weight:700}
-/* tiles */
-.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:20px}
-.tile{background:#fff;border:1px solid var(--line);border-top:3px solid var(--navy);padding:28px;transition:box-shadow .25s}
-.tile:hover{box-shadow:0 8px 24px -12px rgba(14,39,71,.3)}
-.grid .tile{grid-column:span 2}
-.tile[hidden]{display:none}
-.k{display:block;font:700 11px var(--font);letter-spacing:.16em;color:var(--acc);margin-bottom:12px}
-.tile h3{margin:0 0 10px;font-size:18px;line-height:1.5}
-.tile p{margin:0;color:var(--mute);font-size:14.5px}
-.tile p+p{margin-top:10px}
-.tile b{color:var(--text)}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
-.chips span{background:var(--alt);border:1px solid var(--line);padding:1px 10px;font-size:12.5px;color:var(--mute);border-radius:2px}
-/* feature rows */
-#features .sec-lead{margin-bottom:12px}
-.fb{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;padding:48px 0;border-top:1px solid var(--line2)}
-.fb.rev .vis{order:-1}
-.ft .k{font-size:12px;margin-bottom:10px}
-.ft h3{margin:0 0 14px;font-size:clamp(21px,2.3vw,26px);line-height:1.5;letter-spacing:.03em}
-.ft p{margin:0;color:var(--mute);max-width:34em}
-.vis{margin:0}
-.vis figcaption{margin-top:10px;font-size:12px;color:var(--dim)}
-.dc{background:var(--navy);padding:32px 28px;font-size:14px;line-height:1.6;color:var(--text)}
-.dc .who{color:#fff}
-.emb{background:#fff;border-left:4px solid var(--acc);padding:14px 16px;max-width:400px;margin-top:8px}
-.emb.red{border-left-color:var(--red)}
-.emb h4{margin:0 0 4px;font-size:15px}
-.emb p{margin:0;color:var(--mute);font-size:13.5px}
-.dbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.db{background:var(--acc);color:#fff;padding:5px 16px;font-size:13.5px;font-weight:500;border-radius:2px}
-.db.g{background:#66758a}.db.ok{background:#1e7a4f}
-.sh{margin:56px 0 18px;font-size:20px;padding-left:14px;border-left:4px solid var(--navy);line-height:1.4}
-.more{display:inline-block;margin-top:12px;font-weight:700;text-decoration:none}
-/* commands */
-.cmds{display:grid;grid-template-columns:repeat(2,1fr);gap:0 32px;background:#fff;border:1px solid var(--line);padding:6px 24px}
-.ci{display:grid;grid-template-columns:minmax(150px,auto) 1fr auto;align-items:center;gap:16px;text-align:left;cursor:pointer;background:transparent;border:0;border-bottom:1px solid var(--line);padding:14px 6px}
-.ci:hover{background:var(--alt)}
-.ci code{background:transparent;border:0;padding:0;color:var(--navy);font-size:14.5px;font-weight:700}
-.ci:hover code{color:var(--acc)}
-.ci span{color:var(--mute);font-size:13.5px;line-height:1.5}
-.ci em{font-style:normal;font-size:11px;color:var(--mute);border:1px solid var(--line2);padding:0 8px;white-space:nowrap;border-radius:2px}
-.ci em.adm{color:var(--navy);background:#e3ebf6;border-color:#bccce4}
-.ci[hidden]{display:none}
-.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);opacity:0;pointer-events:none;z-index:70;background:var(--navy);color:#fff;padding:9px 20px;font-size:14px;font-weight:700;transition:all .3s var(--ease)}
-.toast.show{opacity:1;transform:translate(-50%,0)}
-/* trust */
-.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.dot{display:flex;align-items:center;gap:10px}
-.dot::before{content:"";width:10px;height:10px;background:var(--green);flex:none}
-.dot.n::before{background:var(--amber)}
-.tile ul{margin:12px 0 0;padding-left:1.2em;color:var(--mute);font-size:14.5px}.tile li{margin:6px 0}
-.scroll{overflow-x:auto;border:1px solid var(--line);background:#fff}
-.perm{width:100%;min-width:560px;border-collapse:collapse;font-size:14.5px}
-.perm th,.perm td{padding:14px 20px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
-.perm tr:last-child td{border-bottom:0}
-.perm th{background:var(--navy);color:#fff;font-weight:700;font-size:13px}
-.perm td:first-child{font-weight:700;width:34%}
-.perm td:last-child{color:var(--mute)}
-/* steps */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:s}
-.steps .tile{counter-increment:s;border-top:1px solid var(--line);position:relative}
-.steps .tile::before{content:"STEP 0" counter(s);display:block;font:700 12px var(--font);letter-spacing:.18em;color:#fff;background:var(--navy);margin:-28px -28px 22px;padding:8px 28px}
-.cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;background:var(--navy);color:#fff;padding:48px 52px;margin-top:40px}
-.cta h2{margin:0;color:#fff}
-.cta .sub{flex-basis:100%;margin:0;color:#a9b8cf}.cta .sub a{color:#cfe0f5}
-.cta .btn:not(.alt){background:#fff;color:var(--navy);border-color:#fff}.cta .btn:not(.alt):hover{background:#e3ebf6}
-.cta .btn.alt{border-color:#5b7396;color:#fff}.cta .btn.alt:hover{background:rgba(255,255,255,.08);color:#fff}
-/* faq */
-.search{width:100%;max-width:440px;background:#fff;border:1px solid var(--line2);border-radius:2px;color:var(--text);padding:11px 16px;font:inherit;font-size:15px;margin-bottom:20px}
-.search:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px #cfe0f5}
-.search::placeholder{color:var(--dim)}
-details{background:#fff;border:1px solid var(--line);margin-bottom:8px}
-summary{cursor:pointer;font-weight:700;padding:18px 20px;list-style:none;display:flex;justify-content:space-between;gap:16px}
-summary:hover{color:var(--acc)}
-summary::-webkit-details-marker{display:none}
-summary::before{content:"Q";order:-1;color:var(--acc);font-weight:700;margin-right:6px}
-summary::after{content:"+";color:var(--acc);font-size:22px;line-height:1.3;margin-left:auto;transition:transform .25s var(--ease)}
-details[open] summary::after{transform:rotate(45deg)}
-details[open] summary{border-bottom:1px solid var(--line)}
-details p{margin:0;padding:18px 20px 20px;color:var(--mute);font-size:14.5px;max-width:52em}
-details[hidden]{display:none}
-.empty{display:none;color:var(--mute);padding:16px 4px}.empty.show{display:block}
-/* updates / patch list */
-.list{margin:0 0 24px;padding:0;list-style:none;border-top:1px solid var(--line2)}
-.item{position:relative;display:block;padding:24px 56px 24px 8px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none;transition:background .2s}
-.item::after{content:"›";position:absolute;right:16px;top:50%;transform:translateY(-52%);font:400 30px var(--font);color:var(--dim)}
-.item:hover{background:#fff;color:var(--text)}.item:hover::after{color:var(--acc)}
-.meta{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.ver{font:700 12.5px var(--font);color:#fff;background:var(--navy);padding:0 10px}
-.new{font-size:12px;font-weight:700;color:var(--green);border:1px solid var(--green);padding:0 9px}
-.item h3{margin:0;font-size:18px;line-height:1.5}
-.item p{margin:4px 0 0;color:var(--mute);font-size:14.5px}
-.pgrid{display:grid;grid-template-columns:320px 1fr;gap:56px;padding:72px 0 80px}
-.ph{align-self:start;position:sticky;top:112px;background:var(--navy);color:#fff;padding:36px 32px}
-.ph .eyebrow{color:#9fb8dc}.ph .eyebrow::before{background:#9fb8dc}
-.ph h1{margin:0 0 14px;font-size:clamp(26px,3vw,34px);color:#fff}
-.ph .lead{margin:0;font-size:14.5px;color:#c3cfe0}
-/* footer */
-footer{background:var(--navy);color:#a9b8cf;font-size:13px;padding:64px 0 40px;margin-top:0}
-.fgrid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:40px}
-footer .logo{color:#fff}footer .logo-b{color:#a9b8cf}
-.fbrand p{margin:14px 0 0;max-width:22em;color:#a9b8cf;line-height:1.8}
-.fgrid h5{margin:0 0 14px;font:700 12px var(--font);letter-spacing:.14em;color:#fff;padding-bottom:10px;border-bottom:1px solid #2b4a75}
-.fgrid a{display:block;color:#a9b8cf;text-decoration:none;padding:4px 0;font-size:14px}.fgrid a:hover{color:#fff}
-.fbot{margin-top:48px;padding-top:24px;border-top:1px solid #2b4a75;color:#8095b3}
-.totop{position:fixed;right:20px;bottom:24px;z-index:30;width:42px;height:42px;border:1px solid var(--line2);background:#fff;cursor:pointer;font-size:16px;opacity:0;pointer-events:none;transition:opacity .25s;border-radius:2px}
-.totop.show{opacity:1;pointer-events:auto}.totop:hover{background:var(--alt)}
-@media(min-width:961px) and (max-width:1320px){.links a.legal{display:none}}
-@media(max-width:960px){
-.links{position:absolute;top:100%;left:0;right:0;flex-direction:column;align-items:stretch;gap:0;padding:8px 20px 20px;background:#fff;border-bottom:1px solid var(--line);display:none;height:auto}
-.links.open{display:flex}
-.links a{padding:14px 8px;font-size:15px;height:auto;border-bottom:1px solid var(--line);margin:0}
-.nav-cta{margin:14px 0 0!important;justify-content:center;text-align:center}
-.burger{display:block}
-.nav{position:relative}
-.cmds{grid-template-columns:1fr}
-.hgrid{grid-template-columns:1fr;gap:40px}
-.hband::after{display:none}
-}
-@media(max-width:820px){
-.wrap,.nav{padding-left:20px;padding-right:20px}
-.hband{padding-top:56px;padding-bottom:56px}
-.grid .tile{grid-column:span 6}
-.two,.steps{grid-template-columns:1fr}
-.stats{grid-template-columns:1fr 1fr}
-.stat{padding:26px 8px 26px 20px}.stat:nth-child(odd){border-left:0;padding-left:0}.stat:nth-child(n+3){border-top:1px solid var(--line)}
-section{padding:60px 0}
-.btn{width:100%}
-.cta{padding:32px 24px}
-.ci{grid-template-columns:1fr auto}.ci span{grid-column:1/-1;order:3}
-.cmds{padding:0 14px}
-.fb{grid-template-columns:1fr;gap:28px;padding:36px 0}.fb.rev .vis{order:0}
-.fgrid{grid-template-columns:1fr 1fr}.fbrand{grid-column:1/-1}
-.pgrid{grid-template-columns:1fr;gap:32px;padding-top:40px}.ph{position:static}
-}
-.hband{padding-top:56px;padding-bottom:56px}
-.hero .pill{margin-bottom:20px}
-.hero h1{margin-bottom:16px}
-.hero .lead{margin-bottom:24px}
-.hero .btns .btn{padding:13px 24px}
-.badges{flex-direction:row;flex-wrap:wrap;gap:6px 22px;margin-top:24px;padding-top:18px}
-.hgrid{align-items:start}
-.app{margin-top:0}
-@media(max-width:820px){.hband{padding-top:36px;padding-bottom:40px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important}}
-</style><script>document.documentElement.classList.add('js')</script></head>
-<body><svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-<defs>
-<symbol id="azqMark" viewBox="0 0 200 200">
-<path d="M100 8 C130 24 158 28 182 28 L182 100 C182 152 146 182 100 198 C54 182 18 152 18 100 L18 28 C42 28 70 24 100 8 Z" fill="#1b5fb0"/>
-<circle cx="96" cy="92" r="32" fill="none" stroke="#fff" stroke-width="14"/><line x1="120" y1="116" x2="146" y2="142" stroke="#fff" stroke-width="14" stroke-linecap="round"/>
-</symbol>
-</defs>
-</svg>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><nav class="nav"><a class="logo" href="index.html">AZQ BOT</a>
 
-<a class="skip" href="#main">本文へスキップ</a>
-<header class="top"><nav class="nav" aria-label="メイン"><a class="logo" href="#top" aria-label="AZQ BOT トップへ"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg><span><span class="logo-a">AZQ</span><span class="logo-b">BOT</span></span></a>
-<button class="burger" type="button" aria-expanded="false" aria-controls="links" aria-label="メニューを開く"><i></i></button>
-<div class="links" id="links"><a href="#features">機能</a><a href="#commands">コマンド</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポート</a><a class="legal" href="terms.html">利用規約</a><a class="legal" href="privacy.html">プライバシーポリシー</a><a class="btn nav-cta" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a></div></nav></header>
-<main id="main"><div class="wrap" id="top">
-
-<div class="band hband"><div class="hgrid"><div class="hero">
-<a class="pill" href="../patchnote/2.3.html"><b>v2.3</b><span>経済機能を大幅強化(借金・仮想株・Web設定)</span><i>→</i></a>
-<h1>荒らし対策も認証機能も、<br><span class="grad">BOTにお任せ。</span></h1>
-<p class="lead">連投・招待リンク・レイドを自動で検知して対処。メンバー認証やサポートチケット、サーバーの活発度診断から名言画像づくりまで、1つのBotで。</p>
-<div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
+<div class="links"><a href="#features">機能</a><a href="#commands">コマンド</a><a href="#trust">安全性</a><a href="#faq">FAQ</a><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" rel="noopener" target="_blank">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポート</a><a class="btn alt" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a></div></nav></header>
+<main>
+<div class="wrap">
+<div class="band"><div class="hgrid"><div>
+<a class="latest" href="../patchnote/2.3.html">v2.3 経済機能を大幅強化(借金・仮想株・Web設定)</a>
+<h1>AZQ BOT</h1>
+<p class="lead">荒らし対策・メンバー認証・サポートチケットをひとつにまとめたDiscord Bot。</p>
+<div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a><a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
 <span class="sub"><a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>に同意のうえ導入してください</span>
-<div class="badges"><span>✓ Discord認証済みBot</span><span>✓ オープンソース</span><span>✓ 必要な権限だけ要求</span><span>✓ 管理者だけが設定を変更</span></div>
+<div class="badges"><span> Discord認証済みBot</span><span> オープンソース</span><span> 必要な権限だけ要求</span><span> 管理者だけが設定を変更</span></div>
 </div>
-<div class="app" aria-label="荒らし対策の動作イメージ">
+<div class="app">
 <div class="app-side"><div class="srv">Your Server</div><div class="ch-h">チャンネル</div><div class="ch"># お知らせ</div><div class="ch"># 認証</div><div class="ch on"># general</div><div class="ch"># サポート</div><div class="ch"># ロール</div></div>
-<div class="app-main"><div class="chat-bar"><b># general</b></div><div class="chat-body">
-<div class="msg"><div class="av" style="background:#8a5a44">荒</div><div><div class="who">荒らし太郎<small>今日 21:04</small></div><div class="gone">discord.gg/xxxxxxx 参加してね!!</div></div></div>
-<div class="msg bot"><div class="av"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg></div><div><div class="who">AZQ BOT<span class="tag">BOT</span></div><div class="note">@荒らし太郎 <em>招待リンクの投稿</em> を検知したためメッセージを削除しました。</div></div></div>
-<div class="msg"><div class="av" style="background:#3f7f6a">管</div><div><div class="who">管理者<small>今日 21:06</small></div><div class="cmd"><b>/kaso</b> 過疎度を診断</div></div></div>
+<div><div class="chat-bar"><b># general</b></div><div class="chat-body">
+<div class="msg"><div class="av">荒</div><div><div class="who">荒らし太郎<small>今日 21:04</small></div><div class="gone">discord.gg/xxxxxxx 参加してね</div></div></div>
+<div class="msg"><div class="av"></div><div><div class="who">AZQ BOT<span class="tag">BOT</span></div><div>@荒らし太郎 <em>招待リンクの投稿</em> を検知したためメッセージを削除しました。</div></div></div>
+<div class="msg"><div class="av">管</div><div><div class="who">管理者<small>今日 21:06</small></div><div class="cmd"><b>/kaso</b> 過疎度を診断</div></div></div>
 </div></div></div>
 </div></div>
 <div class="band stats">
@@ -298,148 +34,138 @@ section{padding:60px 0}
 <div class="stat"><b>25</b><span>ロールまで1パネルに</span></div>
 <div class="stat"><b>0</b><span>メッセージ本文のDB保存</span></div>
 </div>
-
 <section class="band" id="features">
-<span class="eyebrow">Features</span>
+
 <h2>サーバー管理に必要な機能</h2>
-<p class="sec-lead">自動で動くものと、コマンドで使うものがあります。</p>
 
 <div class="fb">
-<div class="ft"><span class="k">01 — AUTOMOD</span><h3>荒らし対策</h3><p>連投・同一メッセージ・メンション爆撃・招待リンク・NGワード・レイド(大量参加)を自動検知し、削除やタイムアウトを行います。</p>
+<div><h3>荒らし対策</h3><p>連投・同一メッセージ・メンション爆撃・招待リンク・NGワード・レイド(大量参加)を自動検知し、削除やタイムアウトを行います。</p>
 <div class="chips"><span>連投</span><span>同一投稿</span><span>メンション爆撃</span><span>招待リンク</span><span>NGワード</span><span>レイド検知</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
 <div class="emb red"><h4>レイドを検知しました</h4><p>短時間に大量の参加がありました。メンバー認証を自動で強化しています。</p></div></div></div><figcaption>Fig 1 — レイド検知時の動作イメージ</figcaption></figure>
 </div>
-
 <div class="fb rev">
-<div class="ft"><span class="k">02 — VERIFICATION</span><h3>メンバー認証</h3><p>参加したメンバーに認証を行わせ、通過した人だけにロールを付与します。<code>/verify setup</code> で設置でき、荒らし・BOT対策に使えます。</p>
+<div><h3>メンバー認証</h3><p>参加したメンバーに認証を行わせ、通過した人だけにロールを付与します。<code>/verify setup</code> で設置でき、荒らし・BOT対策に使えます。</p>
 <div class="chips"><span>ボタン認証</span><span>計算認証</span><span>画像CAPTCHA</span><span>未認証ロール</span><span>アカウント年齢制限</span><span>未認証キック</span><span>レイド時に自動強化</span><span>ロボット確認の強化</span><span>Web認証(BOT自身が配信)</span><span>VPN・プロキシの回線を排除</span><span>同じ回線のサブ垢を検出</span><span>サブ垢の疑いを検出(デフォルトアイコン・再参加・集団参加)</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
 <div class="emb"><h4>メンバー認証</h4><p>下のボタンを押して認証を完了してください。</p><div class="dbtns"><span class="db ok">認証する</span></div></div></div></div><figcaption>Fig 2 — 認証パネルのイメージ</figcaption></figure>
 </div>
-
 <div class="fb">
-<div class="ft"><span class="k">03 — SUPPORT</span><h3>サポートチケット</h3><p>パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成。クローズは作成者・スタッフ・管理者が行え、<b>削除できるのは管理者のみ</b>です。</p>
+<div><h3>サポートチケット</h3><p>パネルのボタンから、スタッフとだけ話せる非公開チャンネルを自動作成。クローズは作成者・スタッフ・管理者が行え、<b>削除できるのは管理者のみ</b>です。</p>
 <div class="chips"><span>非公開chの自動作成</span><span>担当者の設定</span><span>記録(.txt)の保存・DM</span><span>無操作で自動クローズ</span><span>認証との連携</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
 <div class="emb"><h4>サポート</h4><p>ボタンを押すと、スタッフとだけ話せる非公開チャンネルが作成されます。</p><div class="dbtns"><span class="db">チケットを作成</span></div></div></div></div><figcaption>Fig 3 — チケットパネルのイメージ</figcaption></figure>
 </div>
-
 <div class="fb rev">
-<div class="ft"><span class="k">04 — ROLES</span><h3>ロールパネル</h3><p>ボタンを押すだけでロールを付与・解除できるパネルを設置できます。<code>/rolepanel create</code> で作成し、設定は管理者のみ。</p>
+<div><h3>ロールパネル</h3><p>ボタンを押すだけでロールを付与・解除できるパネルを設置できます。<code>/rolepanel create</code> で作成し、設定は管理者のみ。</p>
 <div class="chips"><span>ボタンで付与/解除</span><span>1つだけ選択モード</span><span>最大25ロール</span><span>認証前は利用不可</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
-<div class="emb"><h4>ロールパネル</h4><p>ボタンを押してロールを付与・解除できます。</p><div class="dbtns"><span class="db ok">ゲーム</span><span class="db g">お知らせ</span><span class="db g">イラスト</span></div></div></div></div><figcaption>Fig 4 — ロールパネルのイメージ(ロール名は例)</figcaption></figure>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4>ロールパネル</h4><p>ボタンを押してロールを付与・解除できます。</p><div class="dbtns"><span class="db ok">ゲーム</span><span class="db">お知らせ</span><span class="db">イラスト</span></div></div></div></div><figcaption>Fig 4 — ロールパネルのイメージ(ロール名は例)</figcaption></figure>
 </div>
-
 <div class="fb">
-<div class="ft"><span class="k">05 — LEVELS</span><h3>レベルとランキング</h3><p>発言するとXPが貯まり、レベルが上がるとチャンネルでお知らせします。<code>/rank</code> でランクカード、<code>/leaderboard</code> でサーバーのランキングを見られます。XPの追加・削除・設定・移行は、管理者が行えます。</p>
+<div><h3>レベルとランキング</h3><p>発言するとXPが貯まり、レベルが上がるとチャンネルでお知らせします。<code>/rank</code> でランクカード、<code>/leaderboard</code> でサーバーのランキングを見られます。XPの追加・削除・設定・移行は、管理者が行えます。</p>
 <div class="chips"><span>ランクカード</span><span>レベル・メッセージ数のランキング</span><span>レベルアップ通知</span><span>獲得XP・間隔を調整</span><span>XP・レベル・ステータスの管理</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
-<div class="emb"><h4>🏆 レベルランキング</h4><p>🥇 ユーザーA — Lv.12 (7,412 XP)<br>🥈 ユーザーB — Lv.9 (3,980 XP)<br>🥉 ユーザーC — Lv.7 (2,540 XP)</p></div></div></div><figcaption>Fig 5 — ランキングのイメージ(名前と数値は例)</figcaption></figure>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4> レベルランキング</h4><p> ユーザーA — Lv.12 (7,412 XP)<br/> ユーザーB — Lv.9 (3,980 XP)<br/> ユーザーC — Lv.7 (2,540 XP)</p></div></div></div><figcaption>Fig 5 — ランキングのイメージ(名前と数値は例)</figcaption></figure>
 </div>
-
 <div class="fb rev">
-<div class="ft"><span class="k">06 — MIGRATION</span><h3>他のBOTから簡単に移行</h3><p><code>/level migrate</code> で手順を確認し、<code>/level import</code> で取り込みます。取り込む前にプレビューで人数と上位5人を確認でき、取り込んだあとも <code>/level undo_import</code> で元に戻せます。MEE6とは計算式が同じなので、レベルがそのまま一致します。</p>
+<div><h3>他のBOTから簡単に移行</h3><p><code>/level migrate</code> で手順を確認し、<code>/level import</code> で取り込みます。取り込む前にプレビューで人数と上位5人を確認でき、取り込んだあとも <code>/level undo_import</code> で元に戻せます。MEE6とは計算式が同じなので、レベルがそのまま一致します。</p>
 <div class="chips"><span>MEE6(自動取得)</span><span>Amari(APIキー)</span><span>CSV・JSONファイル</span><span>取り込み前にプレビュー</span><span>自動バックアップ</span><span>取り込み後も元に戻せる</span></div></div>
-<figure class="vis"><div class="dc"><div class="dmsg"><div class="who">AZQ BOT<span class="tag">BOT</span></div>
-<div class="emb"><h4>📥 インポートの確認</h4><p>MEE6 から 1,240人分 を読み込みました。まだ何も変更していません。</p><div class="dbtns"><span class="db">上書きして取り込む</span><span class="db ok">高い方を採用して取り込む</span><span class="db g">キャンセル</span></div></div></div></div><figcaption>Fig 6 — 取り込み前の確認画面のイメージ</figcaption></figure>
+<figure class="vis"><div class="dc"><div><div class="who">AZQ BOT<span class="tag">BOT</span></div>
+<div class="emb"><h4> インポートの確認</h4><p>MEE6 から 1,240人分 を読み込みました。まだ何も変更していません。</p><div class="dbtns"><span class="db">上書きして取り込む</span><span class="db ok">高い方を採用して取り込む</span><span class="db">キャンセル</span></div></div></div></div><figcaption>Fig 6 — 取り込み前の確認画面のイメージ</figcaption></figure>
 </div>
-
 <h3 class="sh">そのほかの機能</h3>
 <div class="grid">
-<div class="tile"><span class="k">DIAGNOSIS</span><h3>過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
-<div class="tile"><span class="k">FUN</span><h3>脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
-<div class="tile"><span class="k">FUN</span><h3>名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
-<div class="tile"><span class="k">FUN</span><h3>王様ゲーム</h3><p><code>/ousama</code> で参加者を募集して開始すると、王様と番号が自動で決まります。チャンネルには王様と参加者を表示し、各自の番号はDMで届きます。命令は自由に出せます。</p></div>
-<div class="tile"><span class="k">UTILITY</span><h3>投票</h3><p><code>/poll</code> でボタン投票を作成。1つだけ選択と複数選択に対応し、期間を指定すると自動で締め切ります。締め切りまでの結果を隠すこともできます。</p></div>
-<div class="tile"><span class="k">UTILITY</span><h3>リマインダー</h3><p><code>/remind set</code> で指定時間にDMでお知らせ。<code>30m</code> <code>2h</code> <code>1d</code> のような指定ができ、再起動後も消えません。一覧と取り消しもコマンドで。</p></div>
-<div class="tile"><span class="k">UTILITY</span><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
-<div class="tile"><span class="k">RELIABILITY</span><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
-<div class="tile"><span class="k">ECONOMY</span><h3>経済(コイン)</h3><p><code>/daily</code> <code>/work</code> でコインを稼ぎ、<code>/shop</code> でアイテムを売買。所持金が0になっても上限まで借金できる <code>/loan</code> や、価格が1分ごとに変動する仮想株の売買 <code>/stock</code> もあります。初期所持金や報酬額はサーバーごとに設定でき、他の経済BOTからの移行も <code>/money import</code> で行えます。</p></div>
-<div class="tile" style="grid-column:1/-1"><span class="k">MODERATION</span><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
+<div class="tile"><h3>過疎検出</h3><p><code>/kaso</code> でサーバーの活発度を診断。しきい値を下回ると自動アラートも可能です。</p></div>
+<div class="tile"><h3>脳内メーカー</h3><p><code>/nounai</code> で名前から脳内を表示。ユーザーの右クリックからも使えます。</p></div>
+<div class="tile"><h3>名言画像</h3><p><code>/meigen</code> やメッセージの右クリックで、アイコン付きの名言画像を作成します。他の人のアイコン・名前を使うには本人の許可が必要で、管理者はサーバー内で無効にもできます。</p></div>
+<div class="tile"><h3>王様ゲーム</h3><p><code>/ousama</code> で参加者を募集して開始すると、王様と番号が自動で決まります。チャンネルには王様と参加者を表示し、各自の番号はDMで届きます。命令は自由に出せます。</p></div>
+<div class="tile"><h3>投票</h3><p><code>/poll</code> でボタン投票を作成。1つだけ選択と複数選択に対応し、期間を指定すると自動で締め切ります。締め切りまでの結果を隠すこともできます。</p></div>
+<div class="tile"><h3>リマインダー</h3><p><code>/remind set</code> で指定時間にDMでお知らせ。<code>30m</code> <code>2h</code> <code>1d</code> のような指定ができ、再起動後も消えません。一覧と取り消しもコマンドで。</p></div>
+<div class="tile"><h3>ping</h3><p><code>/ping</code> でBOTの応答速度、<code>/ping target:ドメイン</code> でWebサイトの応答時間を測定します。</p></div>
+<div class="tile"><h3>再起動後も安心</h3><p>メンテナンスなどでBOTが再起動しても、認証・チケット・ロールパネルのボタンはそのまま使えます。オフライン中にパネルが消えていた場合は、起動時に自動で再設置します。</p></div>
+<div class="tile"><h3>経済(コイン)</h3><p><code>/daily</code> <code>/work</code> でコインを稼ぎ、<code>/shop</code> でアイテムを売買。所持金が0になっても上限まで借金できる <code>/loan</code> や、価格が1分ごとに変動する仮想株の売買 <code>/stock</code> もあります。初期所持金や報酬額はサーバーごとに設定でき、他の経済BOTからの移行も <code>/money import</code> で行えます。</p></div>
+<div class="tile"><h3>モデレーション(管理者のみ)</h3><p>ログ・ウェルカム・自動ロールの設定にも対応。<code>/userinfo</code> <code>/serverinfo</code> <code>/avatar</code> の情報コマンドもあります。コマンド一覧は <code>/help</code> で確認できます。</p>
 <div class="chips"><span>kick</span><span>ban</span><span>timeout</span><span>warn</span><span>purge</span><span>lock</span><span>slowmode</span><span>ロール操作</span></div></div>
 </div>
 </section>
-
 <section class="band" id="commands">
-<span class="eyebrow">Commands</span>
+
 <h2>コマンドリファレンス</h2>
-<p class="sec-lead">クリックするとコマンドをコピーできます。そのままDiscordに貼り付けて使えます。</p>
-<div class="tabs" role="tablist" aria-label="コマンドの絞り込み">
-<button class="tab cf" role="tab" aria-selected="true" data-f="all" type="button">すべて</button>
-<button class="tab cf" role="tab" aria-selected="false" data-f="all-user" type="button">誰でも</button>
-<button class="tab cf" role="tab" aria-selected="false" data-f="admin" type="button">管理者のみ</button>
+
+<div class="tabs" id="commandTabs">
+<button class="tab on" data-role="all" type="button">すべて</button>
+<button class="tab" data-role="all-user" type="button">誰でも</button>
+<button class="tab" data-role="admin" type="button">管理者のみ</button>
 </div>
-<div class="cmds">
-<button class="ci" type="button" data-role="all-user" data-copy="/kaso"><code>/kaso</code><span>サーバーの過疎度を診断</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/nounai"><code>/nounai</code><span>名前から脳内を表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/meigen"><code>/meigen</code><span>アイコン付きの名言画像を作成</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/meigenprivacy"><code>/meigenprivacy</code><span>自分のアイコン・名前の使用許可を変更</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/ousama"><code>/ousama</code><span>王様ゲームを開始(王様と番号を自動で決定)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/ping"><code>/ping</code><span>BOT・Webサイトの応答速度を測定</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/poll"><code>/poll</code><span>ボタン投票を作成(期間指定・複数選択にも対応)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/remind set"><code>/remind set</code><span>指定時間にDMでリマインド(例: 30m / 2h / 1d)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/remind list"><code>/remind list</code><span>自分のリマインダー一覧</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/remind cancel"><code>/remind cancel</code><span>リマインダーを取り消し</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/userinfo"><code>/userinfo</code><span>ユーザー情報を表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/serverinfo"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/avatar"><code>/avatar</code><span>アイコンを表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/help"><code>/help</code><span>コマンド一覧を確認</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/rank"><code>/rank</code><span>ランクカードを表示(他の人も指定可)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/leaderboard"><code>/leaderboard</code><span>レベル・メッセージ数のランキングを表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/ticket close"><code>/ticket close</code><span>チケットをクローズ(作成者・スタッフも可)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/economyinfo"><code>/economyinfo</code><span>経済機能のすべてを一覧表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/balance"><code>/balance</code><span>所持金の残高を表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/daily"><code>/daily</code><span>1日1回のデイリー報酬を受け取る(連続ボーナスつき)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/work"><code>/work</code><span>お仕事をしてコインを稼ぐ</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/loan borrow"><code>/loan borrow</code><span>借金する(上限まで。収入で自動返済)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/loan repay"><code>/loan repay</code><span>借金を返済(all で全額)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/stock"><code>/stock</code><span>仮想株の市場一覧を表示(価格は1分ごとに変動)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/stock buy"><code>/stock buy</code><span>仮想株を購入</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/stock sell"><code>/stock sell</code><span>仮想株を売却(all で全株式)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/stock portfolio"><code>/stock portfolio</code><span>保有株と損益を表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/shop"><code>/shop</code><span>アイテムの売買ができるショップを表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/pay"><code>/pay</code><span>他のユーザーにコインを送金</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/moneytop"><code>/moneytop</code><span>所持金ランキングを表示</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/coinflip"><code>/coinflip</code><span>コイン投げに賭ける</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="all-user" data-copy="/blackjack"><code>/blackjack</code><span>ブラックジャックをプレイ(1人・マルチ)</span><em>誰でも</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/economy config"><code>/economy config</code><span>経済機能の設定(通貨・報酬・借金上限など)</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/economy stock_add"><code>/economy stock_add</code><span>仮想株の銘柄を追加・変更</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/economy item_set"><code>/economy item_set</code><span>ショップのアイテムを追加・編集</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/economyweb"><code>/economyweb</code><span>Webダッシュボードで経済の設定を開く</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/money import"><code>/money import</code><span>他の経済BOTから所持金を取り込み(プレビュー確認つき)</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/money plus"><code>/money plus</code><span>ユーザーの所持金を増やす(plus / minus / set / history)</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/config log_channel"><code>/config log_channel</code><span>ログチャンネルを設定</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/config automod_set"><code>/config automod_set</code><span>荒らし検知の厳しさを調整・無効化</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/config meigen"><code>/config meigen</code><span>サーバー内の名言画像をON/OFF</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/verify setup"><code>/verify setup</code><span>メンバー認証パネルを設置</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/ticketconfig setup"><code>/ticketconfig setup</code><span>サポートチケットパネルを設置</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/ticket delete"><code>/ticket delete</code><span>クローズ済みチケットを削除</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/rolepanel create"><code>/rolepanel create</code><span>ロールパネルを作成</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/level migrate"><code>/level migrate</code><span>他のBOTからの移行手順を表示</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/level import"><code>/level import</code><span>MEE6・Amari・ファイルからレベルを取り込み</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/level undo_import"><code>/level undo_import</code><span>直前の取り込みを元に戻す</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/level config"><code>/level config</code><span>獲得XP・間隔・レベルアップ通知を設定</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/xp add"><code>/xp add</code><span>XPを追加(/level・/stats も add・remove・set・transfer が使えます)</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/kick"><code>/kick</code><span>メンバーをキック</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/ban"><code>/ban</code><span>メンバーをBAN</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/unban"><code>/unban</code><span>BANを解除</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/timeout"><code>/timeout</code><span>メンバーをタイムアウト</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/warn"><code>/warn</code><span>警告を記録</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/purge"><code>/purge</code><span>メッセージを一括削除</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/slowmode"><code>/slowmode</code><span>低速モードを設定</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/lock"><code>/lock</code><span>チャンネルをロック</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/unlock"><code>/unlock</code><span>チャンネルのロックを解除</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/role_add"><code>/role_add</code><span>ロールを付与</span><em class="adm">管理者</em></button>
-<button class="ci" type="button" data-role="admin" data-copy="/role_remove"><code>/role_remove</code><span>ロールを剥奪</span><em class="adm">管理者</em></button>
+<div class="cmds" id="commandList">
+<button class="ci" data-copy="/kaso" data-role="all-user" type="button"><code>/kaso</code><span>サーバーの過疎度を診断</span><em>誰でも</em></button>
+<button class="ci" data-copy="/nounai" data-role="all-user" type="button"><code>/nounai</code><span>名前から脳内を表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/meigen" data-role="all-user" type="button"><code>/meigen</code><span>アイコン付きの名言画像を作成</span><em>誰でも</em></button>
+<button class="ci" data-copy="/meigenprivacy" data-role="all-user" type="button"><code>/meigenprivacy</code><span>自分のアイコン・名前の使用許可を変更</span><em>誰でも</em></button>
+<button class="ci" data-copy="/ousama" data-role="all-user" type="button"><code>/ousama</code><span>王様ゲームを開始(王様と番号を自動で決定)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/ping" data-role="all-user" type="button"><code>/ping</code><span>BOT・Webサイトの応答速度を測定</span><em>誰でも</em></button>
+<button class="ci" data-copy="/poll" data-role="all-user" type="button"><code>/poll</code><span>ボタン投票を作成(期間指定・複数選択にも対応)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/remind set" data-role="all-user" type="button"><code>/remind set</code><span>指定時間にDMでリマインド(例: 30m / 2h / 1d)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/remind list" data-role="all-user" type="button"><code>/remind list</code><span>自分のリマインダー一覧</span><em>誰でも</em></button>
+<button class="ci" data-copy="/remind cancel" data-role="all-user" type="button"><code>/remind cancel</code><span>リマインダーを取り消し</span><em>誰でも</em></button>
+<button class="ci" data-copy="/userinfo" data-role="all-user" type="button"><code>/userinfo</code><span>ユーザー情報を表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/serverinfo" data-role="all-user" type="button"><code>/serverinfo</code><span>サーバー情報を表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/avatar" data-role="all-user" type="button"><code>/avatar</code><span>アイコンを表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/help" data-role="all-user" type="button"><code>/help</code><span>コマンド一覧を確認</span><em>誰でも</em></button>
+<button class="ci" data-copy="/rank" data-role="all-user" type="button"><code>/rank</code><span>ランクカードを表示(他の人も指定可)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/leaderboard" data-role="all-user" type="button"><code>/leaderboard</code><span>レベル・メッセージ数のランキングを表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/ticket close" data-role="all-user" type="button"><code>/ticket close</code><span>チケットをクローズ(作成者・スタッフも可)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/economyinfo" data-role="all-user" type="button"><code>/economyinfo</code><span>経済機能のすべてを一覧表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/balance" data-role="all-user" type="button"><code>/balance</code><span>所持金の残高を表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/daily" data-role="all-user" type="button"><code>/daily</code><span>1日1回のデイリー報酬を受け取る(連続ボーナスつき)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/work" data-role="all-user" type="button"><code>/work</code><span>お仕事をしてコインを稼ぐ</span><em>誰でも</em></button>
+<button class="ci" data-copy="/loan borrow" data-role="all-user" type="button"><code>/loan borrow</code><span>借金する(上限まで。収入で自動返済)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/loan repay" data-role="all-user" type="button"><code>/loan repay</code><span>借金を返済(all で全額)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/stock" data-role="all-user" type="button"><code>/stock</code><span>仮想株の市場一覧を表示(価格は1分ごとに変動)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/stock buy" data-role="all-user" type="button"><code>/stock buy</code><span>仮想株を購入</span><em>誰でも</em></button>
+<button class="ci" data-copy="/stock sell" data-role="all-user" type="button"><code>/stock sell</code><span>仮想株を売却(all で全株式)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/stock portfolio" data-role="all-user" type="button"><code>/stock portfolio</code><span>保有株と損益を表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/shop" data-role="all-user" type="button"><code>/shop</code><span>アイテムの売買ができるショップを表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/pay" data-role="all-user" type="button"><code>/pay</code><span>他のユーザーにコインを送金</span><em>誰でも</em></button>
+<button class="ci" data-copy="/moneytop" data-role="all-user" type="button"><code>/moneytop</code><span>所持金ランキングを表示</span><em>誰でも</em></button>
+<button class="ci" data-copy="/coinflip" data-role="all-user" type="button"><code>/coinflip</code><span>コイン投げに賭ける</span><em>誰でも</em></button>
+<button class="ci" data-copy="/blackjack" data-role="all-user" type="button"><code>/blackjack</code><span>ブラックジャックをプレイ(1人・マルチ)</span><em>誰でも</em></button>
+<button class="ci" data-copy="/economy config" data-role="admin" type="button"><code>/economy config</code><span>経済機能の設定(通貨・報酬・借金上限など)</span><em>管理者</em></button>
+<button class="ci" data-copy="/economy stock_add" data-role="admin" type="button"><code>/economy stock_add</code><span>仮想株の銘柄を追加・変更</span><em>管理者</em></button>
+<button class="ci" data-copy="/economy item_set" data-role="admin" type="button"><code>/economy item_set</code><span>ショップのアイテムを追加・編集</span><em>管理者</em></button>
+<button class="ci" data-copy="/economyweb" data-role="admin" type="button"><code>/economyweb</code><span>Webダッシュボードで経済の設定を開く</span><em>管理者</em></button>
+<button class="ci" data-copy="/money import" data-role="admin" type="button"><code>/money import</code><span>他の経済BOTから所持金を取り込み(プレビュー確認つき)</span><em>管理者</em></button>
+<button class="ci" data-copy="/money plus" data-role="admin" type="button"><code>/money plus</code><span>ユーザーの所持金を増やす(plus / minus / set / history)</span><em>管理者</em></button>
+<button class="ci" data-copy="/config log_channel" data-role="admin" type="button"><code>/config log_channel</code><span>ログチャンネルを設定</span><em>管理者</em></button>
+<button class="ci" data-copy="/config automod_set" data-role="admin" type="button"><code>/config automod_set</code><span>荒らし検知の厳しさを調整・無効化</span><em>管理者</em></button>
+<button class="ci" data-copy="/config meigen" data-role="admin" type="button"><code>/config meigen</code><span>サーバー内の名言画像をON/OFF</span><em>管理者</em></button>
+<button class="ci" data-copy="/verify setup" data-role="admin" type="button"><code>/verify setup</code><span>メンバー認証パネルを設置</span><em>管理者</em></button>
+<button class="ci" data-copy="/ticketconfig setup" data-role="admin" type="button"><code>/ticketconfig setup</code><span>サポートチケットパネルを設置</span><em>管理者</em></button>
+<button class="ci" data-copy="/ticket delete" data-role="admin" type="button"><code>/ticket delete</code><span>クローズ済みチケットを削除</span><em>管理者</em></button>
+<button class="ci" data-copy="/rolepanel create" data-role="admin" type="button"><code>/rolepanel create</code><span>ロールパネルを作成</span><em>管理者</em></button>
+<button class="ci" data-copy="/level migrate" data-role="admin" type="button"><code>/level migrate</code><span>他のBOTからの移行手順を表示</span><em>管理者</em></button>
+<button class="ci" data-copy="/level import" data-role="admin" type="button"><code>/level import</code><span>MEE6・Amari・ファイルからレベルを取り込み</span><em>管理者</em></button>
+<button class="ci" data-copy="/level undo_import" data-role="admin" type="button"><code>/level undo_import</code><span>直前の取り込みを元に戻す</span><em>管理者</em></button>
+<button class="ci" data-copy="/level config" data-role="admin" type="button"><code>/level config</code><span>獲得XP・間隔・レベルアップ通知を設定</span><em>管理者</em></button>
+<button class="ci" data-copy="/xp add" data-role="admin" type="button"><code>/xp add</code><span>XPを追加(/level・/stats も add・remove・set・transfer が使えます)</span><em>管理者</em></button>
+<button class="ci" data-copy="/kick" data-role="admin" type="button"><code>/kick</code><span>メンバーをキック</span><em>管理者</em></button>
+<button class="ci" data-copy="/ban" data-role="admin" type="button"><code>/ban</code><span>メンバーをBAN</span><em>管理者</em></button>
+<button class="ci" data-copy="/unban" data-role="admin" type="button"><code>/unban</code><span>BANを解除</span><em>管理者</em></button>
+<button class="ci" data-copy="/timeout" data-role="admin" type="button"><code>/timeout</code><span>メンバーをタイムアウト</span><em>管理者</em></button>
+<button class="ci" data-copy="/warn" data-role="admin" type="button"><code>/warn</code><span>警告を記録</span><em>管理者</em></button>
+<button class="ci" data-copy="/purge" data-role="admin" type="button"><code>/purge</code><span>メッセージを一括削除</span><em>管理者</em></button>
+<button class="ci" data-copy="/slowmode" data-role="admin" type="button"><code>/slowmode</code><span>低速モードを設定</span><em>管理者</em></button>
+<button class="ci" data-copy="/lock" data-role="admin" type="button"><code>/lock</code><span>チャンネルをロック</span><em>管理者</em></button>
+<button class="ci" data-copy="/unlock" data-role="admin" type="button"><code>/unlock</code><span>チャンネルのロックを解除</span><em>管理者</em></button>
+<button class="ci" data-copy="/role_add" data-role="admin" type="button"><code>/role_add</code><span>ロールを付与</span><em>管理者</em></button>
+<button class="ci" data-copy="/role_remove" data-role="admin" type="button"><code>/role_remove</code><span>ロールを剥奪</span><em>管理者</em></button>
 </div>
 </section>
+<section class="band">
 
-<section class="band" id="updates">
-<span class="eyebrow">Changelog</span>
 <h2>最近のアップデート</h2>
-<p class="sec-lead">メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でも配信しています。</p>
+<p>メンテナンス・障害・アップデートのお知らせは<a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポートサーバー</a>でも配信しています。</p>
 <ul class="list">
 <li><a class="item" href="../patchnote/2.3.html"><div class="meta"><span class="ver">v2.3</span><span class="new">最新</span></div><h3>バージョン 2.3 のパッチノート</h3><p>経済機能を大幅強化。借金(/loan)、仮想株の売買(/stock)、経済ガイド(/economyinfo)、Webダッシュボードに経済タブ(/economyweb)を追加。初期所持金を100に変更</p></a></li>
 <li><a class="item" href="../patchnote/2.2.html"><div class="meta"><span class="ver">v2.2</span></div><h3>バージョン 2.2 のパッチノート</h3><p>投票・リマインダーを追加。安定性の修正(複数サーバーでの隔離実行・設定ファイルのバックアップ・メンション検知の精度向上)</p></a></li>
@@ -449,27 +175,24 @@ section{padding:60px 0}
 <li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
 <li><a class="item" href="../patchnote/1.6.html"><div class="meta"><span class="ver">v1.6</span></div><h3>バージョン 1.6 のパッチノート</h3><p>Web認証にreCAPTCHAを追加</p></a></li>
 </ul>
-<a class="more" href="../patchnote/index.html">すべてのパッチノートを見る →</a>
+<a class="more" href="../patchnote/index.html">すべてのパッチノートを見る</a>
 </section>
-
 <section class="band" id="trust">
-<span class="eyebrow">Trust</span>
-<h2>安心して使うための情報</h2>
-<p class="sec-lead">BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
-<div class="two">
-<div class="tile"><h3 class="dot">保存するもの</h3><ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>レベル機能のXPとメッセージ数(ユーザーIDごとの数値のみ。メッセージ本文は保存しません)</li><li>レベルを取り込んだときの、取り込み前のXPのバックアップ(1サーバーに1つ。取り消すと削除されます)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li><li>リマインダー(/remind を使った場合のみ。設定者のユーザーID・通知予定日時・通知内容。通知・取消後に削除)</li></ul></div>
-<div class="tile"><h3 class="dot n">保存しないもの</h3><ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
-</div>
-<div class="tile" style="margin-top:14px"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
 
+<h2>安心して使うための情報</h2>
+<p>BOTが何を見て、何を保存するのかを公開しています。詳細は<a href="privacy.html">プライバシーポリシー</a>をご覧ください。ソースコードは<a href="https://github.com/Azuk1-azq/AZQ-BOT" rel="noopener" target="_blank">GitHub</a>で公開しているオープンソースなので、動作を自分で確認できます。</p>
+<div class="two">
+<div class="tile">保存するもの<ul><li>ログ・ウェルカム・自動ロール・荒らし対策などのサーバー設定</li><li>/warn で記録した警告(理由・実行者・日時)</li><li>メンバー認証の設定と、認証待ちメンバーの参加時刻</li><li>Web認証の「同じ回線の判定」を有効にした場合のみ、IPアドレスから作った元に戻せない値(ハッシュ)と、そのIPで認証したユーザーID(生のIPアドレスは保存しません)</li><li>認証でキックした人・疑わしいと判断した人のユーザーID(再参加や集団参加の検出用。上限あり)</li><li>ロールパネルの設定(パネルの場所と対象ロール)</li><li>レベル機能のXPとメッセージ数(ユーザーIDごとの数値のみ。メッセージ本文は保存しません)</li><li>レベルを取り込んだときの、取り込み前のXPのバックアップ(1サーバーに1つ。取り消すと削除されます)</li><li>名言画像の使用許可の設定(ユーザーIDと、許可する/しないの選択)</li><li>チケットの設定と、開いている(またはクローズ済みで削除待ちの)チケットの作成者・件名・担当者</li><li>リマインダー(/remind を使った場合のみ。設定者のユーザーID・通知予定日時・通知内容。通知・取消後に削除)</li></ul></div>
+<div class="tile">保存しないもの<ul><li>メッセージ本文のデータベース保存はしません(荒らし判定のため、直近の投稿を短時間メモリ上で扱うだけです)</li><li>DMの内容は読みません</li><li>王様ゲームの参加者・王様・番号は保存しません(募集中のみメモリ上で扱い、番号はDMで本人にだけ送ります)</li></ul></div>
+</div>
+<div class="tile"><h3>知っておいてほしいこと</h3><p>管理者がログチャンネルを設定した場合、削除・編集されたメッセージの内容がそのチャンネルに投稿されます。ログチャンネルは管理者だけが見られる場所にすることをおすすめします。</p><p>チケットをクローズすると、そのチケット内の会話の記録(.txt)が管理者の指定したチャンネル(未指定ならログチャンネル)に送信され、設定によっては作成者にもDMで届きます。記録の送信先も管理者だけが見られる場所にしてください。BOT自身は記録ファイルを保存しません。</p></div>
 <h3 class="sh">必要な特権インテント</h3>
 <div class="two">
 <div class="tile"><h3>Server Members Intent</h3><p>メンバーの参加・退出の検知(ウェルカム、自動ロール、レイド検知、参加ログ)と、過疎診断でのメンバー数の集計のため。</p></div>
 <div class="tile"><h3>Message Content Intent</h3><p>荒らし対策のためのメッセージ本文の判定(NGワード・招待リンク・連投・同一投稿)と、メッセージの編集・削除ログのため。</p></div>
 </div>
-
 <h3 class="sh">要求する権限とその理由</h3>
-<div class="scroll"><table class="perm">
+<div class="scroll"><table>
 <tr><th>権限</th><th>使う機能</th></tr>
 <tr><td>チャンネルを見る / メッセージ履歴を読む</td><td>荒らし判定、過疎診断の集計、チケット記録の作成</td></tr>
 <tr><td>メッセージを送信 / 埋め込みリンク / ファイルを添付</td><td>ログ、ウェルカム、各コマンドの結果と画像、認証・チケットのパネル、チケット記録(.txt)の送信、レベルアップの通知</td></tr>
@@ -480,30 +203,28 @@ section{padding:60px 0}
 <tr><td>チャンネルの管理</td><td>/slowmode /lock /unlock、チケットチャンネルの作成・ロック・削除</td></tr>
 </table></div>
 </section>
+<section class="band">
 
-<section class="band" id="setup">
-<span class="eyebrow">Get started</span>
 <h2>導入は3ステップ</h2>
-<p class="sec-lead">管理者権限は要求しません。使わない機能の権限は、導入画面で外すこともできます。</p>
+
 <div class="steps">
 <div class="tile"><h3>BOTを追加</h3><p>下のボタンから導入先のサーバーを選び、権限を確認して承認します。</p></div>
 <div class="tile"><h3>ロールを上に移動</h3><p>サーバー設定でBOTのロールを、管理対象のメンバー・ロールより上に配置します。</p></div>
 <div class="tile"><h3>設定する</h3><p><code>/config log_channel</code> などで設定します。認証は <code>/verify setup</code>、チケットは <code>/ticketconfig setup</code> で設置でき、<code>/help</code> でコマンドを確認できます。</p></div>
 </div>
 <div class="cta">
-<h2>サーバーを守る準備はできましたか?</h2>
+<h2>導入</h2>
 <div class="btns"><a class="btn" href="https://discord.com/oauth2/authorize?client_id=1556124525459013713&amp;permissions=1099780189206&amp;integration_type=0&amp;scope=bot+applications.commands">サーバーに導入する</a>
-<a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a class="btn alt" href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
+<a class="btn alt" href="../patchnote/index.html">パッチノートを見る</a><a href="https://github.com/Azuk1-azq/AZQ-BOT/releases/download/1.7/bot.py" rel="noopener">コードをダウンロード</a></div>
 <span class="sub">導入前に<a href="terms.html">利用規約</a>と<a href="privacy.html">プライバシーポリシー</a>をご確認ください</span>
 </div>
 </section>
-
 <section class="band" id="faq">
-<span class="eyebrow">FAQ</span>
+
 <h2>よくある質問</h2>
-<p class="sec-lead">キーワードで絞り込めます。</p>
-<input class="search" id="faqsearch" type="search" placeholder="質問を検索(例:認証、チケット、IP)" aria-label="FAQを検索">
-<details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
+
+<label for="faqSearch">質問を検索</label><input id="faqSearch" placeholder="質問を検索(例:認証、チケット、IP)" type="search"/>
+<details><summary>メンテナンスなどのお知らせはどこで見られますか?</summary><p>メンテナンス・障害・アップデートのお知らせは、<a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポートサーバー</a>でのみ配信しています。参加していないとお知らせを受け取れないので、導入後は参加をおすすめします。</p></details>
 <details><summary>ロールの順位はなぜ大切ですか?</summary><p>Discordの仕様で、BOTは自分より上位のロールを持つメンバーを操作できません。キック・BAN・タイムアウト・ロール付与が失敗するときは、まずBOTのロール位置を確認してください。</p></details>
 <details><summary>荒らし対策を止めたい、または調整したいときは?</summary><p><code>/config automod_set</code> で検知の厳しさを変更でき、enabled を 0 にすると無効化できます。管理者・メッセージ管理権限を持つ人は検知の対象外です。</p></details>
 <details><summary>コマンドは誰でも使えますか?</summary><p>kick・ban・warn などのモデレーション系と、認証・チケットの設定は管理者のみです。/kaso /nounai /meigen /ousama /ping /userinfo /rank /leaderboard などは誰でも使えます。レベルのXPの変更・取り込み(/level /xp /stats)は、「サーバーの管理」権限を持つ人だけです。チケット内の /ticket close は作成者とスタッフも使えますが、/ticket delete は管理者のみです。</p></details>
@@ -515,65 +236,17 @@ section{padding:60px 0}
 <details><summary>他のBOTのレベルを引き継げますか?</summary><p>引き継げます。<code>/level migrate</code> で手順を確認してください。MEE6はリーダーボードを公開にすると自動で取得でき、AmariはAPIキーで取得できます。それ以外のBOTは、<code>id</code> と <code>xp</code>(または <code>level</code>)の列があるCSV・JSONファイルを添付して取り込めます。取り込む前にプレビューが表示され、<code>/level undo_import</code> で元に戻せます(取り込み後に貯まったXPも戻ります)。取り込んだあとは、XPが二重に入らないよう、元のBOTを停止または無効化してください。</p></details>
 <details><summary>メンバー認証とは何ですか?</summary><p>参加したメンバーがボタン・計算・画像CAPTCHAのいずれかを通過すると、認証ロールが付与される機能です。アカウント作成からの日数制限や、時間内に認証しない人のキック、レイド検知時の自動強化も設定できます。認証が必要なチャンネルの権限設定は、設置時のメッセージの案内に沿って行ってください。</p></details>
 <details><summary>/ping でWebサイトの測定は安全ですか?</summary><p>内部ネットワークなどの非公開アドレスは測定できないようにしています。リダイレクトも追跡しません。</p></details>
-<p class="empty" id="faqempty">該当する質問が見つかりませんでした。<a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a>でお気軽にご質問ください。</p>
+<p hidden="" id="faqEmpty">該当する質問が見つかりませんでした。<a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポートサーバー</a>でお気軽にご質問ください。</p>
 </section>
-
-
-<footer class="band"><div class="fgrid">
-<div class="fbrand"><span class="logo"><svg class="azq-mark" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#azqMark" width="200" height="200"/></svg><span><span class="logo-a">AZQ</span><span class="logo-b">BOT</span></span></span><p>荒らし対策・メンバー認証・サポートチケットをひとつにまとめたDiscord Bot。</p></div>
+<footer><div class="fgrid">
+<div class="fbrand"><span class="logo">AZQ BOT</span><p>荒らし対策・メンバー認証・サポートチケットをひとつにまとめたDiscord Bot。</p></div>
 <div><h5>プロダクト</h5><a href="#features">機能</a><a href="#commands">コマンド</a><a href="#trust">安全性</a><a href="#faq">FAQ</a></div>
-<div><h5>リソース</h5><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" target="_blank" rel="noopener">サポートサーバー</a></div>
+<div><h5>リソース</h5><a href="../patchnote/index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" rel="noopener" target="_blank">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポートサーバー</a></div>
 <div><h5>法務</h5><a href="terms.html">利用規約</a><a href="privacy.html">プライバシーポリシー</a></div>
 </div><div class="fbot">AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。画面は動作イメージです。</div></footer>
-</div></main><script>(function(){
-var d=document,de=d.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)').matches;
-function $(s,r){return (r||d).querySelector(s)}function $$(s,r){return [].slice.call((r||d).querySelectorAll(s))}
-/* to-top */
-var tt=d.createElement('button');tt.className='totop';tt.type='button';tt.setAttribute('aria-label','ページの先頭へ');tt.textContent='↑';d.body.appendChild(tt);
-tt.addEventListener('click',function(){scrollTo({top:0,behavior:rm?'auto':'smooth'})});
-addEventListener('scroll',function(){tt.classList.toggle('show',scrollY>700)},{passive:true});
-/* mobile nav */
-var bg=$('.burger'),ln=$('.links');
-if(bg&&ln){
-function close(){bg.setAttribute('aria-expanded','false');ln.classList.remove('open')}
-bg.addEventListener('click',function(){var o=bg.getAttribute('aria-expanded')!=='true';bg.setAttribute('aria-expanded',o);ln.classList.toggle('open',o)});
-ln.addEventListener('click',function(e){if(e.target.closest('a'))close()});
-d.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
-d.addEventListener('click',function(e){if(!e.target.closest('.nav'))close()});
-}
-/* scroll spy */
-var spy=$$('.links a[href^="#"]');
-if(spy.length&&'IntersectionObserver' in window){
-var map={};spy.forEach(function(a){var s=$(a.getAttribute('href'));if(s)map[s.id]=a});
-var so=new IntersectionObserver(function(es){es.forEach(function(x){if(x.isIntersecting&&map[x.target.id]){spy.forEach(function(a){a.classList.remove('on')});map[x.target.id].classList.add('on')}})},{rootMargin:'-40% 0px -55% 0px'});
-Object.keys(map).forEach(function(k){so.observe(d.getElementById(k))});
-}
-/* feature filter */
-var tabs=$$('.tab:not(.cf)');
-tabs.forEach(function(t){t.addEventListener('click',function(){
-tabs.forEach(function(x){x.setAttribute('aria-selected',x===t)});
-var c=t.dataset.f;
-$$('#features .tile[data-cat]').forEach(function(card){card.hidden=!(c==='all'||card.dataset.cat.split(' ').indexOf(c)>-1)});
-})});
-/* copy commands */
-var toast=d.createElement('div');toast.className='toast';toast.setAttribute('role','status');d.body.appendChild(toast);var tm;
-function say(m){toast.textContent=m;toast.classList.add('show');clearTimeout(tm);tm=setTimeout(function(){toast.classList.remove('show')},1800)}
-$$('.ci').forEach(function(b){b.addEventListener('click',function(){
-var v=b.dataset.copy;
-function ok(){say(v+' をコピーしました')}
-if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(v).then(ok,function(){say('コピーできませんでした')})}
-else{var t=d.createElement('textarea');t.value=v;d.body.appendChild(t);t.select();try{d.execCommand('copy');ok()}catch(e){say('コピーできませんでした')}t.remove()}
-})});
-var cf=$$('.cf');
-cf.forEach(function(t){t.addEventListener('click',function(){
-cf.forEach(function(x){x.setAttribute('aria-selected',x===t)});
-$$('.ci').forEach(function(c){c.hidden=!(t.dataset.f==='all'||c.dataset.role===t.dataset.f)});
-})});
-/* faq search */
-var fs=$('#faqsearch');
-if(fs){var ds=$$('#faq details'),em=$('#faqempty');
-fs.addEventListener('input',function(){var q=fs.value.trim().toLowerCase(),n=0;
-ds.forEach(function(x){var hit=!q||x.textContent.toLowerCase().indexOf(q)>-1;x.hidden=!hit;if(hit)n++;if(q&&hit&&n===1)x.open=true});
-em.classList.toggle('show',n===0)});}
-})();
-</script></body></html>
+</div>
+</main>
+<output id="copyNotice"></output>
+<script src="script.js"></script>
+</body>
+</html>

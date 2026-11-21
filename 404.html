@@ -1,28 +1,21 @@
 <!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><meta name="theme-color" content="#ffffff">
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ページが見つかりません - AZQ BOT</title>
-<style>
-:root{--acc:#1b5fb0;--text:#1b2433;--mute:#566173;--line:#e2e7ee}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#fff;color:var(--text);font:16px/1.9 "Noto Sans JP","Hiragino Sans","Yu Gothic",Meiryo,sans-serif}
-main{width:min(100%,560px);text-align:center}
-.num{font-size:clamp(72px,18vw,112px);font-weight:700;line-height:1;color:var(--acc);letter-spacing:.02em}
-h1{margin:20px 0 0;font-size:22px;font-weight:700}
-p{margin:12px auto 0;color:var(--mute);font-size:15px}
-.path{display:inline-block;max-width:100%;margin-top:18px;padding:4px 14px;border:1px solid var(--line);border-radius:4px;background:#f4f6f9;color:var(--mute);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
-.back{display:inline-block;margin-top:32px;padding:12px 32px;border-radius:6px;background:var(--acc);color:#fff;font-weight:700;text-decoration:none}
-.back:hover{background:#134a8e}
-.back:focus-visible{outline:3px solid #9dbbe3;outline-offset:3px}
-</style></head>
-<body><main>
-<div class="num" aria-hidden="true">404</div>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="doc">
+
+<div class="num">404</div>
 <h1>ページが見つかりません</h1>
 <p>お探しのページは移動または削除されたか、URLが間違っている可能性があります。</p>
-<span class="path" id="path"></span><br>
-<a class="back" href="/index.html">トップに戻る</a>
+<span id="path"></span><br/>
+<a class="btn" href="/index.html">トップに戻る</a>
+
 </main>
-<script>
-(function(){var el=document.getElementById('path');try{el.textContent=decodeURIComponent(location.pathname+location.search)}catch(e){el.textContent=location.pathname}})();
-</script>
-</body></html>
+<script src="notfound.js"></script>
+</body>
+</html>
