@@ -112,6 +112,12 @@ DEFAULTS = {
         "dup_count": 3,
         "mention_limit": 5,
         "block_invites": True,
+        "block_links": False,
+        "spam_action": "auto",
+        "isolate_role": None,
+        "isolate_minutes": 10,
+        "slow_seconds": 10,
+        "slow_minutes": 10,
         "strikes_to_timeout": 3,
         "punish_minutes": 10,
         "raid_joins": 5,
@@ -342,6 +348,7 @@ class AzqBot(commands.Bot):
         levels_install()
         economy_install()
         sticky_install()
+        detail_log_install()
         self.tree.add_command(remind_group)
         if DEV_GUILD_ID.isdigit():
             guild = discord.Object(id=int(DEV_GUILD_ID))
@@ -534,11 +541,19 @@ def _eco_url(gid: int, uid: int) -> Optional[str]:
     return f"{DASH_BASE}/eco?g={gid}&t={_eco_web_token(gid, uid)}"
 
 
+def _eco_ctx(request) -> str:
+    """経済Web用ログの共通情報(トークン本体は秘匿のため出さない)"""
+    ua = (request.headers.get("User-Agent") or "-")[:80]
+    return f"ip={request.headers.get('X-Forwarded-For') or request.remote} ua={ua!r}"
+
+
 async def eco_page(request):
+    log.info("経済Web: ページ配信 g=%s %s", request.query.get("g", "-"), _eco_ctx(request))
     try:
         with open(os.path.join(BASE_DIR, "economyweb.html"), encoding="utf-8") as f:
             page = f.read()
     except OSError:
+        log.error("経済Web: economyweb.html が見つかりません dir=%s", BASE_DIR)
         return web.Response(text="economyweb.html が bot.py と同じフォルダにありません。", status=404)
     return web.Response(text=page, content_type="text/html",
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
@@ -570,13 +585,27 @@ async def eco_api_get(request):
         gid = int(request.match_info["gid"])
     except ValueError:
         raise web.HTTPNotFound()
+    t0 = time.perf_counter()
     g = bot.get_guild(gid)
     if not g:
+        log.warning("経済Web GET: サーバー不明 gid=%s %s", gid, _eco_ctx(request))
         raise web.HTTPNotFound()
     if not eco.cfg(gid).get("eco_enabled", True):
+        log.info("経済Web GET: 経済機能オフ guild=%s(%s)", g.name, gid)
         raise web.HTTPForbidden(text="このサーバーでは経済機能がオフになっています。")
-    uid = _eco_web_check(gid, request.query.get("t", ""))
-    return web.json_response(_eco_page_snapshot(g, uid), headers={"Cache-Control": "no-store"})
+    tok = request.query.get("t", "")
+    uid = _eco_web_check(gid, tok)
+    if tok and not uid:
+        log.warning("経済Web GET: トークン無効/期限切れ guild=%s(%s) %s", g.name, gid, _eco_ctx(request))
+    try:
+        snap = _eco_page_snapshot(g, uid)
+    except Exception:
+        log.exception("経済Web GET: スナップショット生成に失敗 guild=%s(%s) uid=%s", g.name, gid, uid)
+        raise web.HTTPInternalServerError(text="内部エラーが発生しました。")
+    log.info("経済Web GET: guild=%s(%s) uid=%s mode=%s stocks=%d items=%d %.1fms",
+             g.name, gid, uid or "-", "user" if uid else "view",
+             len(snap.get("stocks", [])), len(snap.get("items", [])), (time.perf_counter() - t0) * 1000)
+    return web.json_response(snap, headers={"Cache-Control": "no-store"})
 
 
 async def eco_api_post(request):
@@ -584,16 +613,21 @@ async def eco_api_post(request):
         gid = int(request.match_info["gid"])
     except ValueError:
         raise web.HTTPNotFound()
+    t0 = time.perf_counter()
     g = bot.get_guild(gid)
     if not g:
+        log.warning("経済Web POST: サーバー不明 gid=%s %s", gid, _eco_ctx(request))
         raise web.HTTPNotFound()
     if not eco.cfg(gid).get("eco_enabled", True):
+        log.info("経済Web POST: 経済機能オフ guild=%s(%s)", g.name, gid)
         raise web.HTTPForbidden(text="このサーバーでは経済機能がオフになっています。")
     uid = _eco_web_check(gid, request.query.get("t", ""))
     if not uid:
+        log.warning("経済Web POST: 認証失敗(トークン無効/期限切れ) guild=%s(%s) %s", g.name, gid, _eco_ctx(request))
         raise web.HTTPUnauthorized(text="リンクの有効期限が切れました。Discordで /economyweb をもう一度実行してください。")
     m = g.get_member(uid)
     if not m:
+        log.warning("経済Web POST: 非メンバー guild=%s(%s) uid=%s", g.name, gid, uid)
         raise web.HTTPForbidden(text="サーバーに参加していないため、操作できません。")
     d = None
     try:
@@ -607,12 +641,17 @@ async def eco_api_post(request):
         log.info("Web経済操作: guild=%s(%s) user=%s(%s) action=%s ip=%s", g.name, g.id, m, m.id, d.get("action"), request.remote)
         res = await fn(g, m, d)
         msg, data = res if isinstance(res, tuple) else (res, None)
+        log.info("経済Web操作 成功: guild=%s user=%s(%s) action=%s %.1fms 結果=%s", g.id, m, m.id, d.get("action"),
+                 (time.perf_counter() - t0) * 1000, str(msg)[:120].replace("\n", " "))
     except SettingsError as e:
+        log.info("経済Web操作 拒否: guild=%s user=%s action=%s 理由=%s", g.id, m.id, d.get("action") if isinstance(d, dict) else None, str(e)[:160])
         raise web.HTTPBadRequest(text=str(e))
     except SrvAdmError as e:
+        log.info("経済Web操作 拒否: guild=%s user=%s action=%s 理由=%s", g.id, m.id, d.get("action") if isinstance(d, dict) else None, str(e)[:160])
         raise web.HTTPBadRequest(text=str(e))
     except (ValueError, TypeError, KeyError, AttributeError):
-        log.exception("経済専用画面の操作でエラー: %s", (d.get("action") if isinstance(d, dict) else None))
+        log.exception("経済専用画面の操作でエラー: guild=%s user=%s action=%s payload_keys=%s", g.id, m.id,
+                      (d.get("action") if isinstance(d, dict) else None), sorted(d.keys()) if isinstance(d, dict) else None)
         raise web.HTTPBadRequest(text="入力が正しくありません")
     except Exception:
         log.exception("経済専用画面の操作で予期しないエラー: %s", (d.get("action") if isinstance(d, dict) else None))
@@ -760,7 +799,94 @@ join_times = defaultdict(deque)
 last_raid_alert = {}
 
 
-async def punish(message: discord.Message, reason: str, heavy: bool = False, extra: Optional[list] = None):
+# ───────────────────────── 招待リンク/URLの回避対策 ─────────────────────────
+import unicodedata
+
+_ZW_RE = re.compile("[­͏؜ᅟᅠ឴឵᠋-᠎​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ]")
+_FOLD = str.maketrans({
+    # 似た文字(キリル/ギリシャ等)
+    "а": "a", "е": "e", "о": "o", "с": "c", "р": "p", "і": "i", "ѕ": "s", "ԁ": "d", "ɡ": "g", "ց": "g", "ɑ": "a",
+    "ο": "o", "ι": "i", "ν": "v", "ԛ": "q", "һ": "h", "ɩ": "i", "ӏ": "i",
+    # 数字・記号の置き換え(l33t)
+    "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s", "!": "i", "|": "i",
+    # 点・スラッシュの亜種
+    "。": ".", "｡": ".", "・": ".", "·": ".", "•": ".", "․": ".", "‧": ".", "﹒": ".", "∙": ".", "⋅": ".",
+    "⁄": "/", "∕": "/", "⧸": "/", "╱": "/", "＼": "\\", "\\": "/", "〳": "/", "丿": "/",
+})
+_S = r"[^a-z0-9/]{0,3}"          # 文字の間に挟まれた飾り(空白・記号・♡など最大3文字)
+
+
+def _spaced(word: str) -> str:
+    return _S.join(re.escape(c) for c in word)
+
+
+_DISCORD = _spaced("discord")
+_INVITE_PATTERNS = re.compile("|".join([
+    rf"(?<![a-z0-9])(?:\.{_S}g{_S}g|g{_S}g{_S}\.){_S}/{_S}[a-z0-9]",                        # .gg/xxx  gg./xxx  . g g /xxx
+    rf"{_DISCORD}(?:{_S}app)?{_S}(?:gg|me|li){_S}/",                                            # discord.gg/ discordgg/ d i s c o r d . g g /
+    rf"{_DISCORD}(?:{_S}app)?{_S}com{_S}/{_S}invite",                                           # discord.com/invite
+    rf"(?<![a-z0-9])(?:dsc|invite){_S}gg{_S}/",                                                  # dsc.gg/ invite.gg/
+    rf"(?<![a-z0-9]){_spaced('discord')}{_S}\.{_S}gift",                                         # discord.gift
+]))
+_LINK_PATTERNS = re.compile("|".join([
+    r"[^\s]{0,6}ps?\s*:\s*/\s*/",                                                                # https:// ttps:// ♡ps:// hxxp:// h**ps://
+    r"(?<![a-z0-9])www\s*\.\s*[a-z0-9-]{2,}",                                                    # www.example
+    r"[a-z0-9-]{2,}\s*(?:\.|\(\.\)|\[\.\]|\{\.\}|\bdot\b)\s*(?:com|net|org|io|gg|xyz|jp|me|co|info|app|dev|li|ru|cc|tk|gift)\b",
+]))
+
+
+def normalize_text(text: str) -> str:
+    """ゼロ幅文字・全角・装飾・似た文字・数字置換をならして、リンク判定用の文字列にする"""
+    t = unicodedata.normalize("NFKD", text or "")
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = _ZW_RE.sub("", t).lower()
+    t = re.sub(r"[\s(\[{]*\bdot\b[\s)\]}]*", ".", t)
+    return t.translate(_FOLD)
+
+
+def has_invite(text: str) -> bool:
+    if not text:
+        return False
+    if INVITE_RE.search(text):
+        return True
+    t = normalize_text(text)
+    if _INVITE_PATTERNS.search(t):
+        return True
+    # 文字の間を完全に詰めたもの(例: d i s c o r d . g g / x)も確認
+    packed = re.sub(r"[^a-z0-9/.]", "", t)
+    return bool(re.search(r"discord(?:app)?\.?(?:gg|me|li)/|discord(?:app)?\.com/invite|(?<![a-z0-9])(?:dsc|invite)\.?gg/", packed))
+
+
+def has_link(text: str) -> bool:
+    if not text:
+        return False
+    return bool(_LINK_PATTERNS.search(normalize_text(text)))
+
+
+slowed: dict = {}          # (guild_id, user_id) -> [解除時刻, 最後の投稿時刻]
+_slow_note: dict = {}
+
+
+async def isolate_member(member: discord.Member, am: dict) -> bool:
+    """隔離ロールを一定時間付ける(期限は temp_role_watch が自動で外す)。付けられたらTrue"""
+    role = member.guild.get_role(am.get("isolate_role") or 0)
+    if not role or lg is None:
+        return False
+    try:
+        await member.add_roles(role, reason="[AZQ BOT AutoMod] 連投による隔離")
+    except discord.HTTPException:
+        log.warning("隔離ロールを付与できません(BOTのロール位置/権限を確認) guild=%s", member.guild.id)
+        return False
+    c = lg.get(member.guild.id)
+    c["temp_roles"] = [t for t in c["temp_roles"] if not (t["u"] == member.id and t["r"] == role.id)]
+    c["temp_roles"].append({"u": member.id, "r": role.id, "exp": time.time() + am["isolate_minutes"] * 60, "by": member.guild.me.id})
+    cap(c["temp_roles"], 5000)
+    lg.save()
+    return True
+
+
+
+async def punish(message: discord.Message, reason: str, heavy: bool = False, extra: Optional[list] = None, spam: bool = False):
     guild, member = message.guild, message.author
     am = store.get(guild.id)["automod"]
 
@@ -781,7 +907,22 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
         dq.popleft()
 
     timed_out = False
-    if heavy or len(dq) >= am["strikes_to_timeout"]:
+    spam_note = ""
+    if spam:
+        # 連投した本人にだけ: 隔離ロール or 個人低速モード(他のメンバー・チャンネルには影響しない)
+        act = am.get("spam_action", "auto")
+        if act == "auto":
+            act = "role" if am.get("isolate_role") else "slow"
+        if act == "role" and await isolate_member(member, am):
+            spam_note = f"\n🚧 {am['isolate_minutes']}分間 隔離しました。"
+        elif act in ("role", "slow"):
+            slowed[key] = [now + am["slow_minutes"] * 60, now]
+            spam_note = f"\n🐢 {am['slow_minutes']}分間、{am['slow_seconds']}秒に1回しか投稿できません。"
+            if act == "role":
+                spam_note += "(隔離ロール未設定/付与失敗のため低速に切替)"
+        else:
+            heavy = True
+    if (heavy and not (spam and spam_note)) or (not spam and len(dq) >= am["strikes_to_timeout"]):
         try:
             await member.timeout(timedelta(minutes=am["punish_minutes"]), reason=f"[AZQ BOT AutoMod] {reason}")
             timed_out = True
@@ -792,6 +933,7 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
     note = f"{member.mention} ⚠️ **{reason}** を検知したためメッセージを削除しました。"
     if timed_out:
         note += f"\n🔇 {am['punish_minutes']}分間タイムアウトしました。"
+    note += spam_note
     try:
         await message.channel.send(note, delete_after=8)
     except discord.HTTPException:
@@ -801,7 +943,8 @@ async def punish(message: discord.Message, reason: str, heavy: bool = False, ext
     e.add_field(name="ユーザー", value=f"{member} (`{member.id}`)")
     e.add_field(name="チャンネル", value=message.channel.mention)
     e.add_field(name="理由", value=reason)
-    e.add_field(name="処置", value="削除 + タイムアウト" if timed_out else f"削除 (警告 {len(dq)}/{am['strikes_to_timeout']})")
+    e.add_field(name="処置", value=("削除 + タイムアウト" if timed_out else
+                                  ("削除 + " + spam_note.strip().split("。")[0].lstrip("🚧🐢 ") if spam_note else f"削除 (警告 {len(dq)}/{am['strikes_to_timeout']})")))
     if message.content:
         e.add_field(name="内容", value=message.content[:500], inline=False)
     await send_log(guild, e)
@@ -828,11 +971,32 @@ async def on_message(message: discord.Message):
     key = (message.guild.id, member.id)
     now = time.time()
 
+    sl = slowed.get(key)
+    if sl:
+        if now > sl[0]:
+            slowed.pop(key, None)
+        elif now - sl[1] < am["slow_seconds"]:
+            try:
+                await message.delete()
+            except discord.HTTPException:
+                pass
+            if now - _slow_note.get(key, 0) > 15:
+                _slow_note[key] = now
+                try:
+                    await message.channel.send(f"{member.mention} 🐢 低速モード中です。{am['slow_seconds']}秒に1回だけ投稿できます。", delete_after=5)
+                except discord.HTTPException:
+                    pass
+            return
+        else:
+            sl[1] = now
+
     for word in am["ng_words"]:
-        if word and word.lower() in lowered:
+        if word and (word.lower() in lowered or word.lower() in normalize_text(content)):
             return await punish(message, "NGワード")
-    if am["block_invites"] and INVITE_RE.search(content):
-        return await punish(message, "招待リンクの投稿")
+    if am["block_invites"] and (has_invite(content) or any(has_invite(getattr(em, "url", None) or "") or has_invite(em.description or "") for em in message.embeds)):
+        return await punish(message, "招待リンクの投稿(回避表記を含む)")
+    if am.get("block_links") and has_link(content):
+        return await punish(message, "リンクの投稿")
     # 重複メンションは1つとして数え、@everyone / @here もカウントする(同一ユーザーへの連続メンションで誤検知しない)
     mention_total = (len({m.id for m in message.mentions}) + len({r.id for r in message.role_mentions})
                      + (1 if message.mention_everyone else 0))
@@ -846,14 +1010,14 @@ async def on_message(message: discord.Message):
     if len(dq) >= am["spam_count"]:
         msgs = [m for _, m in dq]
         dq.clear()
-        return await punish(message, "連投(スパム)", heavy=True, extra=msgs)
+        return await punish(message, "連投(スパム)", heavy=True, extra=msgs, spam=True)
 
     if content:
         dd = recent_dups[key]
         dd.append((now, content))
         if sum(1 for t, c in dd if c == content and now - t <= 30) >= am["dup_count"]:
             dd.clear()
-            return await punish(message, "同一メッセージの連続投稿")
+            return await punish(message, "同一メッセージの連続投稿", spam=True)
 
 
 async def apply_autorole(member: discord.Member) -> None:
@@ -1068,6 +1232,9 @@ async def on_message_delete(message: discord.Message):
     e.add_field(name="投稿者", value=f"{message.author} (`{message.author.id}`)")
     e.add_field(name="チャンネル", value=message.channel.mention)
     e.add_field(name="内容", value=message.content[:1000], inline=False)
+    e.add_field(name="メッセージID", value=f"`{message.id}`")
+    if message.attachments:
+        e.add_field(name="添付", value="\n".join(a.filename for a in message.attachments[:5])[:500], inline=False)
     await send_log(message.guild, e)
 
 
@@ -1081,6 +1248,7 @@ async def on_message_edit(before: discord.Message, after: discord.Message):
     e.add_field(name="編集前", value=(before.content or "(なし)")[:500], inline=False)
     e.add_field(name="編集後", value=(after.content or "(なし)")[:500], inline=False)
     e.add_field(name="リンク", value=f"[ジャンプ]({after.jump_url})", inline=False)
+    e.add_field(name="メッセージID", value=f"`{before.id}`")
     await send_log(before.guild, e)
 
 
@@ -6976,6 +7144,20 @@ def _valid_gid(v) -> str:
     return v if v.isdigit() and len(v) <= 20 else ""
 
 
+def _login_dest(request) -> str:
+    """ログイン前に開こうとしたページ(サーバー管理 / 経済タブ)を、ログイン後に開き直すための引数"""
+    q = ""
+    gid = _valid_gid(request.query.get("g"))
+    if gid:
+        q += f"&g={gid}"
+    if request.path == "/web/manage" or request.query.get("to") == "manage":
+        q += "&to=manage"
+    tab = request.query.get("tab", "")
+    if tab.isalnum() and len(tab) <= 16:
+        q += f"&tab={tab}"
+    return q
+
+
 def dash_url(guild_id=None) -> str:
     """ダッシュボードのURL。サーバーIDを付けると、そのサーバーの画面から開く(ログインしていなければ、ログイン後に開く)"""
     return DASH_BASE + (f"/?g={guild_id}" if guild_id else "/")
@@ -7024,8 +7206,7 @@ async def dash_index(request):
     if not OAUTH_READY:
         return _oauth_setup_page()
     if not _dash_session(request):
-        gid = _valid_gid(request.query.get("g"))
-        raise web.HTTPFound("/login" + (f"?g={gid}" if gid else ""))
+        raise web.HTTPFound("/login?" + _login_dest(request).lstrip("&"))
     try:
         with open(os.path.join(BASE_DIR, "dashboard.html"), encoding="utf-8") as f:
             page = f.read()
@@ -7045,14 +7226,15 @@ async def dash_login(request):
     if not _rate_ok(client_ip(request)):
         return web_page("<h1>アクセスが多すぎます</h1><p>しばらく待ってからやり直してください。</p>", 429)
     gid = _valid_gid(request.query.get("g"))
+    dest = _login_dest(request)
     if _dash_session(request):
-        raise web.HTTPFound("/" + (f"?g={gid}" if gid else ""))
+        raise web.HTTPFound(("/web/manage?" if request.query.get("to") == "manage" else "/?") + dest.lstrip("&"))
     none = not request.query.get("consent")
     now = time.time()
     for k in [k for k, v in dash_states.items() if v["exp"] < now]:
         dash_states.pop(k, None)
     state = secrets.token_urlsafe(24)
-    dash_states[state] = {"exp": now + 600, "g": gid, "none": none}
+    dash_states[state] = {"exp": now + 600, "g": gid, "none": none, "dest": dest}
     q = (f"client_id={bot.application_id}&response_type=code&scope=identify&state={state}&prompt={'none' if none else 'consent'}"
          f"&redirect_uri={quote(DASH_BASE + '/callback', safe='')}")
     resp = web.HTTPFound("https://discord.com/oauth2/authorize?" + q)
@@ -7067,7 +7249,7 @@ async def dash_callback(request):
     rec = dash_states.pop(state, None)
     if not rec or rec["exp"] < time.time() or not hmac.compare_digest(request.cookies.get("azq_state", ""), state):
         return web_page("<h1>ログインの有効期限が切れました</h1><p><a href=\"/login\">もう一度ログインする</a></p>", 400)
-    gq = f"&g={rec['g']}" if rec["g"] else ""
+    gq = rec["dest"]
     if request.query.get("error"):
         if rec["none"]:
             raise web.HTTPFound("/login?consent=1" + gq)
@@ -7087,7 +7269,7 @@ async def dash_callback(request):
         log.exception("ダッシュボードのログインに失敗(DISCORD_CLIENT_SECRET と、Redirects に登録したURLを確認してください: %s/callback)", DASH_BASE)
         return web_page("<h1>ログインに失敗しました</h1><p>BOTの管理者に連絡してください。</p>", 502)
     sid = dash_sessions.create({"id": uid, "name": user.get("global_name") or user.get("username") or uid})
-    resp = web.HTTPFound("/" + (f"?g={rec['g']}" if rec["g"] else ""))
+    resp = web.HTTPFound(("/web/manage?" if "&to=manage" in rec["dest"] else "/?") + rec["dest"].replace("&to=manage", "").lstrip("&"))
     _set_sid_cookie(resp, sid)
     resp.del_cookie("azq_state", path="/")
     raise resp
@@ -7323,9 +7505,13 @@ def apply_settings(g: discord.Guild, d: dict) -> None:
 async def dash_get(request):
     g = await _dash_guild(request, manage=False)
     m = request.get("dash_member")
-    if m and _can_manage(m):
-        return web.json_response(dash_snapshot(g))
-    return web.json_response(eco_view_snapshot(g))   # メンバーは経済の閲覧のみ(/economyweb)
+    try:
+        if m and _can_manage(m):
+            return web.json_response(dash_snapshot(g))
+        return web.json_response(eco_view_snapshot(g))   # メンバーは経済の閲覧のみ(/economyweb)
+    except Exception as e:
+        log.exception("ダッシュボード: 設定データの生成に失敗 guild=%s(%s)", g.name, g.id)
+        raise web.HTTPInternalServerError(text=f"設定データの生成に失敗しました: {type(e).__name__}: {e}")
 
 
 async def dash_save(request):
@@ -7740,6 +7926,14 @@ async def act_eco_save(g, m, d):
              gamble_enabled=bool(d.get("gamble_enabled")), stock_enabled=bool(d.get("stock_enabled")),
              drop_enabled=bool(d.get("drop_enabled")), rank_include_stocks=bool(d.get("rank_include_stocks")),
              **{k: bool(d.get(k, c.get(k, True))) for k in ("eco_enabled", "market_enabled", "auction_enabled", "company_enabled")})
+    if "eco_channel_mode" in d:
+        mode = str(d["eco_channel_mode"])
+        if mode not in ECO_CHANNEL_MODES:
+            raise SettingsError("経済を使えるチャンネルの設定が正しくありません")
+        chans = [str(_chan(g, x, label="チャンネル").id) for x in list(d.get("eco_channels") or [])[:100]]
+        if mode == "allow" and not chans:
+            raise SettingsError("「選んだチャンネルだけ」にするには、チャンネルを1つ以上選んでください")
+        c["eco_channel_mode"], c["eco_channels"] = mode, list(dict.fromkeys(chans))
     eco.save()
     await send_log(g, make_embed("💰 経済の設定を変更", f"実行者: {m} (`{m.id}` / ダッシュボード)", GRAY))
     return "✅ 経済の設定を保存しました。"
@@ -8887,8 +9081,7 @@ async def srvadm_index(request):
     if not OAUTH_READY:
         return _oauth_setup_page()
     if not _dash_session(request):
-        gid = _valid_gid(request.query.get("g"))
-        raise web.HTTPFound("/login" + (f"?g={gid}" if gid else ""))
+        raise web.HTTPFound("/login?" + _login_dest(request).lstrip("&"))
     return web.Response(text=SRVADM_HTML, content_type="text/html",
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"})
 
@@ -9830,7 +10023,7 @@ ECO_CFG = {
     "pay_enabled": True, "pay_fee": 0,
     "gamble_enabled": True, "max_bet": 100000, "stock_enabled": True,
     "drop_enabled": True, "drop_rate": 5, "drop_min": 250, "drop_max": 350, "drop_cooldown": 300,
-    "rank_include_stocks": True,
+    "rank_include_stocks": True, "eco_channel_mode": "all", "eco_channels": [],
 }
 ECO_KINDS = {"normal": "通常(使えない・コレクション/売買用)", "money": "コイン袋(使うとコインがもらえる)",
              "chest": "チェスト(使うと景品がランダムに出る)", "boost": "ブースト(一定時間 /daily /work の収入と株売却の利益アップ)",
@@ -9845,6 +10038,28 @@ _eco_rng = random.SystemRandom()
 # 経済のうち「プレイヤーが使う」スラッシュコマンド(経済全体をオフにすると止まる。/economy・/money などの管理者用は止まらない)
 ECO_PLAYER_CMDS = frozenset({"balance", "daily", "work", "moneytop", "pay", "economyinfo", "shop", "coinflip", "roulette", "blackjack", "rps",
                              "roles", "coindrop", "loan", "stock", "item", "market", "lend", "company"})
+
+
+ECO_CHANNEL_MODES = {"all": "すべてのチャンネルで使える", "allow": "選んだチャンネルだけで使える", "deny": "選んだチャンネルでは使えない"}
+
+
+def eco_channel_ok(channel, gid: int) -> bool:
+    """経済コマンド・コインドロップを、このチャンネルで使えるか(スレッドは親チャンネルで判定)"""
+    c = eco.cfg(gid)
+    mode = c.get("eco_channel_mode", "all")
+    if mode == "all" or channel is None:
+        return True
+    ids = {str(channel.id)}
+    if getattr(channel, "parent_id", None):
+        ids.add(str(channel.parent_id))
+    listed = bool(ids & {str(x) for x in c.get("eco_channels", [])})
+    return listed if mode == "allow" else not listed
+
+
+def eco_channel_text(c: dict) -> str:
+    mode = c.get("eco_channel_mode", "all")
+    chans = " ".join(f"<#{x}>" for x in c.get("eco_channels", [])[:30]) or "(なし)"
+    return ECO_CHANNEL_MODES.get(mode, ECO_CHANNEL_MODES["all"]) + ("" if mode == "all" else f"\n対象チャンネル: {chans}")
 
 
 def eco_feature(gid: int, key: str, label: str) -> None:
@@ -9896,7 +10111,7 @@ class EcoStore:
     def cfg(self, gid: int) -> dict:
         c = self.guild(gid)["cfg"]
         for k, v in ECO_CFG.items():
-            c.setdefault(k, v)
+            c.setdefault(k, list(v) if isinstance(v, list) else v)
         if c.get("work_cooldown") == 3600:
             # v2.2以前の既定(1時間)を、v2.3の既定(3分)に移行する
             c["work_cooldown"] = 180
@@ -13077,6 +13292,36 @@ async def eco_config(interaction: discord.Interaction, symbol: Optional[app_comm
     await eph(interaction, "✅ 更新しました:\n" + "\n".join(changed))
 
 
+CHANNEL_MODE_CHOICES = [app_commands.Choice(name=v, value=k) for k, v in ECO_CHANNEL_MODES.items()]
+
+
+@economy_group.command(name="channel", description="経済を使えるチャンネル/使えないチャンネルを設定(何も指定しないと現在の設定を表示)")
+@app_commands.describe(mode="使える範囲", add="一覧に追加するチャンネル", remove="一覧から外すチャンネル", clear="一覧を空にする")
+@app_commands.choices(mode=CHANNEL_MODE_CHOICES)
+@app_commands.checks.has_permissions(manage_guild=True)
+@lg_guard
+async def eco_channel(interaction: discord.Interaction, mode: Optional[app_commands.Choice[str]] = None, add: Optional[discord.TextChannel] = None,
+                      remove: Optional[discord.TextChannel] = None, clear: Optional[bool] = None):
+    c = eco.cfg(interaction.guild.id)
+    ids = [str(x) for x in c.get("eco_channels", [])]
+    if clear:
+        ids = []
+    if add and str(add.id) not in ids:
+        ids.append(str(add.id))
+    if remove:
+        ids = [x for x in ids if x != str(remove.id)]
+    if len(ids) > 100:
+        raise SrvAdmError("チャンネルは100個までです。")
+    new_mode = mode.value if mode else c.get("eco_channel_mode", "all")
+    if new_mode == "allow" and not ids and (mode or add or remove or clear):
+        raise SrvAdmError("「選んだチャンネルだけ」にするには、`add` でチャンネルを1つ以上追加してください。")
+    if mode or add or remove or clear:
+        c["eco_channel_mode"], c["eco_channels"] = new_mode, ids
+        eco.save()
+        return await eph(interaction, "✅ 更新しました\n" + eco_channel_text(c))
+    await eph(interaction, "**経済を使えるチャンネル**\n" + eco_channel_text(c))
+
+
 ITEM_KIND_CHOICES = [app_commands.Choice(name=v[:100], value=k) for k, v in ECO_KINDS.items()]
 
 
@@ -13456,6 +13701,8 @@ async def on_message_coin_drop(message: discord.Message) -> None:
         return
     c = eco.cfg(g.id)
     if not c.get("eco_enabled", True) or not c.get("drop_enabled", True) or c.get("drop_rate", 0) <= 0:
+        return
+    if not eco_channel_ok(message.channel, g.id):
         return
     now = time.time()
     if _last_drop.get(g.id, 0) > now:
@@ -14445,6 +14692,178 @@ def sticky_install() -> None:
     bot.add_listener(on_channel_delete_sticky, "on_guild_channel_delete")
 
 
+# ───────────────────────── 詳細ログ(Discordのログチャンネル用) ─────────────────────────
+
+async def _audit_actor(g: discord.Guild, action: "discord.AuditLogAction", target_id: Optional[int] = None):
+    """監査ログから実行者を探す(権限なし/失敗時はNone)。(実行者, 理由)を返す"""
+    try:
+        if not g.me.guild_permissions.view_audit_log:
+            return None, ""
+        await asyncio.sleep(1.0)
+        async for en in g.audit_logs(limit=6, action=action):
+            if (discord.utils.utcnow() - en.created_at).total_seconds() > 15:
+                continue
+            if target_id is None or (en.target and getattr(en.target, "id", None) == target_id):
+                return en.user, (en.reason or "")
+    except discord.HTTPException:
+        pass
+    return None, ""
+
+
+def _audit_who(u) -> str:
+    return f"{u.mention} (`{u.id}`)" if u else "不明"
+
+
+async def dl_member_ban(guild: discord.Guild, user: discord.User) -> None:
+    by, why = await _audit_actor(guild, discord.AuditLogAction.ban, user.id)
+    e = make_embed("🔨 BAN", f"{user} (`{user.id}`)", RED)
+    e.add_field(name="実行者", value=_audit_who(by)); e.add_field(name="理由", value=why[:300] or "(なし)")
+    log.info("BAN: %s(%s) guild=%s by=%s", user, user.id, guild.id, by)
+    await send_log(guild, e)
+
+
+async def dl_member_unban(guild: discord.Guild, user: discord.User) -> None:
+    by, why = await _audit_actor(guild, discord.AuditLogAction.unban, user.id)
+    e = make_embed("♻️ BAN解除", f"{user} (`{user.id}`)", GREEN)
+    e.add_field(name="実行者", value=_audit_who(by)); e.add_field(name="理由", value=why[:300] or "(なし)")
+    await send_log(guild, e)
+
+
+async def dl_member_update(before: discord.Member, after: discord.Member) -> None:
+    g = after.guild
+    if before.nick != after.nick:
+        by, _ = await _audit_actor(g, discord.AuditLogAction.member_update, after.id)
+        e = make_embed("🏷️ ニックネーム変更", f"{after} (`{after.id}`)", GRAY)
+        e.add_field(name="変更前", value=before.nick or "(なし)"); e.add_field(name="変更後", value=after.nick or "(なし)")
+        e.add_field(name="実行者", value=_audit_who(by))
+        await send_log(g, e)
+    if before.timed_out_until != after.timed_out_until:
+        by, why = await _audit_actor(g, discord.AuditLogAction.member_update, after.id)
+        if after.timed_out_until:
+            e = make_embed("🔇 タイムアウト", f"{after} (`{after.id}`)", YELLOW)
+            e.add_field(name="期限", value=discord.utils.format_dt(after.timed_out_until, "f") + " (" + discord.utils.format_dt(after.timed_out_until, "R") + ")")
+        else:
+            e = make_embed("🔊 タイムアウト解除", f"{after} (`{after.id}`)", GREEN)
+        e.add_field(name="実行者", value=_audit_who(by)); e.add_field(name="理由", value=why[:300] or "(なし)")
+        await send_log(g, e)
+    b, a = {r.id for r in before.roles}, {r.id for r in after.roles}
+    if b != a:
+        by, why = await _audit_actor(g, discord.AuditLogAction.member_role_update, after.id)
+        e = make_embed("🎭 ロール変更", f"{after} (`{after.id}`)", BLUE)
+        if a - b:
+            e.add_field(name="付与", value=" ".join(f"<@&{i}>" for i in a - b)[:500], inline=False)
+        if b - a:
+            e.add_field(name="剥奪", value=" ".join(f"<@&{i}>" for i in b - a)[:500], inline=False)
+        e.add_field(name="実行者", value=_audit_who(by))
+        await send_log(g, e)
+
+
+async def dl_channel_create(ch) -> None:
+    g = getattr(ch, "guild", None)
+    if not g:
+        return
+    by, _ = await _audit_actor(g, discord.AuditLogAction.channel_create, ch.id)
+    e = make_embed("📁 チャンネル作成", f"{ch.mention} (`{ch.id}`)", GREEN)
+    e.add_field(name="種類", value=str(ch.type)); e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(g, e)
+
+
+async def dl_channel_delete(ch) -> None:
+    g = getattr(ch, "guild", None)
+    if not g:
+        return
+    by, _ = await _audit_actor(g, discord.AuditLogAction.channel_delete, ch.id)
+    e = make_embed("🗑️ チャンネル削除", f"#{ch.name} (`{ch.id}`)", RED)
+    e.add_field(name="種類", value=str(ch.type)); e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(g, e)
+
+
+async def dl_channel_update(before, after) -> None:
+    g = getattr(after, "guild", None)
+    if not g:
+        return
+    diffs = []
+    if before.name != after.name:
+        diffs.append(f"名前: `{before.name}` → `{after.name}`")
+    if getattr(before, "topic", None) != getattr(after, "topic", None):
+        diffs.append("トピックを変更")
+    if getattr(before, "slowmode_delay", None) != getattr(after, "slowmode_delay", None):
+        diffs.append(f"低速モード: {before.slowmode_delay}秒 → {after.slowmode_delay}秒")
+    if before.overwrites != after.overwrites:
+        diffs.append("権限の上書きを変更")
+    if not diffs:
+        return
+    by, _ = await _audit_actor(g, discord.AuditLogAction.channel_update, after.id)
+    e = make_embed("📝 チャンネル更新", f"{after.mention} (`{after.id}`)\n" + "\n".join(diffs), BLUE)
+    e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(g, e)
+
+
+async def dl_role_create(role: discord.Role) -> None:
+    by, _ = await _audit_actor(role.guild, discord.AuditLogAction.role_create, role.id)
+    e = make_embed("🆕 ロール作成", f"{role.mention} (`{role.id}`)", GREEN)
+    e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(role.guild, e)
+
+
+async def dl_role_delete(role: discord.Role) -> None:
+    by, _ = await _audit_actor(role.guild, discord.AuditLogAction.role_delete, role.id)
+    e = make_embed("🗑️ ロール削除", f"@{role.name} (`{role.id}`)", RED)
+    e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(role.guild, e)
+
+
+async def dl_role_update(before: discord.Role, after: discord.Role) -> None:
+    diffs = []
+    if before.name != after.name:
+        diffs.append(f"名前: `{before.name}` → `{after.name}`")
+    if before.permissions != after.permissions:
+        added = [n for n, v in after.permissions if v and not getattr(before.permissions, n)]
+        removed = [n for n, v in after.permissions if not v and getattr(before.permissions, n)]
+        if added:
+            diffs.append("権限追加: " + ", ".join(added)[:300])
+        if removed:
+            diffs.append("権限削除: " + ", ".join(removed)[:300])
+    if before.color != after.color:
+        diffs.append("色を変更")
+    if not diffs:
+        return
+    by, _ = await _audit_actor(after.guild, discord.AuditLogAction.role_update, after.id)
+    e = make_embed("🔧 ロール更新", f"{after.mention} (`{after.id}`)\n" + "\n".join(diffs), YELLOW if before.permissions != after.permissions else BLUE)
+    e.add_field(name="実行者", value=_audit_who(by))
+    await send_log(after.guild, e)
+
+
+async def dl_voice_state(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState) -> None:
+    if member.bot or before.channel == after.channel:
+        return
+    if before.channel is None:
+        desc, col = f"{member.mention} が {after.channel.mention} に参加", GREEN
+    elif after.channel is None:
+        desc, col = f"{member.mention} が {before.channel.mention} から退出", GRAY
+    else:
+        desc, col = f"{member.mention} が {before.channel.mention} → {after.channel.mention} に移動", BLUE
+    await send_log(member.guild, make_embed("🎙️ ボイス", desc, col))
+
+
+async def dl_bulk_delete(payload: discord.RawBulkMessageDeleteEvent) -> None:
+    g = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    if not g:
+        return
+    e = make_embed("🧹 メッセージ一括削除", f"<#{payload.channel_id}> で **{len(payload.message_ids)}件** 削除されました。", YELLOW)
+    await send_log(g, e)
+
+
+def detail_log_install() -> None:
+    for fn, ev in ((dl_member_ban, "on_member_ban"), (dl_member_unban, "on_member_unban"),
+                   (dl_member_update, "on_member_update"), (dl_channel_create, "on_guild_channel_create"),
+                   (dl_channel_delete, "on_guild_channel_delete"), (dl_channel_update, "on_guild_channel_update"),
+                   (dl_role_create, "on_guild_role_create"), (dl_role_delete, "on_guild_role_delete"),
+                   (dl_role_update, "on_guild_role_update"), (dl_voice_state, "on_voice_state_update"),
+                   (dl_bulk_delete, "on_raw_bulk_message_delete")):
+        bot.add_listener(fn, ev)
+
+
 def levels_install() -> None:
     for cmd in (level_group, stats_group, xp_group):
         bot.tree.add_command(cmd)
@@ -14534,43 +14953,76 @@ WEB_HINT_SKIP = {"web", "help", "about"}  # 案内そのものになるコマン
 _hint_tasks: set = set()
 
 
+async def _wait_reply_done(interaction: discord.Interaction) -> bool:
+    """コマンド本体の返信が出終わるまで待つ。defer中は「考え中」の表示が本物の返信に変わるまで待つ(先に案内を送ると、案内が返信の場所を奪うため)"""
+    for _ in range(120):
+        if interaction.response.is_done():
+            if interaction.response.type != discord.InteractionResponseType.deferred_channel_message:
+                return True
+            try:
+                if not (await interaction.original_response()).flags.loading:
+                    return True
+            except discord.HTTPException:
+                pass
+        await asyncio.sleep(0.5)
+    return False
+
+
 async def _send_web_hint(interaction: discord.Interaction) -> None:
     """コマンドの返信が終わるのを待ってから、「/web推奨 またはスラッシュコマンド」の案内を本人にだけ表示する"""
-    for _ in range(60):
-        if interaction.response.is_done():
-            break
-        await asyncio.sleep(0.25)
-    else:
+    if not await _wait_reply_done(interaction):
         return
     view = discord.ui.View()
     if web_available() and interaction.guild:
         view.add_item(discord.ui.Button(label="Webで操作する", emoji="🌐", style=discord.ButtonStyle.link, url=dash_url(interaction.guild.id)))
-    text = "💡 **`/web` 推奨** です。(またはこのままスラッシュコマンドでもOK)"
+    text = "💡 **`/web` 推奨** です。設定はブラウザのほうが簡単です。(またはこのままスラッシュコマンドでもOK)"
     try:
-        if view.children:
-            await interaction.followup.send(text, view=view, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(text, view=view, ephemeral=True)
     except discord.HTTPException:
         pass
 
 
+async def _send_eco_web_hint(interaction: discord.Interaction, url: str) -> None:
+    """経済コマンドを使った人に、/economyweb(経済専用のWeb画面)の案内を一度だけ表示する"""
+    if not await _wait_reply_done(interaction):
+        return
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label="経済ターミナルを開く", emoji="📈", style=discord.ButtonStyle.link, url=url))
+    try:
+        await interaction.followup.send("📈 **`/economyweb`** で、株の売買・ギャンブル・ショップ購入をブラウザの専用画面からできます。(この案内は一度だけ表示されます)",
+                                        view=view, ephemeral=True)
+    except discord.HTTPException:
+        pass
+
+
+def _start_hint(coro) -> None:
+    t = asyncio.create_task(coro)
+    _hint_tasks.add(t)
+    t.add_done_callback(_hint_tasks.discard)
+
+
 async def _web_hint_check(interaction: discord.Interaction) -> bool:
-    """スラッシュコマンド・右クリックメニューの実行時に、「/web推奨 またはスラッシュコマンド」を案内する(同じ人には一度だけ。保存されるので再起動後も出ない)。
-    /web を使える人(サーバー管理者・役職あり)にだけ表示する。コマンド自体は通常どおり実行する"""
+    """スラッシュコマンド・右クリックメニューの実行時に案内を出す(どちらも、同じ人には一度だけ。保存されるので再起動後も出ない)。
+    1) /web推奨 … /web を使える人(サーバー管理者・役職あり)に最初の一回  2) /economyweb … 経済コマンドを使った人に一回(1)と同時には出さない)
+    コマンド自体は通常どおり実行する"""
     try:
         cmd = interaction.command
         root = getattr(cmd, "root_parent", None) or cmd
         user = interaction.user
+        if not (root and interaction.guild):
+            return True
         rec = user_prefs.rec(user.id)
-        if (root and interaction.guild and root.name not in WEB_HINT_SKIP
-                and not rec.get("web_hint")
+        if (root.name not in WEB_HINT_SKIP and not rec.get("web_hint") and web_available()
                 and (_is_dash_admin(user) or rank_of(user) >= 1)):
-            rec["web_hint"] = True  # 一度出したら、その人にはもう出さない(再起動後も保存)
+            rec["web_hint"] = True
             user_prefs.save()
-            t = asyncio.create_task(_send_web_hint(interaction))
-            _hint_tasks.add(t)
-            t.add_done_callback(_hint_tasks.discard)
+            _start_hint(_send_web_hint(interaction))
+        elif root.name in ECO_PLAYER_CMDS and root.name not in ("economyinfo", "coindrop") and not rec.get("eco_web_hint") and getattr(bot, "web_runner", None):
+            url = _eco_url(interaction.guild.id, user.id)
+            if url:
+                rec["eco_web_hint"] = True
+                user_prefs.save()
+                _start_hint(_send_eco_web_hint(interaction, url))
     except Exception:
         log.exception("Web案内の表示に失敗")
     return True
@@ -14589,6 +15041,10 @@ async def _global_check(interaction: discord.Interaction) -> bool:
     root = (getattr(cmd, "root_parent", None) or cmd) if cmd else None
     if interaction.guild and root is not None and root.name in ECO_PLAYER_CMDS and not eco.cfg(interaction.guild.id).get("eco_enabled", True):
         raise AzqCheckError("❌ このサーバーでは経済機能がオフになっています。")
+    if interaction.guild and root is not None and root.name in ECO_PLAYER_CMDS and not eco_channel_ok(interaction.channel, interaction.guild.id):
+        c = eco.cfg(interaction.guild.id)
+        where = f"\n使えるチャンネル: {' '.join(f'<#{x}>' for x in c.get('eco_channels', [])[:10])}" if c.get("eco_channel_mode") == "allow" else ""
+        raise AzqCheckError("❌ このチャンネルでは経済コマンドを使えません。" + where)
     return await _web_hint_check(interaction)
 
 
@@ -14639,6 +15095,10 @@ AUTOMOD_KEYS = [
     app_commands.Choice(name="punish_minutes (タイムアウト分数)", value="punish_minutes"),
     app_commands.Choice(name="raid_joins (レイド判定の参加人数)", value="raid_joins"),
     app_commands.Choice(name="raid_seconds (レイド判定の秒数)", value="raid_seconds"),
+    app_commands.Choice(name="block_links (全リンク禁止 1/0・回避表記も検知)", value="block_links"),
+    app_commands.Choice(name="isolate_minutes (連投時の隔離分数)", value="isolate_minutes"),
+    app_commands.Choice(name="slow_seconds (連投者の低速: 投稿間隔の秒数)", value="slow_seconds"),
+    app_commands.Choice(name="slow_minutes (連投者の低速: 継続分数)", value="slow_minutes"),
 ]
 
 
@@ -14755,9 +15215,53 @@ async def cfg_kaso(interaction: discord.Interaction, enabled: bool, channel: Opt
 async def cfg_automod(interaction: discord.Interaction, setting: app_commands.Choice[str], value: app_commands.Range[int, 0, 100000]):
     am = store.get(interaction.guild.id)["automod"]
     key = setting.value
-    am[key] = bool(value) if key in ("enabled", "block_invites") else max(1, value)
+    am[key] = bool(value) if key in ("enabled", "block_invites", "block_links") else max(1, value)
     store.save()
     await interaction.response.send_message(f"✅ `{key}` = `{am[key]}`", ephemeral=True)
+
+
+@config_group.command(name="spam_action", description="連投した人への処置(本人にだけ適用)")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.choices(action=[
+    app_commands.Choice(name="auto (隔離ロールがあれば隔離、なければ低速)", value="auto"),
+    app_commands.Choice(name="role (隔離ロール)", value="role"),
+    app_commands.Choice(name="slow (本人だけ低速モード)", value="slow"),
+    app_commands.Choice(name="timeout (従来のタイムアウト)", value="timeout"),
+])
+async def cfg_spam_action(interaction: discord.Interaction, action: app_commands.Choice[str]):
+    store.get(interaction.guild.id)["automod"]["spam_action"] = action.value
+    store.save()
+    await interaction.response.send_message(f"✅ 連投時の処置: `{action.value}`", ephemeral=True)
+
+
+@config_group.command(name="isolate_role", description="連投者に付ける隔離ロールを設定(create=Trueで自動作成)")
+@app_commands.checks.has_permissions(administrator=True)
+async def cfg_isolate_role(interaction: discord.Interaction, role: Optional[discord.Role] = None, create: bool = False):
+    g = interaction.guild
+    am = store.get(g.id)["automod"]
+    if create:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            role = await g.create_role(name="隔離", reason="AZQ BOT 隔離ロール")
+        except discord.HTTPException as e:
+            return await interaction.followup.send(f"❌ ロールを作れませんでした: {e}", ephemeral=True)
+        ow = discord.PermissionOverwrite(send_messages=False, add_reactions=False, speak=False, create_public_threads=False,
+                                         create_private_threads=False, send_messages_in_threads=False)
+        n = 0
+        for ch in g.channels:
+            try:
+                await ch.set_permissions(role, overwrite=ow, reason="AZQ BOT 隔離ロール設定")
+                n += 1
+            except discord.HTTPException:
+                pass
+        am["isolate_role"] = role.id
+        store.save()
+        return await interaction.followup.send(f"✅ {role.mention} を作成し、{n}個のチャンネルで発言不可にしました。\n"
+                                               "⚠️ BOTのロールを隔離ロールより上に置いてください。", ephemeral=True)
+    am["isolate_role"] = role.id if role else None
+    store.save()
+    await interaction.response.send_message(f"✅ 隔離ロール: {role.mention if role else '解除'}\n(BOTのロールがこれより上にある必要があります)",
+                                            ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 @config_group.command(name="ngword", description="NGワードの追加/削除/一覧")

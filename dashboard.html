@@ -532,6 +532,8 @@ const ECO = [
   {t: "通貨", d: "コインの見た目と名前です。(/economyinfo などの表示に使われます)", f: [{k: "symbol", t: "txt", l: "記号(絵文字など)", max: 10, half: 1}, {k: "name", t: "txt", l: "名前", max: 10, half: 1}]},
   {t: "機能のオン/オフ", d: "オフにした機能は、コマンドもWeb画面も使えなくなります。出品中のものや所持金はそのまま残ります。", f: [C("eco_enabled", "経済機能全体を有効にする", "オフにすると /daily /work /shop /stock などプレイヤー用の経済コマンドがすべて止まります。(設定コマンドは使えます)"),
     C("market_enabled", "フリマ(/market sell・buy)を有効にする"), C("auction_enabled", "オークション(/market auction・bid)を有効にする"), C("company_enabled", "会社(/company)を有効にする")]},
+  {t: "使えるチャンネル", f: [{k: "eco_channel_mode", t: "sel", l: "範囲", opts: [{v: "all", t: "すべてのチャンネル"}, {v: "allow", t: "選んだチャンネルだけ"}, {v: "deny", t: "選んだチャンネル以外"}]},
+    {k: "eco_channels", t: "mch", l: "チャンネル", h: "経済コマンドとコインドロップに適用されます。/economyweb には適用されません。"}]},
   {t: "所持金と借金", f: [N("start_balance", "初期所持金", 0, 1000000000, "初めて経済を使う人に付く所持金です。(既定100)"), N("debt_max", "借金の上限", 0, 1000000000, "`/loan borrow` で借りられる上限。(既定2000・0=借金禁止)"),
     C("rank_include_stocks", "ランキングに株の評価額を含める(総資産)", "既定ON。オフにすると所持金(コイン)だけでランキングします。")]},
   {t: "デイリー(/daily)", f: [N("daily_amount", "基本報酬", 0, 1000000000), N("daily_streak_bonus", "連続ボーナス(1日あたり)", 0, 1000000000), N("daily_streak_cap", "ボーナスが増える最大日数", 0, 3650)]},
