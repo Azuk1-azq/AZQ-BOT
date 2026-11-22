@@ -5,6 +5,7 @@
 - 📢 サポートサーバー: [discord.gg/tAKTK9MYdc](https://discord.gg/tAKTK9MYdc)
   (メンテナンス・障害・アップデートのお知らせはここでのみ配信します)
 - 🌐 公式サイト: [sys.azuk1.com](https://sys.azuk1.com/)
+重要なお知らせ:
 if interaction.user.id != 1453953586626166899:,ECO_STOCK_ADMIN_ID = 1453953586626166899が定義されています。必ず自分でホスティングする場合は書き換えてください。
 
 ---
