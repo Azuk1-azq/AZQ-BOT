@@ -3,38 +3,79 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>パッチノート一覧 - AZQBOT</title>
+<title>AZQ BOT パッチノート: レベル除外・ロールオークション・YouTube音楽再生を追加</title>
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
-<header class="top"><nav class="nav"><a class="logo" href="../index.html">AZQ BOT</a>
+<main class="doc">
 
-<div class="links"><a href="https://sys.azuk1.com/#features">機能</a><a href="https://sys.azuk1.com/#trust">安全性</a><a href="https://sys.azuk1.com/#faq">FAQ</a><a class="on" href="index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" rel="noopener" target="_blank">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポート</a></div></nav></header>
-<main>
-<div class="wrap"><div class="pgrid">
-<div><h1>パッチノート</h1>
-<p class="lead">AZQBOTのアップデート履歴です。新しい順に表示しています。</p></div>
-<div>
-
-<ul class="list">
-<li><a class="item" href="../patchnote/2.4.html"><div class="meta"><span class="ver">v2.4</span><span class="new">最新</span></div><h3>バージョン 2.4 のパッチノート</h3><p>レベルを付けないチャンネル・ロールの設定(/levelexclude)、ロールのオークション(/roleauction)、YouTubeの音楽再生(/play)を追加。開催・設定できる役職を変更可能に。保存や集計の軽量化</p></a></li>
-<li><a class="item" href="../patchnote/2.3.html"><div class="meta"><span class="ver">v2.3</span></div><h3>バージョン 2.3 のパッチノート</h3><p>経済機能を大幅強化。借金(/loan・上限2,000・収入で自動返済)、仮想株の売買(/stock・価格は1分ごとに変動)、経済ガイド(/economyinfo)、Webダッシュボードに経済タブ(/economyweb)。初期所持金を100に変更</p></a></li>
-<li><a class="item" href="../patchnote/2.2.html"><div class="meta"><span class="ver">v2.2</span></div><h3>バージョン 2.2 のパッチノート</h3><p>投票・リマインダー・ピン機能(固定メッセージ)を追加。レベルアップ通知のコピー送信、ようこそメッセージの新形式。安定性の修正(複数サーバーでの隔離実行・設定ファイルのバックアップ・メンション検知の精度向上)</p></a></li>
-<li><a class="item" href="../patchnote/2.1.html"><div class="meta"><span class="ver">v2.1</span></div><h3>バージョン 2.1 のパッチノート</h3><p>レベル機能を追加(ランクカード・ランキング・XPの管理・他のBOTからの移行)</p></a></li>
-<li><a class="item" href="../patchnote/1.9.html"><div class="meta"><span class="ver">v1.9</span></div><h3>バージョン 1.9 のパッチノート</h3><p>サーバー管理機能を追加(役職・参加申請・スタッフ応募・ロール管理・ポイント)</p></a></li>
-<li><a class="item" href="../patchnote/1.8.html"><div class="meta"><span class="ver">v1.8</span></div><h3>バージョン 1.8 のパッチノート</h3><p>王様ゲームを追加(番号と王様を自動で振り分け)</p></a></li>
-<li><a class="item" href="../patchnote/1.7.html"><div class="meta"><span class="ver">v1.7</span></div><h3>バージョン 1.7 のパッチノート</h3><p>ウェルカム画像を追加(背景画像も変更可能)</p></a></li>
-<li><a class="item" href="../patchnote/1.6.html"><div class="meta"><span class="ver">v1.6</span></div><h3>バージョン 1.6 のパッチノート</h3><p>Web認証にreCAPTCHAを追加</p></a></li>
-<li><a class="item" href="../patchnote/1.5.html"><div class="meta"><span class="ver">v1.5</span></div><h3>バージョン 1.5 のパッチノート</h3><p>このバージョンの変更内容を見る</p></a></li>
+<h1>レベル除外・ロールオークション・YouTube音楽再生を追加</h1>
+<p class="meta">AZQ BOT v2.4 パッチノート / 2026年11月23日</p>
+<p class="lead">一部のチャンネルやロールで<strong>レベル(XP)を付けない</strong>設定ができる <code>/levelexclude</code>、ロールそのものをコインで競り落とす<strong>ロールオークション</strong> <code>/roleauction</code>、ボイスチャンネルでYouTubeの音楽を流せる <code>/play</code> を追加しました。レベル除外とオークションの開催は<b>既定では管理者だけ</b>が操作でき、ダッシュボードの「機能ごとの必要役職」で、副管理者・幹部・モデレーターなどにも開放できます。あわせて、大きなデータの保存中にBOTが止まって「応答しない」になる問題を減らす軽量化を行いました。</p>
+<h2>新機能</h2>
+<article>
+<h3>レベルを付けないチャンネル・ロールの設定 <code>/levelexclude</code></h3>
+<p>雑談以外の場所や、BOT用・荒らし対策用のロールなど、<b>レベルを上げたくない場所や人</b>を指定できるようになりました。</p>
+<p><code>/levelexclude channel channel: action:</code> … チャンネルでレベルを「オフにする」/「オンに戻す」。テキスト・ボイス・ステージ・フォーラム・<b>カテゴリ</b>を選べます。カテゴリを選ぶと、<b>中のチャンネルとスレッドすべて</b>が対象です。スレッドやフォーラムの投稿は、親チャンネルの設定に従います。</p>
+<p><code>/levelexclude role role: action:</code> … そのロールを<b>持っている人</b>には、どこで発言してもレベルが付きません。<code>@everyone</code> は指定できません(全員のレベルが止まってしまうため)。</p>
+<p><code>/levelexclude list</code> で現在の除外一覧を確認でき、<code>/levelexclude clear</code> で「チャンネル」「ロール」「すべて」をまとめて解除できます。チャンネルとロールはそれぞれ100件まで登録できます。<code>/level config</code> を引数なしで実行したときの現在の設定にも、除外の一覧が表示されます。</p>
+<p>除外中は、<b>XPとメッセージ数(ステータス)の両方</b>が増えません。ボイスチャンネルでは、滞在時間とXPが付かなくなります(「2人以上のときだけXPを付ける」の人数にも数えません)。<b>すでに貯まっているXPやレベルは消えません</b>。設定の変更は管理ログに記録されます。</p>
+</article>
+<article>
+<h3>ロールオークション <code>/roleauction</code>(ロールを直接オークション)</h3>
+<p>アイテムを介さず、<b>ロールそのもの</b>をオークションに出せるようになりました。落札した人にそのロールが付きます。入札にはコイン(経済機能)を使います。</p>
+<p><code>/roleauction start role: start_price:</code> … オークションを開催します。次の項目も指定できます。</p>
+<p>・<code>minutes:</code> 期間(5分〜7日。既定は24時間)<br/>
+・<code>buyout:</code> 即決価格(この額以上で入札すると、即決価格で落札)<br/>
+・<code>days:</code> 落札後にロールが付く日数(1〜365日。省略すると永久。期限が来ると自動で外れます)</p>
+<p><code>/roleauction bid id: amount:</code> … 入札します(<b>誰でも</b>できます)。入札したコインは入札時に預かり、<b>上回られると自動で返却</b>されます。上乗せは現在の最高額の5%以上が必要で、終了間際(60秒以内)の入札があると、終了が60秒延びます。<code>/roleauction list</code> で開催中の一覧、<code>/roleauction cancel id:</code> で中止(入札があれば全額返却)ができます。</p>
+<p>開始と結果は、開催したチャンネルに投稿され、落札者と、上回られた人にはDMでも知らせます。落札額は回収されて<b>サーバーのコイン消費</b>になります(誰かに入金されることはありません)。BOTが再起動しても、開催中のオークションは続行され、終了は約20秒以内に処理されます。</p>
+<p><b>安全のための制限</b>があります。強い権限を持つロール、BOTより上位のロール、BOT・連携が管理するロール、<b>自分と同位以上のロール</b>は出品できません。同じロールを同時に2件出すことはできず、同時開催は10件までです。すでに永久でロールを持っている人は入札できません(期限つきロールの保有者は、延長のために入札でき、落札すると残り期間に日数が加算されます)。落札時にロールが付けられなかったとき(ロールの削除・落札者の退出・BOTの権限不足など)は、<b>入札額を全額返却</b>します。</p>
+<p>オン/オフは、既存のオークション設定(<code>/economy config auction_enabled:</code>)と共通で、経済機能をオフにしたときや、経済コマンドを使えないチャンネルでは使えません。</p>
+</article>
+<article>
+<h3>誰が操作できるかを設定できる(新しい権限)</h3>
+<p>次の2つを、役職ごとの権限に追加しました。どちらも既定は<b>管理者</b>(サーバーオーナー・Discordの管理者権限を持つ人・役職の「管理者」)だけです。</p>
+<p>・<b>レベル除外(チャンネル・ロール)の設定</b> … <code>/levelexclude</code> の全コマンド<br/>
+・<b>ロールオークションの開催・中止</b> … <code>/roleauction start</code> と <code>/roleauction cancel</code></p>
+<p>Webダッシュボードの「役職・権限」タブにある<b>「機能ごとの必要役職」</b>から、「副管理者以上」「幹部以上」「モデレーター以上」などに変更できます(<b>入札と一覧は、変更に関係なく誰でも</b>使えます)。新しいコマンドは全員のコマンド一覧に表示されますが、権限がない人が実行するとエラーが表示されるだけで、何も変更されません。</p>
+</article>
+<article>
+<h3>YouTubeの音楽を再生 <code>/play</code></h3>
+<p>ボイスチャンネルに入って <code>/play query:</code> に<b>YouTubeのURLか検索ワード</b>を入れると、BOTがそのボイスチャンネルに参加して音楽を流します。再生中に実行すると、曲が<b>キューに追加</b>されます(プレイリストのURLを入れた場合は、1曲だけ再生します)。</p>
+<p>再生中は、曲名・サムネイル・進行バー・次の曲を表示したパネルが出て、10秒ごとに更新されます。パネルのボタンで、次の操作ができます。</p>
+<p>・<b>一時停止 / 再開</b>、<b>スキップ</b>、<b>ストップ</b>(停止して退出)<br/>
+・<b>ループ再生</b>(いまの曲を繰り返す)<br/>
+・<b>自動再生</b>(キューが空になったら、関連する動画を自動で流す)<br/>
+・<b>再生リスト</b>(待機中の曲を最大15曲まで表示)、<b>動画</b>(YouTubeのページを開く)</p>
+<p>ボタンは<b>同じボイスチャンネルに入っている人</b>だけが押せます。曲が終わってキューが空になったとき(自動再生がOFFの場合)と、<b>ボイスチャンネルから人がいなくなったとき</b>は、BOTが自動で退出します。再生に失敗したときは、理由を書いて退出します。</p>
+<p>BOTを動かしているサーバーに、<b>ffmpeg</b>(必須)が必要です。<code>PyNaCl</code> と <code>yt-dlp</code> は、起動時に自動で導入され、<code>/play</code> の初回実行時に yt-dlp が最新版へ更新されます。YouTube側の制限で再生できない場合は、BOTの実行フォルダに <code>cookies.txt</code> を置く(または環境変数 <code>YT_COOKIES</code> でファイルを指定する)と改善することがあります。</p>
+</article>
+<h2>その他の変更</h2>
+<article>
+<h3>動作の軽量化(コマンドが「応答しない」になる問題の対策)</h3>
+<p>データが増えたサーバーで、保存や集計のあいだBOT全体が数秒止まり、スラッシュコマンドが「応答しない」になることがありました。原因になりやすい処理を、次のように軽くしました。</p>
+<p>・<b>データの保存</b>(レベル・経済・サーバー管理・発言の統計)を細かく分けて行い、途中で他の処理に順番を譲るようにしました。<br/>
+・<b>ランキング</b>(レベル・所持金・ポイント)は、データが変わったときだけ作り直します。<br/>
+・<b>仮想株</b>は、再起動後の追いつき計算を少しずつ行い、1回の補正の上限を約2.4時間分から30分分に下げました(再起動直後に数秒止まるのを防ぐため)。人気順の保有者数は5秒間まとめて使い回します。経済データの保存の間隔は、3秒から10秒にまとめました。<br/>
+・起動時に読み込んだ大量のデータを、メモリの定期点検(ガベージコレクション)の対象から外し、点検による一時停止を減らしました。</p>
+</article>
+<article>
+<h3>ボイス接続の診断 <code>;voicetest</code></h3>
+<p>音楽が流れないときの原因調査用です。ボイスチャンネルに入って、チャットに <code>;voicetest</code> と送ると、BOTが参加して4秒間のテスト音を流し、接続の詳細をログに記録します。</p>
+</article>
+<article>
+<h3>レベル設定の細かな修正</h3>
+<p>レベル設定の初期値(除外リストなど)が、サーバー間で共有されないようにしました。</p>
+</article>
+<h2>アップデート方法</h2>
+<ul>
+<li><b>GitHub から最新の <code>bot.py</code> をダウンロード</b>して、現在稼働中のものと入れ替えて再起動してください。<code>dashboard.html</code> は今回、変更がありません。</li>
+<li><b>追加の設定は不要です。</b>新しいスラッシュコマンド(<code>/levelexclude</code> <code>/roleauction</code> <code>/play</code>)は、起動時の同期で自動的に反映されます。レベルの除外設定は <code>data/levels.json</code>、ロールオークションは <code>data/economy.json</code> に保存され、既存のデータはそのまま引き継がれます。</li>
+<li><code>/play</code> を使うには、サーバーに <b>ffmpeg</b> が入っている必要があります(Ubuntuなら <code>sudo apt install ffmpeg</code>)。</li>
+<li>レベル除外・ロールオークションの開催を、管理者以外にも許可したいときは、Webダッシュボードの「役職・権限」→「機能ごとの必要役職」で変更してください。</li>
 </ul>
-</div></div>
-<footer><div class="fgrid">
-<div class="fbrand"><span class="logo">AZQ BOT</span><p>荒らし対策・メンバー認証・サポートチケットをひとつにまとめたDiscord Bot。</p></div>
-<div><h5>プロダクト</h5><a href="https://sys.azuk1.com/#features">機能</a><a href="https://sys.azuk1.com/#trust">安全性</a><a href="https://sys.azuk1.com/#faq">FAQ</a><a href="../index.html">トップに戻る</a></div>
-<div><h5>リソース</h5><a href="index.html">パッチノート</a><a href="https://github.com/Azuk1-azq/AZQ-BOT" rel="noopener" target="_blank">GitHub</a><a href="https://discord.gg/tAKTK9MYdc" rel="noopener" target="_blank">サポートサーバー</a></div>
-<div><h5>法務</h5><a href="../terms.html">利用規約</a><a href="../privacy.html">プライバシーポリシー</a></div>
-</div><div class="fbot">AZQ BOT は非公式のBotであり、Discord Inc. とは関係ありません。</div></footer>
-</div>
+<footer><a href="index.html">パッチノート</a></footer>
 </main>
 </body>
 </html>
